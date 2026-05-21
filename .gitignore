@@ -20,4 +20,5 @@ output/
 # Keep these files available in this workspace, but do not publish extracted
 # proprietary assets, decompiled source, or captured videos by default.
 reverse/
+doc/BidKing/
 doc/videos/
