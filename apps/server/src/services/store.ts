@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export interface ServerStoreState {
+  schemaVersion: number;
   profiles: Record<string, PlayerProfile>;
   transactions: ProfileTransaction[];
   transactionSourceIds: string[];
@@ -32,7 +33,10 @@ export interface StoredAccountSession {
   revokedAt?: number;
 }
 
+export const CURRENT_STORE_SCHEMA_VERSION = 2;
+
 const EMPTY_STATE: ServerStoreState = {
+  schemaVersion: CURRENT_STORE_SCHEMA_VERSION,
   profiles: {},
   transactions: [],
   transactionSourceIds: [],
@@ -73,6 +77,10 @@ interface SQLiteSessionRow {
   value: string;
 }
 
+interface SQLiteMetaRow {
+  value: string;
+}
+
 const require = createRequire(import.meta.url);
 
 export function createServerStore(): ServerStore {
@@ -89,6 +97,7 @@ export function createJsonFileStore(filePath = process.env.BITKINGDOM_STORE_PATH
   return {
     state,
     save() {
+      state.schemaVersion = CURRENT_STORE_SCHEMA_VERSION;
       mkdirSync(dirname(resolvedPath), { recursive: true });
       writeFileSync(resolvedPath, JSON.stringify(state, null, 2), 'utf8');
     }
@@ -125,6 +134,7 @@ function readState(filePath: string): ServerStoreState {
   try {
     const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as Partial<ServerStoreState>;
     return {
+      schemaVersion: parsed.schemaVersion ?? 1,
       profiles: parsed.profiles ?? {},
       transactions: parsed.transactions ?? [],
       transactionSourceIds: parsed.transactionSourceIds ?? [],
@@ -138,6 +148,7 @@ function readState(filePath: string): ServerStoreState {
 
 function cloneEmptyState(): ServerStoreState {
   return {
+    schemaVersion: CURRENT_STORE_SCHEMA_VERSION,
     profiles: { ...EMPTY_STATE.profiles },
     transactions: [...EMPTY_STATE.transactions],
     transactionSourceIds: [...EMPTY_STATE.transactionSourceIds],
@@ -178,10 +189,15 @@ function migrateSQLiteStore(db: SQLiteDatabaseSync): void {
       expires_at INTEGER NOT NULL,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS store_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 }
 
 function readSQLiteState(db: SQLiteDatabaseSync): ServerStoreState {
+  const schemaVersion = Number((db.prepare("SELECT value FROM store_meta WHERE key = 'schema_version'").all() as SQLiteMetaRow[])[0]?.value ?? 1);
   const profiles: Record<string, PlayerProfile> = {};
   for (const row of db.prepare('SELECT player_id, value FROM profiles').all() as SQLiteProfileRow[]) {
     try {
@@ -220,6 +236,7 @@ function readSQLiteState(db: SQLiteDatabaseSync): ServerStoreState {
     }
   }
   return {
+    schemaVersion,
     profiles,
     transactions,
     transactionSourceIds,
@@ -259,6 +276,8 @@ function saveSQLiteState(db: SQLiteDatabaseSync, state: ServerStoreState): void 
     for (const session of Object.values(state.accountSessions)) {
       sessionInsert.run(session.token, session.accountId, session.profileId, session.expiresAt, JSON.stringify(session));
     }
+    state.schemaVersion = CURRENT_STORE_SCHEMA_VERSION;
+    db.prepare('INSERT OR REPLACE INTO store_meta (key, value) VALUES (?, ?)').run('schema_version', String(state.schemaVersion));
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');

@@ -3,11 +3,14 @@ import { gameConfig } from '@bitkingdom/config';
 import type { AccountSessionSnapshot, CoreAuctionMode, PlayerProfile, ProfileSnapshot, PublicPlayerAccount } from '@bitkingdom/shared';
 import {
   createGuestAccountSession,
+  changeAccountPasswordSession,
   fetchAccountSession,
   fetchProfileSnapshot,
   loginAccountSession,
+  logoutAllAccountSessions,
   logoutAccountSession,
-  registerAccountSession
+  registerAccountSession,
+  upgradeGuestAccountSession
 } from '../api/bidkingApiClient';
 import {
   buildBidKingBattleMapGroups,
@@ -125,10 +128,52 @@ export function useBidKingAppState() {
     }
   }
 
+  async function upgradeGuestAccount(accountName: string, password: string, nextPlayerName = playerName): Promise<void> {
+    if (!sessionToken) {
+      setAuthError('请先以游客身份进入');
+      return;
+    }
+    setAuthStatus('submitting');
+    setAuthError(undefined);
+    try {
+      applyAccountSessionSnapshot(await upgradeGuestAccountSession(SERVER_URL, sessionToken, { accountName, password, playerName: nextPlayerName }));
+    } catch (error) {
+      setAuthStatus('ready');
+      setAuthError(error instanceof Error ? error.message : '绑定账号失败');
+      throw error;
+    }
+  }
+
+  async function changeAccountPassword(currentPassword: string, nextPassword: string): Promise<void> {
+    if (!sessionToken) {
+      setAuthError('请先登录账号');
+      return;
+    }
+    setAuthError(undefined);
+    try {
+      applyAccountSessionSnapshot(await changeAccountPasswordSession(SERVER_URL, sessionToken, { currentPassword, nextPassword }));
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : '修改密码失败');
+      throw error;
+    }
+  }
+
   function logoutAccount(): void {
     const token = sessionToken;
     if (token) {
       void logoutAccountSession(SERVER_URL, token).catch(() => undefined);
+    }
+    localStorage.removeItem('bk_account_session_v1');
+    setAccount(undefined);
+    setSessionToken(undefined);
+    setAuthStatus('signedOut');
+    setAuthError(undefined);
+  }
+
+  function logoutAllAccounts(): void {
+    const token = sessionToken;
+    if (token) {
+      void logoutAllAccountSessions(SERVER_URL, token).catch(() => undefined);
     }
     localStorage.removeItem('bk_account_session_v1');
     setAccount(undefined);
@@ -177,13 +222,16 @@ export function useBidKingAppState() {
     botCount,
     coreAuctionMode,
     continueAsGuest,
+    changeAccountPassword,
     dismissTutorial,
     loginAccount,
     logoutAccount,
+    logoutAllAccounts,
     playerName,
     profile,
     profileId,
     registerAccount,
+    upgradeGuestAccount,
     selectedBidMapId,
     selectedRoleId,
     sessionToken,

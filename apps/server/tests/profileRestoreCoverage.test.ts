@@ -44,6 +44,7 @@ import type { ServerStore } from '../src/services/store';
 function createMemoryStore(): ServerStore {
   return {
     state: {
+      schemaVersion: 2,
       profiles: {},
       transactions: [],
       transactionSourceIds: [],

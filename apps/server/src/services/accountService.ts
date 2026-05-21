@@ -12,15 +12,23 @@ export interface AccountService {
   registerAccount(input: AccountPasswordInput): AccountSessionSnapshot;
   loginAccount(input: AccountPasswordInput): AccountSessionSnapshot;
   createGuestSession(input: GuestAccountInput): AccountSessionSnapshot;
+  upgradeGuestAccount(token: string, input: AccountPasswordInput): AccountSessionSnapshot;
+  changePassword(token: string, input: AccountPasswordChangeInput): AccountSessionSnapshot;
   getSessionSnapshot(token: string): AccountSessionSnapshot | undefined;
   resolveProfileIdForSession(token: string | undefined): string | undefined;
   logout(token: string): boolean;
+  logoutAll(token: string): boolean;
 }
 
 export interface AccountPasswordInput {
   accountName?: string;
   password?: string;
   playerName?: string;
+}
+
+export interface AccountPasswordChangeInput {
+  currentPassword?: string;
+  nextPassword?: string;
 }
 
 export interface GuestAccountInput {
@@ -110,6 +118,60 @@ export function createAccountService(store: ServerStore, profiles: ProfileServic
     return snapshotFor(account, session);
   }
 
+  function upgradeGuestAccount(token: string, input: AccountPasswordInput): AccountSessionSnapshot {
+    const session = activeSession(token);
+    if (!session) {
+      throw new Error('登录已过期');
+    }
+    const account = store.state.accounts[session.accountId];
+    if (!account) {
+      throw new Error('账号不存在');
+    }
+    if (account.kind !== 'guest') {
+      return snapshotFor(account, session);
+    }
+    const accountName = cleanAccountName(input.accountName);
+    const normalizedName = normalizeAccountName(accountName);
+    const password = cleanPassword(input.password);
+    const duplicate = accountByNormalizedName(normalizedName);
+    if (duplicate && duplicate.accountId !== account.accountId) {
+      throw new Error('账号已存在');
+    }
+    const now = Date.now();
+    account.accountName = accountName;
+    account.displayName = sanitizeDisplayName(input.playerName || account.displayName, account.displayName);
+    account.kind = 'password';
+    account.normalizedName = normalizedName;
+    account.passwordHash = hashPassword(password);
+    account.updatedAt = now;
+    account.lastLoginAt = now;
+    session.expiresAt = now + PASSWORD_SESSION_TTL_MS;
+    session.lastSeenAt = now;
+    profiles.getOrCreateProfile(account.profileId, account.displayName);
+    store.save();
+    return snapshotFor(account, session);
+  }
+
+  function changePassword(token: string, input: AccountPasswordChangeInput): AccountSessionSnapshot {
+    const session = activeSession(token);
+    if (!session) {
+      throw new Error('登录已过期');
+    }
+    const account = store.state.accounts[session.accountId];
+    if (!account || account.kind !== 'password' || !account.passwordHash) {
+      throw new Error('当前账号尚未设置密码');
+    }
+    if (!verifyPassword(input.currentPassword ?? '', account.passwordHash)) {
+      throw new Error('当前密码不正确');
+    }
+    const now = Date.now();
+    account.passwordHash = hashPassword(cleanPassword(input.nextPassword));
+    account.updatedAt = now;
+    session.lastSeenAt = now;
+    store.save();
+    return snapshotFor(account, session);
+  }
+
   function getSessionSnapshot(token: string): AccountSessionSnapshot | undefined {
     const session = activeSession(token);
     if (!session) {
@@ -138,6 +200,22 @@ export function createAccountService(store: ServerStore, profiles: ProfileServic
     }
     session.revokedAt = Date.now();
     session.lastSeenAt = session.revokedAt;
+    store.save();
+    return true;
+  }
+
+  function logoutAll(token: string): boolean {
+    const session = activeSession(token);
+    if (!session) {
+      return false;
+    }
+    const now = Date.now();
+    for (const candidate of Object.values(store.state.accountSessions)) {
+      if (candidate.accountId === session.accountId && !candidate.revokedAt) {
+        candidate.revokedAt = now;
+        candidate.lastSeenAt = now;
+      }
+    }
     store.save();
     return true;
   }
@@ -180,9 +258,12 @@ export function createAccountService(store: ServerStore, profiles: ProfileServic
     registerAccount,
     loginAccount,
     createGuestSession,
+    upgradeGuestAccount,
+    changePassword,
     getSessionSnapshot,
     resolveProfileIdForSession,
-    logout
+    logout,
+    logoutAll
   };
 }
 

@@ -21,6 +21,7 @@ import { createSQLiteStore, type ServerStore } from '../src/services/store';
 function createMemoryStore(): ServerStore {
   return {
     state: {
+      schemaVersion: 2,
       profiles: {},
       transactions: [],
       transactionSourceIds: [],
@@ -123,6 +124,7 @@ describe('profile service', () => {
     const restored = secondAccounts.getSessionSnapshot(created.sessionToken);
     const loggedIn = secondAccounts.loginAccount({ accountName: 'sqlite_user', password: 'secret123' });
 
+    expect(secondStore.state.schemaVersion).toBe(2);
     expect(restored?.account.profileId).toBe(created.account.profileId);
     expect(restored?.profile.profile.name).toBe('库房掌柜');
     expect(loggedIn.account.profileId).toBe(created.account.profileId);

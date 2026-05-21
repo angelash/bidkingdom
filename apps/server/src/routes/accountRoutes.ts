@@ -35,6 +35,38 @@ export function registerAccountRoutes(app: FastifyInstance, accounts: AccountSer
     }
   });
 
+  app.post<{
+    Body: { accountName?: string; password?: string; playerName?: string };
+  }>('/api/account/upgrade', async (request, reply) => {
+    const token = bearerToken(request.headers.authorization);
+    if (!token) {
+      reply.code(401);
+      return { error: 'session token is required' };
+    }
+    try {
+      return accounts.upgradeGuestAccount(token, request.body ?? {});
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'upgrade failed' };
+    }
+  });
+
+  app.post<{
+    Body: { currentPassword?: string; nextPassword?: string };
+  }>('/api/account/password', async (request, reply) => {
+    const token = bearerToken(request.headers.authorization);
+    if (!token) {
+      reply.code(401);
+      return { error: 'session token is required' };
+    }
+    try {
+      return accounts.changePassword(token, request.body ?? {});
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'password change failed' };
+    }
+  });
+
   app.get<{
     Querystring: { sessionToken?: string };
   }>('/api/account/session', async (request, reply) => {
@@ -58,5 +90,14 @@ export function registerAccountRoutes(app: FastifyInstance, accounts: AccountSer
       return { error: 'session token is required' };
     }
     return { ok: accounts.logout(token) };
+  });
+
+  app.post('/api/account/logout-all', async (request, reply) => {
+    const token = bearerToken(request.headers.authorization);
+    if (!token) {
+      reply.code(401);
+      return { error: 'session token is required' };
+    }
+    return { ok: accounts.logoutAll(token) };
   });
 }

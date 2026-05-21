@@ -19,9 +19,13 @@ interface MainHallRouteProps {
   selectedBidMapId?: number;
   selectedRoleId: string;
   serverUrl: string;
+  authError?: string;
+  onChangeAccountPassword: (currentPassword: string, nextPassword: string) => Promise<void>;
   onSetBotCount: (value: number) => void;
+  onLogoutAllAccounts: () => void;
   onLogoutAccount: () => void;
   onSetPlayerName: (value: string) => void;
+  onUpgradeGuestAccount: (accountName: string, password: string, playerName: string) => Promise<void>;
 }
 
 export function MainHallRoute({
@@ -37,9 +41,13 @@ export function MainHallRoute({
   selectedBidMapId,
   selectedRoleId,
   serverUrl,
+  authError,
+  onChangeAccountPassword,
   onSetBotCount,
+  onLogoutAllAccounts,
   onLogoutAccount,
-  onSetPlayerName
+  onSetPlayerName,
+  onUpgradeGuestAccount
 }: MainHallRouteProps): JSX.Element {
   return (
     <MainHallView
@@ -54,6 +62,7 @@ export function MainHallRoute({
       selectedBidMapId={selectedBidMapId}
       selectedRoleId={selectedRoleId}
       serverUrl={serverUrl}
+      authError={authError}
       resolveModeForBidMapId={modeForBidMapId}
       onCreateRoom={roomActions.createRoom}
       onSelectBidMap={roomActions.selectBidMap}
@@ -103,9 +112,12 @@ export function MainHallRoute({
       onCompleteGuide={profileActions.completeGuide}
       onUpdateSettings={profileActions.updateProfileSettings}
       onApplyLanguageName={profileActions.applyLanguageName}
+      onChangeAccountPassword={onChangeAccountPassword}
       onSetBotCount={onSetBotCount}
+      onLogoutAllAccounts={onLogoutAllAccounts}
       onLogoutAccount={onLogoutAccount}
       onSetPlayerName={onSetPlayerName}
+      onUpgradeGuestAccount={onUpgradeGuestAccount}
     />
   );
 }

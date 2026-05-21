@@ -126,6 +126,68 @@ describe('server routes', () => {
     });
   });
 
+  it('upgrades guest accounts without changing the bound profile', async () => {
+    await withRouteRuntime(async ({ app }) => {
+      const guest = await app.inject({
+        method: 'POST',
+        url: '/api/account/guest',
+        payload: { deviceId: 'guest-device-upgrade-001', playerName: '游客掌柜' }
+      });
+      const guestPayload = JSON.parse(guest.payload) as AccountSessionSnapshot;
+      expect(guest.statusCode).toBe(200);
+      expect(guestPayload.account.kind).toBe('guest');
+
+      const upgraded = await app.inject({
+        method: 'POST',
+        url: '/api/account/upgrade',
+        headers: { authorization: `Bearer ${guestPayload.sessionToken}` },
+        payload: { accountName: 'upgraded_user', password: 'secret123', playerName: '绑定掌柜' }
+      });
+      const upgradedPayload = JSON.parse(upgraded.payload) as AccountSessionSnapshot;
+
+      expect(upgraded.statusCode).toBe(200);
+      expect(upgradedPayload.account.kind).toBe('password');
+      expect(upgradedPayload.account.profileId).toBe(guestPayload.account.profileId);
+      expect(upgradedPayload.profile.profile.name).toBe('绑定掌柜');
+
+      const password = await app.inject({
+        method: 'POST',
+        url: '/api/account/password',
+        headers: { authorization: `Bearer ${upgradedPayload.sessionToken}` },
+        payload: { currentPassword: 'secret123', nextPassword: 'secret456' }
+      });
+      expect(password.statusCode).toBe(200);
+
+      const oldLogin = await app.inject({
+        method: 'POST',
+        url: '/api/account/login',
+        payload: { accountName: 'upgraded_user', password: 'secret123' }
+      });
+      expect(oldLogin.statusCode).toBe(401);
+
+      const newLogin = await app.inject({
+        method: 'POST',
+        url: '/api/account/login',
+        payload: { accountName: 'upgraded_user', password: 'secret456' }
+      });
+      expect(newLogin.statusCode).toBe(200);
+
+      const logoutAll = await app.inject({
+        method: 'POST',
+        url: '/api/account/logout-all',
+        headers: { authorization: `Bearer ${upgradedPayload.sessionToken}` }
+      });
+      expect(logoutAll.statusCode).toBe(200);
+
+      const expired = await app.inject({
+        method: 'GET',
+        url: '/api/account/session',
+        headers: { authorization: `Bearer ${upgradedPayload.sessionToken}` }
+      });
+      expect(expired.statusCode).toBe(401);
+    });
+  });
+
   it('serves system bootstrap and config parity from modular route registration', async () => {
     await withRouteRuntime(async ({ app }) => {
       const health = await app.inject({ method: 'GET', url: '/health' });

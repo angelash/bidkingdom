@@ -33,11 +33,13 @@ export function BidKingApp(): JSX.Element {
     authError,
     authStatus,
     botCount,
+    changeAccountPassword,
     coreAuctionMode,
     continueAsGuest,
     dismissTutorial,
     loginAccount,
     logoutAccount,
+    logoutAllAccounts,
     playerName,
     profile,
     profileId,
@@ -55,6 +57,7 @@ export function BidKingApp(): JSX.Element {
     skillTargetId,
     switchView,
     tutorialDismissed,
+    upgradeGuestAccount,
     view
   } = useBidKingAppState();
   const now = useNow();
@@ -211,9 +214,13 @@ export function BidKingApp(): JSX.Element {
           selectedBidMapId={selectedBidMapId}
           selectedRoleId={selectedRoleId}
           serverUrl={SERVER_URL}
+          authError={authError}
+          onChangeAccountPassword={changeAccountPassword}
           onSetBotCount={setBotCount}
+          onLogoutAllAccounts={logoutAllAccounts}
           onLogoutAccount={logoutAccount}
           onSetPlayerName={setPlayerName}
+          onUpgradeGuestAccount={upgradeGuestAccount}
         />
       )}
 

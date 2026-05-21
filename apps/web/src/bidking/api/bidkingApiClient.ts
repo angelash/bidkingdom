@@ -78,8 +78,31 @@ export async function loginAccountSession(
   return postAccountSession(serverUrl, '/api/account/login', input);
 }
 
+export async function upgradeGuestAccountSession(
+  serverUrl: string,
+  sessionToken: string,
+  input: { accountName: string; password: string; playerName: string }
+): Promise<AccountSessionSnapshot> {
+  return postAccountSession(serverUrl, '/api/account/upgrade', input, sessionToken);
+}
+
+export async function changeAccountPasswordSession(
+  serverUrl: string,
+  sessionToken: string,
+  input: { currentPassword: string; nextPassword: string }
+): Promise<AccountSessionSnapshot> {
+  return postAccountSession(serverUrl, '/api/account/password', input, sessionToken);
+}
+
 export async function logoutAccountSession(serverUrl: string, sessionToken: string): Promise<void> {
   await fetch(new URL('/api/account/logout', serverUrl), {
+    method: 'POST',
+    headers: authHeaders(sessionToken)
+  });
+}
+
+export async function logoutAllAccountSessions(serverUrl: string, sessionToken: string): Promise<void> {
+  await fetch(new URL('/api/account/logout-all', serverUrl), {
     method: 'POST',
     headers: authHeaders(sessionToken)
   });
@@ -109,11 +132,12 @@ function isAccountSessionSnapshot(payload: AccountSessionSnapshot | ApiErrorPayl
 async function postAccountSession(
   serverUrl: string,
   path: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  sessionToken?: string
 ): Promise<AccountSessionSnapshot> {
   const response = await fetch(new URL(path, serverUrl), {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...authHeaders(sessionToken) },
     body: JSON.stringify(body)
   });
   const payload = await response.json() as AccountSessionSnapshot | ApiErrorPayload;

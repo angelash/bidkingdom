@@ -9,10 +9,12 @@ import {
   Crown,
   Gavel,
   Info,
+  KeyRound,
   ListChecks,
   LogOut,
   Shield,
   Trophy,
+  UserPlus,
   Users,
   X
 } from 'lucide-react';
@@ -66,6 +68,7 @@ export function MainHallView({
   selectedBidMapId,
   selectedRoleId,
   serverUrl,
+  authError,
   resolveModeForBidMapId,
   onCreateRoom,
   onSelectBidMap,
@@ -115,9 +118,12 @@ export function MainHallView({
   onCompleteGuide,
   onUpdateSettings,
   onApplyLanguageName,
+  onChangeAccountPassword,
   onSetBotCount,
+  onLogoutAllAccounts,
   onLogoutAccount,
-  onSetPlayerName
+  onSetPlayerName,
+  onUpgradeGuestAccount
 }: {
   botCount: number;
   catalogItems: HallCatalogItem[];
@@ -130,6 +136,7 @@ export function MainHallView({
   selectedBidMapId?: number;
   selectedRoleId: string;
   serverUrl: string;
+  authError?: string;
   resolveModeForBidMapId: (bidMapId?: number) => CoreAuctionMode | undefined;
   onCreateRoom: (selectedBidMapId?: number) => boolean;
   onSelectBidMap: (bidMapId: number) => void;
@@ -179,11 +186,15 @@ export function MainHallView({
   onCompleteGuide: (guideId: string) => void;
   onUpdateSettings: (settings: Record<string, string | number | boolean>) => void;
   onApplyLanguageName: () => void;
+  onChangeAccountPassword: (currentPassword: string, nextPassword: string) => Promise<void>;
   onSetBotCount: (value: number) => void;
+  onLogoutAllAccounts: () => void;
   onLogoutAccount: () => void;
   onSetPlayerName: (value: string) => void;
+  onUpgradeGuestAccount: (accountName: string, password: string, playerName: string) => Promise<void>;
 }): JSX.Element {
   const [activeHub, setActiveHub] = useState<OutgameHub>();
+  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const [battlePrevOpen, setBattlePrevOpen] = useState(false);
   const [battlePrevTab, setBattlePrevTab] = useState<BattlePrevTab>('map');
   const [selectedBattleBidMapId, setSelectedBattleBidMapId] = useState(selectedBidMapId ?? defaultBidMapId);
@@ -296,6 +307,10 @@ export function MainHallView({
                 <Info size={17} />
                 呈报
               </button>
+              <button className="bk-feedback" type="button" onClick={() => setAccountPanelOpen(true)}>
+                {account?.kind === 'guest' ? <UserPlus size={17} /> : <KeyRound size={17} />}
+                {account?.kind === 'guest' ? '绑定' : '账号'}
+              </button>
               <button className="bk-feedback" type="button" onClick={onLogoutAccount}>
                 <LogOut size={17} />
                 切换
@@ -401,6 +416,19 @@ export function MainHallView({
           <em>{guideStep.anchor ? `(${guideStep.anchor.x}, ${guideStep.anchor.y})` : '等待触发'}</em>
           <button type="button" onClick={() => onCompleteGuide(guideStep.id)}>完成</button>
         </aside>
+      )}
+      {accountPanelOpen && (
+        <DetailModal eyebrow="珍宝局" title={account?.kind === 'guest' ? '绑定账号' : '账号管理'} onClose={() => setAccountPanelOpen(false)}>
+          <AccountManagePanel
+            account={account}
+            authError={authError}
+            playerName={playerName}
+            onChangePassword={onChangeAccountPassword}
+            onClose={() => setAccountPanelOpen(false)}
+            onLogoutAll={onLogoutAllAccounts}
+            onUpgradeGuestAccount={onUpgradeGuestAccount}
+          />
+        </DetailModal>
       )}
 
       {activeHub === 'codex' && (
@@ -545,6 +573,113 @@ export function MainHallView({
           onSetTab={setBattlePrevTab}
         />
       )}
+    </section>
+  );
+}
+
+function AccountManagePanel({
+  account,
+  authError,
+  playerName,
+  onChangePassword,
+  onClose,
+  onLogoutAll,
+  onUpgradeGuestAccount
+}: {
+  account?: PublicPlayerAccount;
+  authError?: string;
+  playerName: string;
+  onChangePassword: (currentPassword: string, nextPassword: string) => Promise<void>;
+  onClose: () => void;
+  onLogoutAll: () => void;
+  onUpgradeGuestAccount: (accountName: string, password: string, playerName: string) => Promise<void>;
+}): JSX.Element {
+  const [accountName, setAccountName] = useState('');
+  const [password, setPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [nextPassword, setNextPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string>();
+
+  async function submitUpgrade(): Promise<void> {
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      await onUpgradeGuestAccount(accountName, password, playerName);
+      onClose();
+    } catch {
+      // The app state owns the user-facing auth error.
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitPasswordChange(): Promise<void> {
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      await onChangePassword(currentPassword, nextPassword);
+      setCurrentPassword('');
+      setNextPassword('');
+      setMessage('密码已更新');
+    } catch {
+      // The app state owns the user-facing auth error.
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (account?.kind === 'guest') {
+    return (
+      <section className="account-manage-panel">
+        <div className="account-manage-summary">
+          <span>当前档案</span>
+          <strong>{account.displayName}</strong>
+          <em>{account.profileId}</em>
+        </div>
+        <label>
+          账号
+          <input value={accountName} onChange={(event) => setAccountName(event.target.value)} maxLength={32} autoComplete="username" />
+        </label>
+        <label>
+          密码
+          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" maxLength={72} autoComplete="new-password" />
+        </label>
+        {authError && <p className="account-gate-error">{authError}</p>}
+        <button className="primary" type="button" disabled={busy} onClick={() => void submitUpgrade()}>
+          <UserPlus size={18} />
+          {busy ? '处理中' : '绑定当前档案'}
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="account-manage-panel">
+      <div className="account-manage-summary">
+        <span>账号</span>
+        <strong>{account?.accountName ?? '未登录'}</strong>
+        <em>{account?.profileId ?? ''}</em>
+      </div>
+      <label>
+        当前密码
+        <input value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} type="password" maxLength={72} autoComplete="current-password" />
+      </label>
+      <label>
+        新密码
+        <input value={nextPassword} onChange={(event) => setNextPassword(event.target.value)} type="password" maxLength={72} autoComplete="new-password" />
+      </label>
+      {(authError || message) && <p className={authError ? 'account-gate-error' : 'account-manage-message'}>{authError ?? message}</p>}
+      <div className="account-manage-actions">
+        <button className="primary" type="button" disabled={busy} onClick={() => void submitPasswordChange()}>
+          <KeyRound size={18} />
+          {busy ? '处理中' : '修改密码'}
+        </button>
+        <button type="button" onClick={onLogoutAll}>
+          <LogOut size={18} />
+          退出全部设备
+        </button>
+      </div>
     </section>
   );
 }
