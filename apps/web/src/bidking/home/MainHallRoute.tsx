@@ -69,9 +69,7 @@ export function MainHallRoute({
       onSelectCoreAuctionMode={roomActions.selectCoreAuctionMode}
       onSelectRole={roomActions.selectRole}
       onSelectHead={profileActions.selectHead}
-      onSetCabinetItem={profileActions.setCabinetItem}
-      onClearCabinetItem={profileActions.clearCabinetItem}
-      onSellCabinetItem={profileActions.sellCabinetItem}
+      onSellAllCabinetItems={profileActions.sellAllCabinetItems}
       onClaimCollectionIncome={profileActions.claimCollectionIncome}
       onClaimReliefFund={profileActions.claimReliefFund}
       onSelectHeroSkin={profileActions.selectHeroSkin}

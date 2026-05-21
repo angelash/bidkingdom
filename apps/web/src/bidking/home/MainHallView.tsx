@@ -75,9 +75,7 @@ export function MainHallView({
   onSelectCoreAuctionMode,
   onSelectRole,
   onSelectHead,
-  onSetCabinetItem,
-  onClearCabinetItem,
-  onSellCabinetItem,
+  onSellAllCabinetItems,
   onClaimCollectionIncome,
   onClaimReliefFund,
   onSelectHeroSkin,
@@ -143,9 +141,7 @@ export function MainHallView({
   onSelectCoreAuctionMode: (mode: CoreAuctionMode) => void;
   onSelectRole: (roleId: string) => void;
   onSelectHead: (headId: string) => void;
-  onSetCabinetItem: (itemId: string) => void;
-  onClearCabinetItem: (itemId: string) => void;
-  onSellCabinetItem: (refId: string, quantity: number) => void;
+  onSellAllCabinetItems: () => void;
   onClaimCollectionIncome: () => void;
   onClaimReliefFund: () => void;
   onSelectHeroSkin: (skinId: number) => void;
@@ -198,11 +194,8 @@ export function MainHallView({
   const [battlePrevOpen, setBattlePrevOpen] = useState(false);
   const [battlePrevTab, setBattlePrevTab] = useState<BattlePrevTab>('map');
   const [selectedBattleBidMapId, setSelectedBattleBidMapId] = useState(selectedBidMapId ?? defaultBidMapId);
-  const [selectedItemId, setSelectedItemId] = useState<string>();
   const [dismissedStartupNoticeIds, setDismissedStartupNoticeIds] = useState<string[]>([]);
   const selectedRole = gameConfig.roles.find((role) => role.id === selectedRoleId) ?? gameConfig.roles[0]!;
-  const unlockedItems = catalogItems.filter((item) => profile.codex.includes(item.id));
-  const selectedCodexItemId = selectedItemId ?? unlockedItems[0]?.id ?? catalogItems[0]?.id;
   const startupNotice = bidKingStartupNoticeQueue([...(profile.readNotices ?? []), ...dismissedStartupNoticeIds], 1)[0];
   const guideTargetWindow = battlePrevOpen ? 'Battle_Main' : activeHub ? sourcePathForOutgameHub(activeHub) : undefined;
   const guideStep = guideTargetWindow ? nextBidKingGuideStep(profile.completedGuides ?? [], guideTargetWindow) : undefined;
@@ -223,7 +216,7 @@ export function MainHallView({
     { key: 'handbook', label: '珍宝谱', icon: <BookOpen size={23} />, onClick: () => openHub('codex') }
   ];
   const bottomTabs = [
-    { key: 'storage', label: '珍阁', en: '陈列', icon: <Archive size={19} />, onClick: () => openHub('cabinet') },
+    { key: 'storage', label: '珍阁', en: '仓库', icon: <Archive size={19} />, onClick: () => openHub('cabinet') },
     { key: 'trade', label: '市集', en: '互市', icon: <BadgeDollarSign size={19} />, onClick: () => openHub('trade') },
     { key: 'auction', label: '拍场', en: '开拍', icon: <Gavel size={19} />, onClick: () => openHub('auctionHouse') },
     { key: 'shop', label: '宝铺', en: '补给', icon: <Crown size={19} />, onClick: () => openHub('shop') },
@@ -232,9 +225,6 @@ export function MainHallView({
   ];
 
   function openHub(panel: OutgameHub): void {
-    if (!selectedItemId) {
-      setSelectedItemId(unlockedItems[0]?.id ?? catalogItems[0]?.id);
-    }
     setActiveHub(panel);
   }
 
@@ -458,7 +448,13 @@ export function MainHallView({
         />
       )}
       {activeHub && !['codex', 'package', 'bidder'].includes(activeHub) && (
-        <DetailModal eyebrow="珍宝局" title={titleForOutgameHub(activeHub)} onClose={() => setActiveHub(undefined)}>
+        <DetailModal
+          bodyClassName={activeHub === 'cabinet' ? 'cabinet-modal-body' : undefined}
+          eyebrow="珍宝局"
+          panelClassName={activeHub === 'cabinet' ? 'cabinet-modal' : undefined}
+          title={titleForOutgameHub(activeHub)}
+          onClose={() => setActiveHub(undefined)}
+        >
           {activeHub === 'tasks' && (
             <div className="task-modal-combo">
               <TaskDetailPanel
@@ -536,11 +532,7 @@ export function MainHallView({
             <CabinetBrowser
               items={catalogItems}
               profile={profile}
-              selectedItemId={selectedCodexItemId}
-              onSelectItem={setSelectedItemId}
-              onSetCabinetItem={onSetCabinetItem}
-              onClearCabinetItem={onClearCabinetItem}
-              onSellCabinetItem={onSellCabinetItem}
+              onSellAllCabinetItems={onSellAllCabinetItems}
             />
           )}
           {activeHub === 'shop' && (
@@ -709,12 +701,16 @@ function guideNodeDisplayLabel(targetNode: string): string {
 }
 
 function DetailModal({
+  bodyClassName,
   eyebrow,
+  panelClassName,
   title,
   children,
   onClose
 }: {
+  bodyClassName?: string;
   eyebrow: string;
+  panelClassName?: string;
   title: string;
   children: React.ReactNode;
   onClose: () => void;
@@ -731,7 +727,7 @@ function DetailModal({
 
   return (
     <div className="detail-modal-backdrop" onMouseDown={onClose}>
-      <section className="detail-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+      <section className={`detail-modal ${panelClassName ?? ''}`} role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
         <header className="detail-modal-header">
           <div>
             <span>{eyebrow}</span>
@@ -741,7 +737,7 @@ function DetailModal({
             <X size={18} />
           </button>
         </header>
-        <div className="detail-modal-body">{children}</div>
+        <div className={`detail-modal-body ${bodyClassName ?? ''}`}>{children}</div>
       </section>
     </div>
   );

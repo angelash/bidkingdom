@@ -69,7 +69,10 @@ import {
   reliefFundSnapshotForProfile,
   type ReliefFundSnapshot
 } from '../domain/profile/profileReliefFundRuntime';
-import { sellInventoryItemForProfile } from '../domain/profile/profileInventorySaleRuntime';
+import {
+  sellAllInventoryItemsForProfile,
+  sellInventoryItemForProfile
+} from '../domain/profile/profileInventorySaleRuntime';
 import { addCustomMailToProfile } from '../domain/profile/profileMailRuntime';
 import { consumeTicketForMatchProfile, refreshTicketState } from '../domain/profile/profileTicketRuntime';
 import { createEconomyLedger } from '../domain/economy/economyLedger';
@@ -234,6 +237,13 @@ export function createProfileService(store: ServerStore): ProfileService {
   function sellInventoryItem(playerId: string, refId: string, quantity: number): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
     sellInventoryItemForProfile(profile, refId, quantity, applyNumberChange, recordTransaction);
+    store.save();
+    return getSnapshot(playerId);
+  }
+
+  function sellAllInventoryItems(playerId: string): ProfileSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    sellAllInventoryItemsForProfile(profile, applyNumberChange, recordTransaction);
     store.save();
     return getSnapshot(playerId);
   }
@@ -663,6 +673,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     claimLevelReward,
     applyMatchSummary,
     sellInventoryItem,
+    sellAllInventoryItems,
     buyShopItem,
     refreshShop,
     setShopItemCollection,

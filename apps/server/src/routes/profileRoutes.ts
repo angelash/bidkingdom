@@ -83,6 +83,21 @@ export function registerProfileRoutes(app: FastifyInstance, profiles: ProfileSer
   });
 
   app.post<{
+    Body: { playerId?: string };
+  }>('/api/cabinet/sell-all', async (request, reply) => {
+    if (!request.body.playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    try {
+      return profiles.sellAllInventoryItems(request.body.playerId);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'cabinet sell all failed' };
+    }
+  });
+
+  app.post<{
     Body: { playerId?: string; skinId?: number };
   }>('/api/hero-skin/select', async (request, reply) => {
     if (!request.body.playerId || typeof request.body.skinId !== 'number') {

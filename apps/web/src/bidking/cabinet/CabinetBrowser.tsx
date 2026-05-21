@@ -1,11 +1,7 @@
-import { useState, type CSSProperties } from 'react';
-import { Archive, Crown, Lock } from 'lucide-react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Archive, Coins, Crown, Lock, X } from 'lucide-react';
 import {
-  Cabinet as bidKingCabinets,
   Item as bidKingCompatItems,
-  WareHouse as bidKingWareHouses,
-  bidKingCabinetDisplayDesc,
-  bidKingCabinetDisplayName,
   bidKingItemRuntimeFlags,
   type BidKingItemRow
 } from '@bitkingdom/bidking-compat';
@@ -25,142 +21,191 @@ interface CabinetInventoryEntry {
   item: CabinetItem;
   refId: string;
   quantity: number;
+  source: BidKingItemRow;
   flags: ReturnType<typeof bidKingItemRuntimeFlags>;
+}
+
+interface SaleQuote {
+  entries: CabinetInventoryEntry[];
+  itemCount: number;
+  totalCoins: number;
 }
 
 interface CabinetBrowserProps {
   items: CabinetItem[];
   profile: PlayerProfile;
-  selectedItemId?: string;
-  onSelectItem: (itemId: string) => void;
-  onClearCabinetItem: (itemId: string) => void;
-  onSetCabinetItem: (itemId: string) => void;
-  onSellCabinetItem: (refId: string, quantity: number) => void;
+  onSellAllCabinetItems: () => void;
 }
 
 export function CabinetBrowser({
   items,
   profile,
-  selectedItemId,
-  onSelectItem,
-  onClearCabinetItem,
-  onSetCabinetItem,
-  onSellCabinetItem
+  onSellAllCabinetItems
 }: CabinetBrowserProps): JSX.Element {
   const [typeFilter, setTypeFilter] = useState<BidKingItemTypeFilterId>('all');
-  const inventoryEntries = buildCabinetInventoryEntries(items, profile.inventory)
+  const [selectedInventoryKey, setSelectedInventoryKey] = useState<string>();
+  const [sellAllConfirmOpen, setSellAllConfirmOpen] = useState(false);
+  const allInventoryEntries = useMemo(
+    () => buildCabinetInventoryEntries(items, profile.inventory),
+    [items, profile.inventory]
+  );
+  const inventoryEntries = allInventoryEntries
     .filter((entry) => itemMatchesItemTypeFilter(entry.item.id, typeFilter, 'warehouse'));
-  const selectedEntry =
-    inventoryEntries.find((entry) => entry.item.id === selectedItemId || entry.refId === selectedItemId) ??
-    inventoryEntries[0];
-  const selectedItem = selectedEntry?.item;
-  if (!selectedItem || !selectedEntry) {
-    return (
-      <div className="cabinet-browser">
-        <ItemTypeFilterStrip selected={typeFilter} scope="warehouse" onSelect={setTypeFilter} />
-        <div className="empty-state-panel">
-          <Archive size={28} />
-          <strong>珍阁还没有藏品</strong>
-          <p>打完一局后，竞得仓库内的藏品会先进入这里，再由掌柜出售入账。</p>
-        </div>
-      </div>
-    );
+  const selectedEntry = selectedInventoryKey
+    ? allInventoryEntries.find((entry) => entry.inventory.key === selectedInventoryKey)
+    : undefined;
+  const saleQuote = quoteSellAll(allInventoryEntries);
+  const hasInventory = allInventoryEntries.length > 0;
+  const hasFilteredInventory = inventoryEntries.length > 0;
+
+  useEffect(() => {
+    setSelectedInventoryKey(undefined);
+    setSellAllConfirmOpen(false);
+  }, [profile.playerId]);
+
+  useEffect(() => {
+    if (selectedInventoryKey && !allInventoryEntries.some((entry) => entry.inventory.key === selectedInventoryKey)) {
+      setSelectedInventoryKey(undefined);
+    }
+  }, [allInventoryEntries, selectedInventoryKey]);
+
+  function confirmSellAll(): void {
+    setSellAllConfirmOpen(false);
+    setSelectedInventoryKey(undefined);
+    onSellAllCabinetItems();
   }
-  const activeCabinet = selectedItem ? cabinetForItem(selectedItem) : undefined;
-  const placement = selectedItem && activeCabinet ? cabinetPlacementForItem(selectedItem, activeCabinet) : undefined;
-  const wareHouse = bidKingWareHouses[0];
-  const cabinetSet = new Set(profile.cabinetItemIds ?? []);
-  const selectedIsPlaced = cabinetSet.has(selectedItem.id);
-  const canPlaceSelected = !selectedIsPlaced && (placement?.accepted ?? true);
-  const selectedVariants = items.filter((item) => codexGroupKey(item) === codexGroupKey(selectedItem));
-  const ownedIds = new Set(inventoryEntries.map((entry) => entry.item.id));
-  const canSellSelected = selectedEntry.flags.saleable && selectedEntry.quantity > 0;
-  const salePrice = compatItemForDefinition(selectedItem)?.base_value ?? selectedItem.value;
+
   return (
-    <div className="cabinet-browser">
-      {activeCabinet && (
-        <section className="cabinet-config-strip">
-          <strong>{bidKingCabinetDisplayName(activeCabinet)}</strong>
-          <span>{bidKingCabinetDisplayDesc(activeCabinet)}{wareHouse ? ' · 藏品背包' : ''}</span>
-          <em>{inventoryEntries.length} 类库存 · {qualityRequirementLabel(activeCabinet.quality_requirement)} · {cabinetPlaceLimit(activeCabinet)} 件陈列</em>
-        </section>
-      )}
+    <div className={`cabinet-browser warehouse-view ${selectedEntry ? 'has-detail' : ''}`}>
+      <section className="cabinet-warehouse-summary">
+        <div>
+          <span>杂货柜</span>
+          <strong>主仓库</strong>
+        </div>
+        <div className="warehouse-stat-strip">
+          <span>{allInventoryEntries.length} 类藏品</span>
+          <span>{totalQuantity(allInventoryEntries)} 件库存</span>
+          <span>{formatCoins(saleQuote.totalCoins)} 可入账</span>
+        </div>
+      </section>
+
       <ItemTypeFilterStrip selected={typeFilter} scope="warehouse" onSelect={setTypeFilter} />
-      <div className="cabinet-browser-grid">
-        {inventoryEntries.map((entry) => {
-          const itemIcon = itemIconForKey(entry.item.iconKey);
-          const shapeKey = shapeKeyForItem(entry.item);
-          return (
+
+      <div className="cabinet-warehouse-stage">
+        <section className="cabinet-warehouse-panel">
+          <div className="cabinet-warehouse-panel-header">
+            <strong>主仓库</strong>
+            <span>{inventoryEntries.length}/{allInventoryEntries.length}</span>
+          </div>
+          {!hasInventory && (
+            <div className="empty-state-panel warehouse-empty">
+              <Archive size={28} />
+              <strong>仓库暂无藏品</strong>
+              <p>打完一局后，拍下来的藏品会进入这里，出售后再入账。</p>
+            </div>
+          )}
+          {hasInventory && !hasFilteredInventory && (
+            <div className="empty-state-panel warehouse-empty">
+              <Archive size={28} />
+              <strong>当前分类没有藏品</strong>
+              <p>切换筛选后可以查看其它库存。</p>
+            </div>
+          )}
+          {hasFilteredInventory && (
+            <div className="cabinet-browser-grid warehouse-grid">
+              {inventoryEntries.map((entry) => {
+                const itemIcon = itemIconForKey(entry.item.iconKey);
+                const shapeKey = shapeKeyForItem(entry.item);
+                return (
+                  <button
+                    className={`cabinet-browser-slot rarity-${entry.item.rarity} shape-${shapeKey} ${selectedEntry?.inventory.key === entry.inventory.key ? 'selected' : ''}`}
+                    key={entry.inventory.key}
+                    onClick={() => setSelectedInventoryKey(entry.inventory.key)}
+                    style={itemGridSpan(entry.item)}
+                    type="button"
+                  >
+                    {itemIcon ? <img src={itemIcon} alt="" loading="lazy" /> : <Crown size={18} />}
+                    <strong>{entry.item.name}</strong>
+                    <span>x{entry.quantity}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {selectedEntry && (
+          <aside className="warehouse-detail-panel" aria-label="藏品详情">
             <button
-              className={`cabinet-browser-slot rarity-${entry.item.rarity} shape-${shapeKey} ${selectedEntry?.inventory.key === entry.inventory.key ? 'selected' : ''}`}
-              key={entry.inventory.key}
-              onClick={() => onSelectItem(entry.item.id)}
-              style={itemGridSpan(entry.item)}
+              aria-label="关闭藏品详情"
+              className="warehouse-detail-close"
+              onClick={() => setSelectedInventoryKey(undefined)}
               type="button"
             >
-              {itemIcon ? <img src={itemIcon} alt="" loading="lazy" /> : <Crown size={18} />}
-              <strong>{entry.item.name}</strong>
-              <span>{rarityName(entry.item.rarity)} · {shapeKey} · x{entry.quantity}</span>
+              <X size={20} />
             </button>
-          );
-        })}
+            <div className="warehouse-detail-topline">
+              <span>《{selectedEntry.item.name}》</span>
+              <strong>{formatCoins(selectedEntry.item.value)}</strong>
+            </div>
+            <ItemDetailView item={selectedEntry.item} unlocked />
+            <section className="detail-block warehouse-selected-meta">
+              <strong>仓库信息</strong>
+              <div className="detail-stat-grid compact">
+                <DetailStat label="库存" value={`x${selectedEntry.quantity}`} />
+                <DetailStat
+                  label="出售价"
+                  value={canSellEntry(selectedEntry) ? formatCoins(salePriceForEntry(selectedEntry)) : '不可出售'}
+                />
+                <DetailStat label="品质" value={`${selectedEntry.source.item_quality}`} />
+                <DetailStat label="占格" value={shapeKeyForItem(selectedEntry.item)} />
+              </div>
+            </section>
+          </aside>
+        )}
       </div>
-      <ItemDetailView
-        item={selectedItem}
-        unlocked
-        variantItems={selectedVariants}
-        unlockedIds={ownedIds}
-        selectedItemId={selectedItem.id}
-        onSelectItem={onSelectItem}
-      />
-      <section className="detail-block">
-        <strong>出售入账</strong>
-        <p>
-          当前库存 {selectedEntry.quantity} 件，单件出售 {salePrice.toLocaleString()} 铜钱。出售后会从珍阁扣除库存并写入账本。
-        </p>
-        <div className="cabinet-action-row">
-          <button disabled={!canSellSelected} onClick={() => onSellCabinetItem(selectedEntry.refId, 1)} type="button">
-            {canSellSelected ? `出售 1 件` : '不可出售'}
-          </button>
-          <button disabled={!canSellSelected || selectedEntry.quantity <= 1} onClick={() => onSellCabinetItem(selectedEntry.refId, selectedEntry.quantity)} type="button">
-            全部出售
-          </button>
+
+      <footer className="cabinet-sale-footer">
+        <div className="cabinet-sale-summary">
+          <span>可出售 {saleQuote.itemCount} 件</span>
+          <strong>{formatCoins(saleQuote.totalCoins)}</strong>
         </div>
-      </section>
-      <section className="detail-block">
-        <strong>陈列状态</strong>
-        <p>
-          当前收藏柜已陈列 {(profile.cabinetItemIds ?? []).length}/{activeCabinet ? cabinetPlaceLimit(activeCabinet) : '-'} 件，
-          珍阁分类、品质门槛与容量已按珍宝局柜阁规则核验。
-        </p>
-        {placement && !placement.accepted && <p className="cabinet-placement-warning">{placement.reason}</p>}
-        <div className="cabinet-action-row">
-          <button disabled={!canPlaceSelected} onClick={() => onSetCabinetItem(selectedItem.id)} type="button">
-            {cabinetButtonLabel(selectedIsPlaced, placement)}
-          </button>
-          <button disabled={!selectedIsPlaced} onClick={() => onClearCabinetItem(selectedItem.id)} type="button">
-            移出陈列
-          </button>
+        <button
+          className="cabinet-sale-button"
+          disabled={saleQuote.itemCount <= 0}
+          onClick={() => setSellAllConfirmOpen(true)}
+          type="button"
+        >
+          <Coins size={18} />
+          出售
+        </button>
+      </footer>
+
+      {sellAllConfirmOpen && (
+        <div className="warehouse-confirm-backdrop" role="presentation">
+          <div aria-modal="true" className="warehouse-confirm-dialog" role="dialog">
+            <strong>出售全部藏品</strong>
+            <p>
+              将出售 {saleQuote.itemCount} 件可出售藏品，预计入账 {formatCoins(saleQuote.totalCoins)}。
+              不可出售或高品质藏品会保留在仓库。
+            </p>
+            <div className="warehouse-confirm-actions">
+              <button onClick={() => setSellAllConfirmOpen(false)} type="button">取消</button>
+              <button disabled={saleQuote.itemCount <= 0} onClick={confirmSellAll} type="button">确认出售</button>
+            </div>
+          </div>
         </div>
-      </section>
+      )}
     </div>
   );
 }
 
 function ItemDetailView({
   item,
-  unlocked,
-  variantItems = [],
-  unlockedIds,
-  selectedItemId,
-  onSelectItem
+  unlocked
 }: {
   item: CabinetItem;
   unlocked: boolean;
-  variantItems?: CabinetItem[];
-  unlockedIds?: Set<string>;
-  selectedItemId?: string;
-  onSelectItem?: (itemId: string) => void;
 }): JSX.Element {
   const itemIcon = itemIconForKey(item.iconKey);
   const setName = item.setId ? gameConfig.sets.find((set) => set.id === item.setId)?.name : undefined;
@@ -179,8 +224,8 @@ function ItemDetailView({
       <div className="detail-stat-grid">
         <DetailStat label="稀有度" value={rarityName(item.rarity)} />
         <DetailStat label="品类" value={unlocked ? item.category : '待揭示'} />
-        <DetailStat label="真值" value={unlocked ? item.value.toLocaleString() : '待揭示'} />
-        <DetailStat label="展示估值" value={unlocked ? item.displayValue.toLocaleString() : '待揭示'} />
+        <DetailStat label="真值" value={unlocked ? formatCoins(item.value) : '待揭示'} />
+        <DetailStat label="展示估值" value={unlocked ? formatCoins(item.displayValue) : '待揭示'} />
         {item.collectionCoinPerHour !== undefined && (
           <DetailStat label="基础收益" value={unlocked ? `${item.collectionCoinPerHour.toFixed(1)}/小时` : '待揭示'} />
         )}
@@ -191,27 +236,6 @@ function ItemDetailView({
         <strong>{unlocked ? '拍卖提示' : '解锁提示'}</strong>
         <p>{unlocked ? itemPlayTip(item) : '珍宝谱保留未点亮位置，方便掌柜知道仍有目标可追。单个藏品点亮后即可在这里查看完整详情。'}</p>
       </section>
-      {variantItems.length > 1 && unlockedIds && onSelectItem && (
-        <section className="variant-block">
-          <strong>数值变体</strong>
-          <div className="variant-grid">
-            {variantItems.map((variant) => {
-              const variantUnlocked = unlockedIds.has(variant.id);
-              return (
-                <button
-                  className={`variant-chip ${selectedItemId === variant.id ? 'selected' : ''} ${variantUnlocked ? '' : 'locked'}`}
-                  key={variant.id}
-                  onClick={() => onSelectItem(variant.id)}
-                  type="button"
-                >
-                  <span>{itemVariantLabel(variant)}</span>
-                  <strong>{variantUnlocked ? `${variant.value.toLocaleString()} · ${shapeKeyForItem(variant)}` : '未点亮'}</strong>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
     </article>
   );
 }
@@ -223,11 +247,6 @@ function DetailStat({ label, value }: { label: string; value: string }): JSX.Ele
       <strong>{value}</strong>
     </span>
   );
-}
-
-function codexGroupKey(item: CabinetItem): string {
-  const generated = /^item_(\d{3})_/.exec(item.id);
-  return generated?.[1] ? `generated_${generated[1]}` : item.id;
 }
 
 function buildCabinetInventoryEntries(
@@ -246,6 +265,7 @@ function buildCabinetInventoryEntries(
       item,
       refId: entry.refId,
       quantity: entry.quantity,
+      source,
       flags: bidKingItemRuntimeFlags(source)
     }];
   }).sort((left, right) => (
@@ -253,6 +273,27 @@ function buildCabinetInventoryEntries(
     right.quantity - left.quantity ||
     left.item.name.localeCompare(right.item.name)
   ));
+}
+
+function quoteSellAll(entries: CabinetInventoryEntry[]): SaleQuote {
+  const sellableEntries = entries.filter(canSellEntry);
+  return {
+    entries: sellableEntries,
+    itemCount: totalQuantity(sellableEntries),
+    totalCoins: sellableEntries.reduce((sum, entry) => sum + salePriceForEntry(entry) * entry.quantity, 0)
+  };
+}
+
+function canSellEntry(entry: CabinetInventoryEntry): boolean {
+  return entry.quantity > 0 && entry.flags.saleable && entry.source.item_quality < 7;
+}
+
+function salePriceForEntry(entry: CabinetInventoryEntry): number {
+  return Math.max(0, Math.floor(entry.source.base_value));
+}
+
+function totalQuantity(entries: readonly CabinetInventoryEntry[]): number {
+  return entries.reduce((sum, entry) => sum + entry.quantity, 0);
 }
 
 function canonicalItemId(raw: string): string {
@@ -269,66 +310,8 @@ function bidKingItemByInventoryRef(refId: string): BidKingItemRow | undefined {
   return Number.isFinite(sourceId) ? bidKingCompatItems.find((row) => row.id === sourceId) : undefined;
 }
 
-function itemVariantLabel(item: CabinetItem): string {
-  const generated = /^item_\d{3}_(junk|common|fine|rare|legendary|fake)_([abcd])$/.exec(item.id);
-  if (!generated) {
-    return item.name;
-  }
-  const variantNames: Record<string, string> = { a: '甲', b: '乙', c: '丙', d: '丁' };
-  return `${rarityName(generated[1] as Rarity)}·${variantNames[generated[2]!] ?? generated[2]}`;
-}
-
 function shapeKeyForItem(item: Pick<CabinetItem, 'footprint'>): string {
   return `${item.footprint.w}x${item.footprint.h}`;
-}
-
-function compatItemForDefinition(item: Pick<CabinetItem, 'id'>): BidKingItemRow | undefined {
-  const match = /^compat_(\d+)/.exec(item.id);
-  const sourceId = match?.[1] ? Number(match[1]) : undefined;
-  return sourceId ? bidKingCompatItems.find((row) => row.id === sourceId) : undefined;
-}
-
-function cabinetForItem(item: Pick<CabinetItem, 'id'>): (typeof bidKingCabinets)[number] | undefined {
-  const source = compatItemForDefinition(item);
-  if (!source) {
-    return bidKingCabinets[0];
-  }
-  return bidKingCabinets.find((cabinet) => source.item_type_ids.some((typeId) => cabinet.location_type.includes(typeId)))
-    ?? bidKingCabinets[0];
-}
-
-function cabinetPlacementForItem(
-  item: Pick<CabinetItem, 'id'>,
-  cabinet: (typeof bidKingCabinets)[number]
-): { accepted: boolean; reason?: string } {
-  const source = compatItemForDefinition(item);
-  if (!source || cabinet.quality_requirement.length === 0 || cabinet.quality_requirement.includes(source.item_quality)) {
-    return { accepted: true };
-  }
-  return {
-    accepted: false,
-    reason: `品质 ${source.item_quality} 未达到 ${bidKingCabinetDisplayName(cabinet)} 要求：${cabinet.quality_requirement.join('/')}`
-  };
-}
-
-function cabinetButtonLabel(selectedIsPlaced: boolean, placement?: { accepted: boolean }): string {
-  if (selectedIsPlaced) {
-    return '已陈列';
-  }
-  if (placement && !placement.accepted) {
-    return '品质不足';
-  }
-  return '陈列该藏品';
-}
-
-function cabinetPlaceLimit(cabinet: (typeof bidKingCabinets)[number]): number {
-  const placeMax = cabinet.place_max > 0 ? cabinet.place_max : 15;
-  const maxSlotLimit = cabinet.max_slot_limit > 0 ? cabinet.max_slot_limit : placeMax;
-  return Math.min(placeMax, maxSlotLimit);
-}
-
-function qualityRequirementLabel(qualityRequirement: readonly number[]): string {
-  return qualityRequirement.length > 0 ? `${qualityRequirement.join('-')} 品质` : '不限品质';
 }
 
 function itemGridSpan(item: Pick<CabinetItem, 'footprint'>): CSSProperties {
@@ -363,4 +346,8 @@ function rarityName(rarity: Rarity): string {
     fake: '特殊'
   };
   return names[rarity];
+}
+
+function formatCoins(value: number): string {
+  return `${Math.max(0, Math.floor(value)).toLocaleString()} 铜钱`;
 }

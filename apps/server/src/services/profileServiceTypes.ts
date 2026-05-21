@@ -33,6 +33,7 @@ export interface ProfileService {
   claimLevelReward(playerId: string, level: number): ProfileSnapshot;
   applyMatchSummary(playerId: string, summary: FinalMatchSummary): ProfileSnapshot;
   sellInventoryItem(playerId: string, refId: string, quantity: number): ProfileSnapshot;
+  sellAllInventoryItems(playerId: string): ProfileSnapshot;
   buyShopItem(playerId: string, shopItemId: number): ProfileSnapshot;
   refreshShop(playerId: string, shopId?: number): ProfileSnapshot;
   setShopItemCollection(playerId: string, itemId: number, collected: boolean): ProfileSnapshot;

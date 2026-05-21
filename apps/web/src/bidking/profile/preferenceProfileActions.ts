@@ -11,6 +11,7 @@ export interface PreferenceProfileActions {
   clearCabinetItem: (itemId: string) => void;
   setCabinetItem: (itemId: string) => void;
   sellCabinetItem: (refId: string, quantity: number) => void;
+  sellAllCabinetItems: () => void;
   updateProfileSettings: (settings: Record<string, string | number | boolean>) => void;
 }
 
@@ -45,6 +46,9 @@ export function createPreferenceProfileActions(postProfileAction: PostProfileAct
     },
     sellCabinetItem: (refId, quantity) => {
       postProfileAction('/api/cabinet/sell', { refId, quantity });
+    },
+    sellAllCabinetItems: () => {
+      postProfileAction('/api/cabinet/sell-all', {});
     },
     updateProfileSettings: (settings) => {
       postProfileAction('/api/profile/settings', { settings });
