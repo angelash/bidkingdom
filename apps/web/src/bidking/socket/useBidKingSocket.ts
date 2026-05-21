@@ -47,6 +47,15 @@ export function useBidKingSocket({ serverUrl, onProfileUpdated, profileId, sessi
   }, [onProfileUpdated]);
 
   useEffect(() => {
+    const clearActiveMatchState = (message?: string): void => {
+      activeRoomCodeRef.current = undefined;
+      setRoom(undefined);
+      setSnapshot(undefined);
+      setSelfPlayerId(undefined);
+      if (message) {
+        setToast(message);
+      }
+    };
     const nextSocket: BidKingSocket = io(serverUrl, {
       transports: ['websocket'],
       auth: sessionToken ? { sessionToken } : undefined
@@ -56,22 +65,25 @@ export function useBidKingSocket({ serverUrl, onProfileUpdated, profileId, sessi
       const savedSession = loadSession();
       if (savedSession && profileId && savedSession.playerId !== profileId) {
         clearSession();
+        clearActiveMatchState('账号会话已切换，请重新开局');
         return;
       }
-      if (savedSession) {
-        activeRoomCodeRef.current = savedSession.roomCode.trim().toUpperCase();
-        nextSocket.emit('rejoinRoom', savedSession, (ack) => {
-          if (!ack.ok) {
-            activeRoomCodeRef.current = undefined;
-            clearSession();
-            return;
-          }
-          activeRoomCodeRef.current = ack.room.code;
-          setSelfPlayerId(ack.selfPlayerId);
-          setRoom(ack.room);
-          setToast(`已重连房间 ${ack.room.code}`);
-        });
+      if (!savedSession) {
+        clearActiveMatchState();
+        return;
       }
+      activeRoomCodeRef.current = savedSession.roomCode.trim().toUpperCase();
+      nextSocket.emit('rejoinRoom', savedSession, (ack) => {
+        if (!ack.ok) {
+          clearSession();
+          clearActiveMatchState(`${ack.error}，请重新开局`);
+          return;
+        }
+        activeRoomCodeRef.current = ack.room.code;
+        setSelfPlayerId(ack.selfPlayerId);
+        setRoom(ack.room);
+        setToast(`已重连房间 ${ack.room.code}`);
+      });
     });
     nextSocket.on('disconnect', () => setConnected(false));
     nextSocket.on('roomUpdated', (nextRoom) => {
