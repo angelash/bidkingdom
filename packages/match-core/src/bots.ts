@@ -2,6 +2,7 @@ import type { GameConfig } from '@bitkingdom/config';
 import { Emoji, Hero, RankAi, bidKingRawTableDisplayName } from '@bitkingdom/bidking-compat';
 import type { AuctionMode, Clue, Rarity, SkillId, WarehouseSlotView } from '@bitkingdom/shared';
 import { getBidKingCloseThreshold } from './bidking/compatRuntime';
+import { createRandom, hashSeed } from './random';
 import { calculateNetWorth, sumItemValue } from './scoring';
 import type { MatchRuntimeState, RuntimePlayer, RuntimeRound } from './types';
 
@@ -458,7 +459,7 @@ function finalVisibleEstimate(params: {
     (params.clueEstimate ?? params.publicEstimate) * clueWeight +
     (params.slotEstimate ?? params.publicEstimate) * slotWeight;
   const appetiteBoost = 0.94 + params.riskAppetite * 0.16;
-  return Math.max(0, Math.round(weighted * appetiteBoost * (1 - params.riskPenalty)));
+  return Math.max(0, Math.round(weighted * appetiteBoost * (1 - params.riskPenalty * 0.45)));
 }
 
 function maxBidForAssessment(
@@ -472,13 +473,16 @@ function maxBidForAssessment(
   minIncrement: number
 ): number {
   const corePressure = coreMode
-    ? 0.06 + Math.min(round.index, 4) * 0.045 + tuning.riskAppetite * 0.05
+    ? 0.1 + Math.min(round.index, 4) * 0.055 + tuning.bidAggression * 0.06
     : 0;
   const finalPressure = round.index >= 4 ? 0.06 + tuning.riskAppetite * 0.05 : 0;
   const confidenceFactor = 0.82 + confidence * 0.24;
-  const styleBase = coreMode ? 0.86 : 0.72;
+  const styleBase = coreMode ? 0.92 : 0.72;
   const styleFactor = styleBase + tuning.bidAggression * 0.2 + tuning.overpayTolerance * 0.24 + corePressure + finalPressure;
-  const riskFactor = 1 - riskPenalty * (confidence < 0.48 ? 0.9 : 0.55);
+  const riskScale = coreMode
+    ? (confidence < 0.48 ? 0.45 : 0.25)
+    : confidence < 0.48 ? 0.9 : 0.55;
+  const riskFactor = 1 - riskPenalty * riskScale;
   const raw = estimate * confidenceFactor * styleFactor * riskFactor;
   return floorToIncrement(Math.min(availableCash, raw), minIncrement);
 }
@@ -505,15 +509,16 @@ function targetBidForAssessment(params: {
     : round.auctionMode === 'flash'
       ? -0.08
       : 0;
-  const riskAdjustment = -riskPenalty * 0.35;
+  const riskAdjustment = -riskPenalty * (state.coreMode ? 0.16 : 0.35);
   const commitment = clamp(
     roundCommitment + rankAdjustment + confidenceAdjustment + aggressionAdjustment + pkAdjustment + modeAdjustment + riskAdjustment,
-    0.32,
-    round.index >= 4 ? 1.16 : 1.02
+    state.coreMode ? 0.44 : 0.32,
+    round.index >= 4 ? 1.2 : state.coreMode ? 1.1 : 1.02
   );
-  const tableAnchor = estimate * clamp(tuning.minBidRatio / 1000, 0.35, 1.35);
+  const tableRatio = clamp(tuning.minBidRatio / 1000, state.coreMode ? 0.62 : 0.35, 1.35);
+  const tableAnchor = estimate * tableRatio;
   const rawTarget = state.coreMode
-    ? estimate * commitment * 0.9 + tableAnchor * 0.1
+    ? estimate * commitment * 0.62 + tableAnchor * 0.38
     : estimate * commitment * 0.78 + tableAnchor * 0.22;
   const competitiveFloor = state.coreMode
     ? estimate * coreCompetitiveBidFloorRatio(round, tuning, confidence, riskPenalty)
@@ -532,9 +537,9 @@ function commitmentForRound(state: MatchRuntimeState, round: RuntimeRound): numb
   if (!state.coreMode) {
     return round.auctionMode === 'flash' ? 0.82 : 0.94;
   }
-  const coreCommitment = [0.58, 0.72, 0.84, 0.96, 1.06];
+  const coreCommitment = [0.66, 0.8, 0.92, 1.04, 1.12];
   if (round.index >= 5) {
-    return 1.08;
+    return 1.14;
   }
   return coreCommitment[Math.max(0, Math.min(round.index, coreCommitment.length - 1))] ?? 0.9;
 }
@@ -545,17 +550,17 @@ function coreCompetitiveBidFloorRatio(
   confidence: number,
   riskPenalty: number
 ): number {
-  const baseByRound = [0.46, 0.62, 0.74, 0.84, 0.93];
-  const base = baseByRound[Math.max(0, Math.min(round.index, baseByRound.length - 1))] ?? 0.93;
+  const baseByRound = [0.56, 0.7, 0.82, 0.92, 1];
+  const base = baseByRound[Math.max(0, Math.min(round.index, baseByRound.length - 1))] ?? 1;
   const confidenceAdjustment = clamp((confidence - 0.5) * 0.18, -0.05, 0.08);
   const aggressionAdjustment = clamp(
     (tuning.bidAggression - 0.5) * 0.12 + (clamp(tuning.pkRatio / 1000, 0.4, 1.8) - 1) * 0.05,
     -0.04,
     0.08
   );
-  const riskAdjustment = riskPenalty * 0.22;
-  const roundCeiling = round.index >= 4 ? 1.02 : 0.92;
-  return clamp(base + confidenceAdjustment + aggressionAdjustment - riskAdjustment, 0.38, roundCeiling);
+  const riskAdjustment = riskPenalty * 0.1;
+  const roundCeiling = round.index >= 4 ? 1.08 : 1;
+  return clamp(base + confidenceAdjustment + aggressionAdjustment - riskAdjustment, 0.48, roundCeiling);
 }
 
 function previousRankAdjustment(previous: PreviousRoundSignal | undefined, confidence: number): number {
@@ -586,7 +591,7 @@ function shouldBidAtFloor(
   }
   const edgeRatio = round.auctionMode === 'second_price'
     ? -0.02
-    : 0.025 + riskPenalty * 0.42 + (1 - confidence) * 0.08;
+    : 0.025 + riskPenalty * 0.18 + (1 - confidence) * 0.05;
   if (round.auctionMode === 'flash' && confidence < 0.34 && riskPenalty > 0.18) {
     return false;
   }
@@ -708,9 +713,12 @@ function chooseAuctionAction(context: BotContext): BotAction {
 }
 
 function chooseOpenAuctionAction(context: BotContext): BotAction {
-  const { round, player, assessment } = context;
+  const { state, round, player, assessment } = context;
   if (round.currentLeaderId === player.id) {
     return idleEmoteAction(context, 'Bot holds current open-auction lead');
+  }
+  if (state.coreMode && round.bids.some((bid) => bid.playerId === player.id)) {
+    return idleEmoteAction(context, 'Bot already submitted core open-auction bid');
   }
   if (player.passed) {
     return idleEmoteAction(context, 'Bot already passed this open auction');
@@ -744,6 +752,16 @@ function openBidAmount(context: BotContext): number {
     closeBid <= assessment.maxBid &&
     closeBid <= Math.max(assessment.targetBid, nextBid) * 1.12 &&
     (round.index >= 3 || assessment.confidence > 0.62 || tuning.bidAggression > 0.68);
+  if (state.coreMode) {
+    const anchoredTarget = Math.max(nextBid, assessment.targetBid);
+    const pressureTarget = shouldPressureClose && closeBid !== undefined
+      ? Math.max(anchoredTarget, closeBid)
+      : anchoredTarget;
+    const amount = ceilToIncrement(Math.min(assessment.maxBid, pressureTarget), state.config.rules.minIncrement);
+    return amount >= nextBid && shouldBidAtFloor(assessment.estimate, amount, assessment.confidence, assessment.riskPenalty, round)
+      ? amount
+      : 0;
+  }
   if (shouldPressureClose) {
     return ceilToIncrement(closeBid, state.config.rules.minIncrement);
   }
@@ -835,8 +853,8 @@ function botTuningForPlayer(
     bluffChance: row.bluff_chance,
     overpayTolerance: row.overpay_tolerance,
     bidAggression: row.bid_aggression,
-    minBidRatio: weightedRangeValue(row.min_bid_ratio, state, 850),
-    pkRatio: weightedRangeValue(row.bid_pk, state, 1000),
+    minBidRatio: weightedRangeValue(row.min_bid_ratio, state, 850, `${player.id}:${row.id}:min_bid_ratio`),
+    pkRatio: weightedRangeValue(row.bid_pk, state, 1000, `${player.id}:${row.id}:bid_pk`),
     itemUseProbability: row.item_use_probability
   };
 }
@@ -856,7 +874,8 @@ function rankAiRowForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
 function weightedRangeValue(
   ranges: readonly (readonly number[])[],
   state: MatchRuntimeState,
-  fallback: number
+  fallback: number,
+  salt?: string
 ): number {
   const candidates = ranges
     .filter((range) => range.length >= 2)
@@ -869,8 +888,9 @@ function weightedRangeValue(
   if (candidates.length === 0) {
     return fallback;
   }
-  const selected = state.rng.weighted(candidates.map((candidate) => ({ item: candidate, weight: candidate.weight })));
-  return state.rng.int(selected.min, selected.max);
+  const rng = salt ? createRandom(hashSeed(`${state.id}:${state.roundIndex}:${salt}`)) : state.rng;
+  const selected = rng.weighted(candidates.map((candidate) => ({ item: candidate, weight: candidate.weight })));
+  return rng.int(selected.min, selected.max);
 }
 
 function bidFloorForRound(state: MatchRuntimeState, player: RuntimePlayer, round: RuntimeRound): number {

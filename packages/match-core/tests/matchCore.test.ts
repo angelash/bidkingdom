@@ -362,6 +362,64 @@ describe('match core', () => {
     }));
   });
 
+  it('lets core open bots submit target-sized bids instead of minimum increments', () => {
+    const match = createMatch({
+      id: 'core_open_match',
+      seed: 24680,
+      players: [
+        { id: 'p1', name: '甲', kind: 'human', roleId: gameConfig.roles[0]!.id },
+        { id: 'p2', name: '乙', kind: 'human', roleId: gameConfig.roles[1]!.id },
+        { id: 'b1', name: '丙', kind: 'bot', roleId: gameConfig.roles[2]!.id },
+        { id: 'b2', name: '丁', kind: 'bot', roleId: gameConfig.roles[3]!.id }
+      ],
+      totalRounds: 5,
+      coreMode: true,
+      coreAuctionMode: 'open',
+      config: gameConfig,
+      now: 1000
+    });
+    match.players.forEach((player) => {
+      player.cash = 1_000_000;
+    });
+    startNextRound(match, 2000);
+    const round = match.currentRound!;
+    round.auctionMode = 'open';
+    round.container.publicInfo.estimateMin = 900_000;
+    round.container.publicInfo.estimateMax = 1_000_000;
+    round.container.publicInfo.risk = 'high';
+    round.container.minimumBid = 267_000;
+    round.warehouseSlots = [];
+    round.container.publicClues = [];
+    setRoundPhase(match, 'auction', 30000, 3000);
+    submitBid(match, 'p1', 300_000, 3100);
+
+    const bot = match.players.find((player) => player.id === 'b1')!;
+    bot.skillCooldown = 1;
+    bot.skillUsesRemaining = 0;
+    const action = chooseBotAction(match, 'b1', 'aggressive');
+
+    expect(action.type).toBe('bid');
+    expect(action.audit?.nextOpenBid).toBe(301_000);
+    expect(action.audit?.targetBid).toBeGreaterThan(390_000);
+    expect(action.amount ?? 0).toBeGreaterThanOrEqual(action.audit?.targetBid ?? 0);
+    expect(action.amount ?? 0).toBeGreaterThan(action.audit?.nextOpenBid ?? 0);
+  });
+
+  it('does not make core open bots rebid after their one-shot quote', () => {
+    const match = makeCoreMatch();
+    const round = match.currentRound!;
+    round.auctionMode = 'open';
+    round.container.minimumBid = 100_000;
+    setRoundPhase(match, 'auction', 30000, 3000);
+    submitBid(match, 'b1', 220_000, 3100);
+    submitBid(match, 'b2', 260_000, 3200);
+
+    const action = chooseBotAction(match, 'b1', 'aggressive');
+
+    expect(action.type).toBe('emote');
+    expect(action.reason).toMatch(/already submitted core open-auction bid/i);
+  });
+
   it('reveals items only during reveal phase', () => {
     const match = makeMatch();
     setRoundPhase(match, 'auction', 30000, 3000);
