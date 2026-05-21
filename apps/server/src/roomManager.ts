@@ -38,6 +38,7 @@ import {
 import { createRoomBroadcastRuntime } from './domain/battle/roomBroadcastRuntime';
 import { inventoryRecord } from './domain/profile/profileInventory';
 import { createRoomRoundRuntime } from './domain/battle/roomRoundRuntime';
+import { apiErrorEnvelope } from './domain/system/errorCodeCatalog';
 import {
   snapshotRoom,
   validBidMapId,
@@ -571,9 +572,12 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
   }
 
   function emitError(socket: AppSocket, error: unknown): void {
+    const message = error instanceof Error ? error.message : '操作失败';
+    const envelope = apiErrorEnvelope(message);
+    const id = Number(envelope.errorCodeId) || 0;
     socket.emit('toast', {
-      tone: 'warning',
-      message: error instanceof Error ? error.message : '操作失败'
+      tone: id >= 100 ? 'danger' : 'warning',
+      message: `${envelope.errorCode} · ${envelope.error}`
     });
   }
 

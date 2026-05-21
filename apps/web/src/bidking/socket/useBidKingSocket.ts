@@ -8,11 +8,13 @@ import type {
   ServerToClientEvents
 } from '@bitkingdom/shared';
 import { clearSession, loadSession } from '../profile/profileSession';
+import type { GameExceptionInput } from '../system/gameExceptionRuntime';
 
 export type BidKingSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 interface UseBidKingSocketArgs {
   serverUrl: string;
+  onException?: (exception: GameExceptionInput) => void;
   onProfileUpdated: (profile: ProfileSnapshot) => void;
   profileId?: string;
   sessionToken?: string;
@@ -32,7 +34,7 @@ interface BidKingSocketRuntime {
   toast: string;
 }
 
-export function useBidKingSocket({ serverUrl, onProfileUpdated, profileId, sessionToken }: UseBidKingSocketArgs): BidKingSocketRuntime {
+export function useBidKingSocket({ serverUrl, onException, onProfileUpdated, profileId, sessionToken }: UseBidKingSocketArgs): BidKingSocketRuntime {
   const [socket, setSocket] = useState<BidKingSocket | null>(null);
   const activeRoomCodeRef = useRef<string>();
   const [connected, setConnected] = useState(false);
@@ -40,7 +42,12 @@ export function useBidKingSocket({ serverUrl, onProfileUpdated, profileId, sessi
   const [room, setRoom] = useState<RoomSnapshot>();
   const [snapshot, setSnapshot] = useState<PlayerSnapshot>();
   const [toast, setToast] = useState('准备连接拍卖场...');
+  const onExceptionRef = useRef(onException);
   const onProfileUpdatedRef = useRef(onProfileUpdated);
+
+  useEffect(() => {
+    onExceptionRef.current = onException;
+  }, [onException]);
 
   useEffect(() => {
     onProfileUpdatedRef.current = onProfileUpdated;
@@ -66,6 +73,16 @@ export function useBidKingSocket({ serverUrl, onProfileUpdated, profileId, sessi
       if (savedSession && profileId && savedSession.playerId !== profileId) {
         clearSession();
         clearActiveMatchState('账号会话已切换，请重新开局');
+        onExceptionRef.current?.({
+          action: 'return_home',
+          key: 'account-session-switched',
+          kind: 'account',
+          message: '账号会话已切换，请重新开局',
+          modal: true,
+          source: '账号',
+          title: '账号会话已切换',
+          tone: 'danger'
+        });
         return;
       }
       if (!savedSession) {
@@ -75,8 +92,19 @@ export function useBidKingSocket({ serverUrl, onProfileUpdated, profileId, sessi
       activeRoomCodeRef.current = savedSession.roomCode.trim().toUpperCase();
       nextSocket.emit('rejoinRoom', savedSession, (ack) => {
         if (!ack.ok) {
+          const message = `${ack.error}，请重新开局`;
           clearSession();
-          clearActiveMatchState(`${ack.error}，请重新开局`);
+          clearActiveMatchState(message);
+          onExceptionRef.current?.({
+            action: 'return_home',
+            key: `room-rejoin-failed:${ack.error}`,
+            kind: 'room',
+            message,
+            modal: true,
+            source: '房间重连',
+            title: '房间已失效',
+            tone: 'danger'
+          });
           return;
         }
         activeRoomCodeRef.current = ack.room.code;
@@ -85,7 +113,20 @@ export function useBidKingSocket({ serverUrl, onProfileUpdated, profileId, sessi
         setToast(`已重连房间 ${ack.room.code}`);
       });
     });
-    nextSocket.on('disconnect', () => setConnected(false));
+    nextSocket.on('disconnect', () => {
+      setConnected(false);
+      setToast('连接中断，正在尝试重连');
+      onExceptionRef.current?.({
+        action: 'request_snapshot',
+        key: 'socket-disconnected',
+        kind: 'connection',
+        message: '连接中断，正在尝试重连',
+        modal: false,
+        source: '连接',
+        title: '连接状态异常',
+        tone: 'warning'
+      });
+    });
     nextSocket.on('roomUpdated', (nextRoom) => {
       if (activeRoomCodeRef.current !== nextRoom.code) {
         return;
@@ -102,7 +143,19 @@ export function useBidKingSocket({ serverUrl, onProfileUpdated, profileId, sessi
       }
     });
     nextSocket.on('profileUpdated', (nextProfile) => onProfileUpdatedRef.current(nextProfile));
-    nextSocket.on('toast', (payload) => setToast(payload.message));
+    nextSocket.on('toast', (payload) => {
+      setToast(payload.message);
+      if (payload.tone === 'warning' || payload.tone === 'danger') {
+        onExceptionRef.current?.({
+          kind: 'server',
+          message: payload.message,
+          modal: payload.tone === 'danger',
+          source: '服务端',
+          title: '操作未完成',
+          tone: payload.tone
+        });
+      }
+    });
     setSocket(nextSocket);
     return () => {
       nextSocket.close();

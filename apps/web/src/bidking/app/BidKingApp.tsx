@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { AdminDashboard } from '../admin/AdminDashboard';
 import { AccountGate } from './AccountGate';
 import { AppTopBar } from './AppTopBar';
@@ -24,9 +24,14 @@ import { RoomLobbyRoute } from '../room/RoomLobbyRoute';
 import { useRoomActions } from '../room/useRoomActions';
 import { useReplayActions } from '../settlement/useReplayActions';
 import { useBidKingSocket } from '../socket/useBidKingSocket';
+import { GameExceptionCenter } from '../system/GameExceptionCenter';
 import { bidKingToastErrorStyle } from '../system/errorCodeStyleRuntime';
+import { useGameExceptionCenter } from '../system/useGameExceptionCenter';
 
 export function BidKingApp(): JSX.Element {
+  const exceptions = useGameExceptionCenter();
+  const { reportException } = exceptions;
+  const phaseExceptionKeyRef = useRef('');
   const {
     account,
     applyProfileSnapshot,
@@ -62,6 +67,15 @@ export function BidKingApp(): JSX.Element {
   } = useBidKingAppState();
   const now = useNow();
   const liveIntel = useLiveIntelActions();
+  const reportProfileException = useCallback((message: string): void => {
+    reportException({
+      action: 'dismiss',
+      kind: 'profile',
+      message,
+      source: '档案操作',
+      title: '操作未完成'
+    });
+  }, [reportException]);
 
   const {
     activeRoomCodeRef,
@@ -75,9 +89,18 @@ export function BidKingApp(): JSX.Element {
     snapshot,
     socket,
     toast
-  } = useBidKingSocket({ serverUrl: SERVER_URL, onProfileUpdated: applyProfileSnapshot, profileId, sessionToken });
+  } = useBidKingSocket({
+    serverUrl: SERVER_URL,
+    onException: reportException,
+    onProfileUpdated: applyProfileSnapshot,
+    profileId,
+    sessionToken
+  });
   const profileActions = useProfileActions({
-    onError: setToast,
+    onError: (message) => {
+      setToast(message);
+      reportProfileException(message);
+    },
     onProfileSnapshot: applyProfileSnapshot,
     playerId: profileId,
     sessionToken,
@@ -117,6 +140,46 @@ export function BidKingApp(): JSX.Element {
     matchState.phaseRemaining,
     snapshot?.public.currentRound?.id,
     snapshot?.public.currentRound?.phase,
+    snapshot?.public.status,
+    socket
+  ]);
+  useEffect(() => {
+    const round = snapshot?.public.currentRound;
+    if (!socket || snapshot?.public.status !== 'playing' || !round) {
+      phaseExceptionKeyRef.current = '';
+      return;
+    }
+    const phaseOverrunMs = now - round.phaseEndsAt;
+    const watchedPhase = ['warehouse_roll', 'warehouse_selected', 'auctioneer_reveal', 'intel', 'auction'].includes(round.phase);
+    if (!watchedPhase || phaseOverrunMs < 8000) {
+      phaseExceptionKeyRef.current = '';
+      return;
+    }
+    const key = `match-phase-overrun:${round.id}:${round.phase}`;
+    socket.emit('requestSnapshot');
+    if (phaseExceptionKeyRef.current === key) {
+      return;
+    }
+    phaseExceptionKeyRef.current = key;
+    reportException({
+      action: 'request_snapshot',
+      context: {
+        phase: round.phase,
+        phaseEndsAt: round.phaseEndsAt,
+        roundId: round.id
+      },
+      key,
+      kind: 'match',
+      message: `${roundPhaseLabel(round.phase)}已超时 ${Math.ceil(phaseOverrunMs / 1000)} 秒，已请求服务端重新同步。`,
+      modal: true,
+      source: '对局阶段',
+      title: '对局阶段未推进',
+      tone: 'warning'
+    });
+  }, [
+    now,
+    reportException,
+    snapshot?.public.currentRound,
     snapshot?.public.status,
     socket
   ]);
@@ -260,6 +323,34 @@ export function BidKingApp(): JSX.Element {
       )}
 
       <footer className={`toast-line ${bidKingToastErrorStyle(toast).className}`}>{toast}</footer>
+      <GameExceptionCenter
+        activeExceptions={exceptions.activeExceptions}
+        exceptionCenterOpen={exceptions.exceptionCenterOpen}
+        openException={exceptions.openException}
+        recentExceptions={exceptions.recentExceptions}
+        onDismiss={exceptions.dismissException}
+        onDismissAll={exceptions.dismissAllExceptions}
+        onOpen={exceptions.openExceptionCenter}
+        onReload={() => window.location.reload()}
+        onRequestSnapshot={() => {
+          socket?.emit('requestSnapshot');
+          setToast('已请求重新同步对局状态');
+        }}
+        onResolve={exceptions.resolveException}
+        onReturnHome={navigation.returnHome}
+        onSetOpen={exceptions.setExceptionCenterOpen}
+      />
     </main>
   );
+}
+
+function roundPhaseLabel(phase: string): string {
+  const labels: Record<string, string> = {
+    auction: '竞价阶段',
+    auctioneer_reveal: '掌眼情报阶段',
+    intel: '情报阶段',
+    warehouse_roll: '随机仓阶段',
+    warehouse_selected: '仓型确认阶段'
+  };
+  return labels[phase] ?? '对局阶段';
 }
