@@ -1,0 +1,67 @@
+{
+  "sourcePrompts": "reverse/bidking/generated_prompts/bidking_sanguo_item_prompts.json",
+  "outputRoot": "apps/web/public/art/generated/bidking/items",
+  "rawOutputRoot": "tmp/bidking-item-art/raw",
+  "reviewOutputRoot": "tmp/bidking-item-art/review",
+  "chromaKey": "#00ff00",
+  "paddingRatio": 0.1,
+  "validation": {
+    "alphaThreshold": 12,
+    "cornerSampleSize": 8,
+    "transparentCornerMaxAlpha": 12,
+    "borderOpaqueMaxPixels": 0,
+    "minOpaqueCoverage": 0.025,
+    "maxOpaqueCoverage": 0.85,
+    "minBboxFillShortAxis": 0.2,
+    "minBboxFillLongAxis": 0.35,
+    "maxBboxFillAxis": 0.98,
+    "minEdgePaddingRatio": 0.015,
+    "maxChromaResidueRatio": 0.001
+  },
+  "batches": [
+    {
+      "id": "batch-1-living-medical-fashion-food",
+      "sourceTypeIds": [100, 101, 102, 103, 109],
+      "expectedCount": 228,
+      "description": "秘藏、府邸日用、医药军需、锦衣冠服、酒食香料；先确认生活/医药/服饰/餐饮类的古代珍宝包装稳定性。"
+    },
+    {
+      "id": "batch-2-weapon-jade-antique",
+      "sourceTypeIds": [104, 105, 106],
+      "expectedCount": 179,
+      "description": "军械兵装、矿玉珠宝、文玩古器；重点处理高价值硬表面、玉石、古器轮廓。"
+    },
+    {
+      "id": "batch-3-mechanism-transport-books",
+      "sourceTypeIds": [107, 108, 110],
+      "expectedCount": 183,
+      "description": "机巧器具、车马舟楫、书画典籍；重点处理原数码/交通/书画类到古代机关、车马舟楫、卷轴典籍的映射。"
+    }
+  ],
+  "sampleItems": [
+    {
+      "itemId": 1011001,
+      "reason": "baseline 1x1 low-value household collectible"
+    },
+    {
+      "itemId": 1024003,
+      "reason": "vertical 1x2 medical-supply silhouette"
+    },
+    {
+      "itemId": 1045001,
+      "reason": "wide 5x2 weapon-and-gear collectible"
+    },
+    {
+      "itemId": 1056005,
+      "reason": "2x2 high-rarity mineral/jade collectible with income"
+    },
+    {
+      "itemId": 1074002,
+      "reason": "2x2 digital-electronics category remapped to ancient mechanism"
+    },
+    {
+      "itemId": 1106005,
+      "reason": "documented 3x2 book-and-painting reference item"
+    }
+  ]
+}

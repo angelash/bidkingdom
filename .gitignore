@@ -1,0 +1,19 @@
+# Local runtime and dependency output
+*.log
+*.pyc
+__pycache__/
+.server/
+.playwright-cli/
+node_modules/
+apps/*/dist/
+apps/*/.vite/
+apps/web/test-results/
+apps/web/playwright-report/
+tmp/
+output/
+
+# Authorized local reverse-engineering evidence.
+# Keep these files available in this workspace, but do not publish extracted
+# proprietary assets, decompiled source, or captured videos by default.
+reverse/
+doc/videos/

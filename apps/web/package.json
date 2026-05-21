@@ -1,0 +1,30 @@
+{
+  "name": "@bitkingdom/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5188 --strictPort",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4188 --strictPort",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@bitkingdom/bidking-compat": "0.1.0",
+    "@bitkingdom/config": "0.1.0",
+    "@bitkingdom/match-core": "0.1.0",
+    "@bitkingdom/shared": "0.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "socket.io-client": "^4.8.1",
+    "vite": "^5.4.21",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5"
+  }
+}

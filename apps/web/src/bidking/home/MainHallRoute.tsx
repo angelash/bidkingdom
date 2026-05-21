@@ -1,0 +1,104 @@
+import type { CoreAuctionMode, PlayerProfile } from '@bitkingdom/shared';
+import { modeForBidMapId } from '../battlePrev/bidMapRuntime';
+import type { BidKingBattleMapGroup } from '../battlePrev/BattlePrevPanelView';
+import { codexCatalogItems } from '../catalog/codexRuntime';
+import type { ProfileActions } from '../profile/useProfileActions';
+import type { RoomActions } from '../room/useRoomActions';
+import { MainHallView } from './MainHallView';
+
+interface MainHallRouteProps {
+  botCount: number;
+  coreAuctionMode: CoreAuctionMode;
+  defaultBidMapId?: number;
+  mapGroups: BidKingBattleMapGroup[];
+  playerName: string;
+  profile: PlayerProfile;
+  profileActions: ProfileActions;
+  roomActions: RoomActions;
+  selectedBidMapId?: number;
+  selectedRoleId: string;
+  serverUrl: string;
+  onSetBotCount: (value: number) => void;
+  onSetPlayerName: (value: string) => void;
+}
+
+export function MainHallRoute({
+  botCount,
+  coreAuctionMode,
+  defaultBidMapId,
+  mapGroups,
+  playerName,
+  profile,
+  profileActions,
+  roomActions,
+  selectedBidMapId,
+  selectedRoleId,
+  serverUrl,
+  onSetBotCount,
+  onSetPlayerName
+}: MainHallRouteProps): JSX.Element {
+  return (
+    <MainHallView
+      botCount={botCount}
+      catalogItems={codexCatalogItems}
+      coreAuctionMode={coreAuctionMode}
+      defaultBidMapId={defaultBidMapId}
+      mapGroups={mapGroups}
+      playerName={playerName}
+      profile={profile}
+      selectedBidMapId={selectedBidMapId}
+      selectedRoleId={selectedRoleId}
+      serverUrl={serverUrl}
+      resolveModeForBidMapId={modeForBidMapId}
+      onCreateRoom={roomActions.createRoom}
+      onSelectBidMap={roomActions.selectBidMap}
+      onSelectCoreAuctionMode={roomActions.selectCoreAuctionMode}
+      onSelectRole={roomActions.selectRole}
+      onSelectHead={profileActions.selectHead}
+      onSetCabinetItem={profileActions.setCabinetItem}
+      onClearCabinetItem={profileActions.clearCabinetItem}
+      onClaimCollectionIncome={profileActions.claimCollectionIncome}
+      onClaimReliefFund={profileActions.claimReliefFund}
+      onSelectHeroSkin={profileActions.selectHeroSkin}
+      onBuyItem={profileActions.buyShopItem}
+      onRefreshShop={profileActions.refreshShop}
+      onSetShopItemCollection={profileActions.setShopItemCollection}
+      onClaimMail={profileActions.claimMail}
+      onDeleteMail={profileActions.deleteMail}
+      onMarkMailRead={profileActions.markMailRead}
+      onClaimMissionReward={profileActions.claimMissionReward}
+      onClaimAchievementReward={profileActions.claimAchievementReward}
+      onClaimLevelReward={profileActions.claimLevelReward}
+      onClaimRankReward={profileActions.claimRankReward}
+      onCreateMarketOrder={profileActions.createMarketOrder}
+      onActOnMarketOrder={profileActions.actOnMarketOrder}
+      onEquipBattleItems={profileActions.equipBattleItems}
+      onClaimActivityReward={profileActions.claimActivityReward}
+      onClaimGiftPackage={profileActions.claimGiftPackage}
+      onCreateDemoPayOrder={profileActions.createDemoPayOrder}
+      onCompleteDemoPayOrder={profileActions.completeDemoPayOrder}
+      onCancelDemoPayOrder={profileActions.cancelDemoPayOrder}
+      onCompletePurchaseListOrder={profileActions.completePurchaseListOrder}
+      onUnlockDemoDlc={profileActions.unlockDemoDlc}
+      onAddDemoFriend={profileActions.addDemoFriend}
+      onRemoveFriend={profileActions.removeFriend}
+      onSetFriendRemark={profileActions.setFriendRemark}
+      onJoinGuild={profileActions.joinGuild}
+      onSetGuildRole={profileActions.setGuildRole}
+      onAddDemoGuildApplication={profileActions.addDemoGuildApplication}
+      onApproveGuildMember={profileActions.approveGuildMember}
+      onKickGuildMember={profileActions.kickGuildMember}
+      onUpdateGuildNotice={profileActions.updateGuildNotice}
+      onDonateGuildCoins={profileActions.donateGuildCoins}
+      onClaimAreaResource={profileActions.claimAreaResource}
+      onClaimGuildResource={profileActions.claimGuildResource}
+      onUseGuildResource={profileActions.useGuildResource}
+      onMarkNoticeRead={profileActions.markNoticeRead}
+      onCompleteGuide={profileActions.completeGuide}
+      onUpdateSettings={profileActions.updateProfileSettings}
+      onApplyLanguageName={profileActions.applyLanguageName}
+      onSetBotCount={onSetBotCount}
+      onSetPlayerName={onSetPlayerName}
+    />
+  );
+}

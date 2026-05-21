@@ -1,0 +1,18 @@
+{
+  "name": "@bitkingdom/match-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bitkingdom/bidking-compat": "0.1.0",
+    "@bitkingdom/config": "0.1.0",
+    "@bitkingdom/shared": "0.1.0"
+  }
+}

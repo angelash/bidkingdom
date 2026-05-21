@@ -1,0 +1,370 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Activity } from '@bitkingdom/bidking-compat';
+import type { AdminReviewSnapshot } from '@bitkingdom/shared';
+import { describe, expect, it } from 'vitest';
+import { createBitKingdomServer, type BitKingdomServerRuntime } from '../src/serverApp';
+
+const equivalentTables = [
+  'Access',
+  'Achievement',
+  'Activity',
+  'Area',
+  'BattleItem',
+  'BidMap',
+  'Cabinet',
+  'Condition',
+  'Constant',
+  'DirtyWords',
+  'Drop',
+  'ErrorCode',
+  'ExchangeRestock',
+  'GiftPackage',
+  'Guide',
+  'GuildArea',
+  'GuildPermissions',
+  'GuildPoints',
+  'GuildResources',
+  'Hero',
+  'Item',
+  'ItemRestock',
+  'ItemType',
+  'Language',
+  'LanguageName',
+  'LevelUp',
+  'Mail',
+  'Map',
+  'Mission',
+  'Notice',
+  'NumberTable',
+  'Rank',
+  'RankAi',
+  'RankMap',
+  'RankReward',
+  'Shop',
+  'ShopItem',
+  'Sim',
+  'Skill',
+  'SkillEffect',
+  'SkillGroup',
+  'Ticket',
+  'UIWnd',
+  'WareHouse'
+] as const;
+
+const visualSubstituteTables = ['Emoji', 'Head', 'HeroSkin', 'LanguageListen', 'Sound'] as const;
+const serviceSimulatedTables = ['Dlc', 'Pay', 'PurchaseList'] as const;
+
+async function withRouteRuntime(testBody: (runtime: BitKingdomServerRuntime) => Promise<void>): Promise<void> {
+  const previousDriver = process.env.BITKINGDOM_STORE_DRIVER;
+  const previousPath = process.env.BITKINGDOM_STORE_PATH;
+  process.env.BITKINGDOM_STORE_DRIVER = 'json';
+  process.env.BITKINGDOM_STORE_PATH = join(mkdtempSync(join(tmpdir(), 'bitkingdom-route-store-')), 'store.json');
+  const runtime = await createBitKingdomServer({ logger: false });
+  try {
+    await testBody(runtime);
+  } finally {
+    runtime.io.close();
+    await runtime.app.close();
+    restoreEnv('BITKINGDOM_STORE_DRIVER', previousDriver);
+    restoreEnv('BITKINGDOM_STORE_PATH', previousPath);
+  }
+}
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
+}
+
+describe('server routes', () => {
+  it('serves system bootstrap and config parity from modular route registration', async () => {
+    await withRouteRuntime(async ({ app }) => {
+      const health = await app.inject({ method: 'GET', url: '/health' });
+      expect(health.statusCode).toBe(200);
+      expect((JSON.parse(health.payload) as { ok: boolean }).ok).toBe(true);
+
+      const bootstrap = await app.inject({ method: 'GET', url: '/api/bootstrap' });
+      const bootstrapPayload = JSON.parse(bootstrap.payload) as { configVersion: string; system: { dirtyWordCount: number } };
+      expect(bootstrap.statusCode).toBe(200);
+      expect(bootstrapPayload.configVersion).toBe('bidking-compat-52');
+      expect(bootstrapPayload.system.dirtyWordCount).toBeGreaterThan(0);
+
+      const parity = await app.inject({ method: 'GET', url: '/api/admin/config-parity' });
+      const parityPayload = JSON.parse(parity.payload) as {
+        status: string;
+        tableCount: number;
+        rows: { table: string; runtimeStatus: string; equivalentStatus: string }[];
+      };
+      expect(parity.statusCode).toBe(200);
+      expect(parityPayload.status).toBe('ok');
+      expect(parityPayload.tableCount).toBe(52);
+      expect(parityPayload.rows.every((row) => row.runtimeStatus === 'Verified')).toBe(true);
+      expect(parityPayload.rows.some((row) => row.equivalentStatus === 'Equivalent')).toBe(true);
+      expect(parityPayload.rows.some((row) => row.equivalentStatus === 'Visual Substitute')).toBe(true);
+      expect(parityPayload.rows.some((row) => row.equivalentStatus === 'Service Simulated')).toBe(true);
+      const equivalentByTable = new Map(parityPayload.rows.map((row) => [row.table, row.equivalentStatus]));
+      expect(parityPayload.rows.filter((row) => row.equivalentStatus === 'Equivalent')).toHaveLength(44);
+      expect(parityPayload.rows.filter((row) => row.equivalentStatus === 'Visual Substitute')).toHaveLength(5);
+      expect(parityPayload.rows.filter((row) => row.equivalentStatus === 'Service Simulated')).toHaveLength(3);
+      for (const table of equivalentTables) {
+        expect(equivalentByTable.get(table)).toBe('Equivalent');
+      }
+      for (const table of visualSubstituteTables) {
+        expect(equivalentByTable.get(table)).toBe('Visual Substitute');
+      }
+      for (const table of serviceSimulatedTables) {
+        expect(equivalentByTable.get(table)).toBe('Service Simulated');
+      }
+      expect(parityPayload.rows.filter((row) => row.equivalentStatus === 'Manual Review Required')).toHaveLength(0);
+
+      const missingProfile = await app.inject({ method: 'GET', url: '/api/profile' });
+      const errorPayload = JSON.parse(missingProfile.payload) as { error: string; errorCode: string; messageKey: string };
+      expect(missingProfile.statusCode).toBe(400);
+      expect(errorPayload.error).toBe('playerId is required');
+      expect(errorPayload.errorCode).toMatch(/^CODE_/);
+      expect(errorPayload.messageKey).toMatch(/^text_ErrorCode_/);
+
+      for (const playerId of ['p_admin_profile_1', 'p_admin_profile_2', 'p_admin_profile_3']) {
+        const profile = await app.inject({ method: 'GET', url: `/api/profile?playerId=${playerId}&playerName=${playerId}` });
+        expect(profile.statusCode).toBe(200);
+      }
+      const limitedProfiles = await app.inject({ method: 'GET', url: '/api/admin/profiles?limit=2' });
+      const limitedProfilesPayload = JSON.parse(limitedProfiles.payload) as { profiles: unknown[] };
+      expect(limitedProfiles.statusCode).toBe(200);
+      expect(limitedProfilesPayload.profiles).toHaveLength(2);
+    });
+  });
+
+  it('keeps profile and economy endpoints available after route extraction', async () => {
+    await withRouteRuntime(async ({ app }) => {
+      const profile = await app.inject({
+        method: 'GET',
+        url: '/api/profile?playerId=p_route&playerName=%E6%8E%8C%E6%9F%9C%E8%B7%AF%E7%94%B1'
+      });
+      const profilePayload = JSON.parse(profile.payload) as { profile: { name: string; coins: number } };
+      expect(profile.statusCode).toBe(200);
+      expect(profilePayload.profile.name).toBe('掌柜路由');
+
+      const text = await app.inject({
+        method: 'POST',
+        url: '/api/text/validate',
+        payload: { text: 'hello dirtywords_2_1' }
+      });
+      const textPayload = JSON.parse(text.payload) as { ok: boolean; sanitized: string };
+      expect(text.statusCode).toBe(200);
+      expect(textPayload.ok).toBe(false);
+      expect(textPayload.sanitized).toBe('hello ***');
+
+      const shop = await app.inject({
+        method: 'POST',
+        url: '/api/shop/refresh',
+        payload: { playerId: 'p_route' }
+      });
+      const shopPayload = JSON.parse(shop.payload) as { profile: { shopRestocks: unknown[] } };
+      expect(shop.statusCode).toBe(200);
+      expect(shopPayload.profile.shopRestocks.length).toBeGreaterThan(0);
+
+      const activity = await app.inject({ method: 'GET', url: '/api/activity/progress?playerId=p_route' });
+      const activityPayload = JSON.parse(activity.payload) as { activities: unknown[]; redPointCount: number };
+      expect(activity.statusCode).toBe(200);
+      expect(activityPayload.activities.length).toBeGreaterThan(0);
+      expect(activityPayload.redPointCount).toBeGreaterThanOrEqual(0);
+
+      const friend = await app.inject({
+        method: 'POST',
+        url: '/api/social/friend/add',
+        payload: { playerId: 'p_route' }
+      });
+      const friendPayload = JSON.parse(friend.payload) as { profile: { friends: Array<{ id: string; remark?: string }> } };
+      expect(friend.statusCode).toBe(200);
+      const friendId = friendPayload.profile.friends[0]!.id;
+
+      const friendRemark = await app.inject({
+        method: 'POST',
+        url: '/api/social/friend/remark',
+        payload: { playerId: 'p_route', friendId, remark: 'friend dirtywords_2_1' }
+      });
+      const friendRemarkPayload = JSON.parse(friendRemark.payload) as { profile: { friends: Array<{ remark?: string }> } };
+      expect(friendRemark.statusCode).toBe(200);
+      expect(friendRemarkPayload.profile.friends[0]?.remark).toBe('friend ***');
+
+      const guild = await app.inject({
+        method: 'POST',
+        url: '/api/guild/join',
+        payload: { playerId: 'p_route' }
+      });
+      const guildPayload = JSON.parse(guild.payload) as { profile: { guildMembership?: { areaId: string; resources?: Record<string, number> } } };
+      expect(guild.statusCode).toBe(200);
+      const areaId = guildPayload.profile.guildMembership!.areaId;
+
+      const areaResource = await app.inject({
+        method: 'POST',
+        url: '/api/guild/area/resource/claim',
+        payload: { playerId: 'p_route', areaId }
+      });
+      const areaResourcePayload = JSON.parse(areaResource.payload) as { profile: { guildMembership?: { resources?: Record<string, number> } } };
+      expect(areaResource.statusCode).toBe(200);
+      expect(Object.values(areaResourcePayload.profile.guildMembership?.resources ?? {}).some((value) => value > 0)).toBe(true);
+
+      const guildApplication = await app.inject({
+        method: 'POST',
+        url: '/api/guild/application/demo',
+        payload: { playerId: 'p_route' }
+      });
+      const guildApplicationPayload = JSON.parse(guildApplication.payload) as { profile: { guildMembership?: { pendingApplications?: Array<{ playerId: string }> } } };
+      expect(guildApplication.statusCode).toBe(200);
+      const applicantId = guildApplicationPayload.profile.guildMembership!.pendingApplications![0]!.playerId;
+
+      const guildApprove = await app.inject({
+        method: 'POST',
+        url: '/api/guild/member/approve',
+        payload: { playerId: 'p_route', applicantId }
+      });
+      const guildApprovePayload = JSON.parse(guildApprove.payload) as { profile: { guildMembership?: { members?: Array<{ playerId: string }> } } };
+      expect(guildApprove.statusCode).toBe(200);
+      expect(guildApprovePayload.profile.guildMembership?.members?.some((member) => member.playerId === applicantId)).toBe(true);
+
+      const guildKick = await app.inject({
+        method: 'POST',
+        url: '/api/guild/member/kick',
+        payload: { playerId: 'p_route', memberId: applicantId }
+      });
+      const guildKickPayload = JSON.parse(guildKick.payload) as { profile: { guildMembership?: { members?: Array<{ playerId: string }> } } };
+      expect(guildKick.statusCode).toBe(200);
+      expect(guildKickPayload.profile.guildMembership?.members?.some((member) => member.playerId === applicantId)).toBe(false);
+
+      const guildNotice = await app.inject({
+        method: 'POST',
+        url: '/api/guild/notice',
+        payload: { playerId: 'p_route', notice: 'guild dirtywords_1_1' }
+      });
+      const guildNoticePayload = JSON.parse(guildNotice.payload) as { profile: { guildMembership?: { notice?: string } } };
+      expect(guildNotice.statusCode).toBe(200);
+      expect(guildNoticePayload.profile.guildMembership?.notice).toBe('guild ***');
+
+      const review = await app.inject({ method: 'GET', url: '/api/admin/review-snapshot' });
+      const reviewPayload = JSON.parse(review.payload) as AdminReviewSnapshot;
+      expect(review.statusCode).toBe(200);
+      expect(reviewPayload.audit.profileCount).toBeGreaterThan(0);
+      expect(reviewPayload.audit.activityAuditRows.length).toBeGreaterThan(0);
+      expect(reviewPayload.audit.activityAuditRows[0]?.activityId).toBeTruthy();
+      expect(reviewPayload.audit.activityAuditRows[0]?.averageProgressPercent).toBeGreaterThanOrEqual(0);
+      expect(reviewPayload.audit.activityClaimableCount).toBeGreaterThanOrEqual(0);
+      expect(reviewPayload.audit.activityRedPointCount).toBeGreaterThanOrEqual(0);
+      expect(reviewPayload.configParity.tableCount).toBe(52);
+      expect(reviewPayload.tableMatrix).toHaveLength(52);
+      expect(reviewPayload.restoreMatrixSummary.classMatrix).toMatchObject({
+        scriptsClassFiles: 1256,
+        mappedClasses: 1256,
+        unknownClasses: 0,
+        status: 'Mapped'
+      });
+      expect(reviewPayload.restoreMatrixSummary.tableMatrix).toMatchObject({
+        tableCount: 52,
+        configRowCount: 19687,
+        verifiedTables: 52,
+        manualReviewTables: 0,
+        closureStatus: 'closed'
+      });
+      expect(reviewPayload.restoreMatrixSummary.uiWndMatrix).toMatchObject({
+        uiWndCount: 80,
+        mappedWindows: 80,
+        unknownWindows: 0,
+        registrySource: 'apps/web/src/bidking/app/windowRegistry.ts'
+      });
+      expect(reviewPayload.restoreMatrixSummary.acceptance).toMatchObject({
+        totalMilestones: 13,
+        verifiedMilestones: 11,
+        equivalentClosedMilestones: 2,
+        finalStage: 'E12',
+        closureStatus: 'Equivalent Closed'
+      });
+      expect(reviewPayload.finalReviewChecklist.map((item) => item.id)).toEqual([
+        'baseline-matrices',
+        'config-classification',
+        'clean-room-boundaries',
+        'runtime-evidence',
+        'validation-gates',
+        'redistribution-boundary'
+      ]);
+      expect(reviewPayload.finalReviewChecklist.every((item) => item.status === 'pass')).toBe(true);
+      expect(reviewPayload.finalReviewChecklist.every((item) => item.summary && item.evidence.length > 0)).toBe(true);
+      expect(reviewPayload.equivalentSummary.verifiedTables).toBe(52);
+      expect(reviewPayload.equivalentSummary.equivalentTables).toBe(44);
+      expect(reviewPayload.equivalentSummary.visualSubstituteTables).toBe(5);
+      expect(reviewPayload.equivalentSummary.serviceSimulatedTables).toBe(3);
+      expect(reviewPayload.equivalentSummary.manualReviewTables).toBe(0);
+      expect(reviewPayload.equivalentSummary.closureStatus).toBe('closed');
+      expect(reviewPayload.equivalentSummary.equivalentTableNames).toEqual([...equivalentTables]);
+      expect(reviewPayload.equivalentSummary.visualSubstituteTableNames).toEqual([...visualSubstituteTables]);
+      expect(reviewPayload.equivalentSummary.serviceSimulatedTableNames).toEqual([...serviceSimulatedTables]);
+      expect(reviewPayload.equivalentSummary.manualReviewTableNames).toEqual([]);
+      expect(reviewPayload.equivalentBoundaries.map((row) => row.table)).toEqual([
+        'Dlc',
+        'Emoji',
+        'Head',
+        'HeroSkin',
+        'LanguageListen',
+        'Pay',
+        'PurchaseList',
+        'Sound'
+      ]);
+      expect(reviewPayload.equivalentBoundaries.every((row) => row.reason && row.cleanRoomBoundary && row.evidence)).toBe(true);
+      expect(reviewPayload.equivalentBoundaries.filter((row) => row.status === 'Visual Substitute')).toHaveLength(5);
+      expect(reviewPayload.equivalentBoundaries.filter((row) => row.status === 'Service Simulated')).toHaveLength(3);
+      expect(reviewPayload.validationCommands).toContain('npm run validate:bidking-compat');
+    });
+  });
+
+  it('filters admin ledger by player id for audit panels', async () => {
+    await withRouteRuntime(async ({ app, profiles }) => {
+      const activity = Activity.find((row) => row.columns[12]?.trim()) ?? Activity[0]!;
+      profiles.getOrCreateProfile('p_ledger_left', '账本左');
+      profiles.claimActivityReward('p_ledger_left', activity.id);
+      profiles.buyShopItem('p_ledger_left', 40001);
+      profiles.joinGuild('p_ledger_left');
+      profiles.completeDemoPayOrder('p_ledger_left', '1');
+      profiles.completeDemoPayOrder('p_ledger_right', '1');
+
+      const allLedger = await app.inject({ method: 'GET', url: '/api/admin/ledger?limit=200' });
+      const allPayload = JSON.parse(allLedger.payload) as { transactions: { playerId: string }[] };
+      expect(allLedger.statusCode).toBe(200);
+      expect(allPayload.transactions.some((transaction) => transaction.playerId === 'p_ledger_left')).toBe(true);
+      expect(allPayload.transactions.some((transaction) => transaction.playerId === 'p_ledger_right')).toBe(true);
+
+      const filteredLedger = await app.inject({ method: 'GET', url: '/api/admin/ledger?playerId=p_ledger_left&limit=200' });
+      const filteredPayload = JSON.parse(filteredLedger.payload) as { transactions: { playerId: string }[] };
+      expect(filteredLedger.statusCode).toBe(200);
+      expect(filteredPayload.transactions.length).toBeGreaterThan(0);
+      expect(filteredPayload.transactions.every((transaction) => transaction.playerId === 'p_ledger_left')).toBe(true);
+
+      const shopLedger = await app.inject({ method: 'GET', url: '/api/admin/ledger?source=shop&limit=200' });
+      const shopPayload = JSON.parse(shopLedger.payload) as { transactions: { sourceId: string; reason: string }[] };
+      expect(shopLedger.statusCode).toBe(200);
+      expect(shopPayload.transactions.length).toBeGreaterThan(0);
+      expect(shopPayload.transactions.every((transaction) => transaction.sourceId.startsWith('shop:') || transaction.sourceId.startsWith('shop_') || transaction.reason.startsWith('shop_'))).toBe(true);
+
+      const activityLedger = await app.inject({ method: 'GET', url: '/api/admin/ledger?source=activity&query=activity%3A&limit=200' });
+      const activityPayload = JSON.parse(activityLedger.payload) as { transactions: { sourceId: string; reason: string }[] };
+      expect(activityLedger.statusCode).toBe(200);
+      expect(activityPayload.transactions.length).toBeGreaterThan(0);
+      expect(activityPayload.transactions.every((transaction) => transaction.sourceId.startsWith('activity:') || transaction.reason.startsWith('activity_'))).toBe(true);
+
+      const guildLedger = await app.inject({ method: 'GET', url: '/api/admin/ledger?source=guild&limit=200' });
+      const guildPayload = JSON.parse(guildLedger.payload) as { transactions: { sourceId: string; reason: string }[] };
+      expect(guildLedger.statusCode).toBe(200);
+      expect(guildPayload.transactions.length).toBeGreaterThan(0);
+      expect(guildPayload.transactions.every((transaction) => transaction.sourceId.startsWith('guild_') || transaction.reason.startsWith('guild_'))).toBe(true);
+
+      const coinLedger = await app.inject({ method: 'GET', url: '/api/admin/ledger?resource=coins&limit=200' });
+      const coinPayload = JSON.parse(coinLedger.payload) as { transactions: { resource: string }[] };
+      expect(coinLedger.statusCode).toBe(200);
+      expect(coinPayload.transactions.length).toBeGreaterThan(0);
+      expect(coinPayload.transactions.every((transaction) => transaction.resource === 'coins')).toBe(true);
+    });
+  });
+});

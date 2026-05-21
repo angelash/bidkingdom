@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="三国珍宝拍卖场">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10170f"/>
+      <stop offset="0.46" stop-color="#2a1910"/>
+      <stop offset="1" stop-color="#071714"/>
+    </linearGradient>
+    <radialGradient id="lantern" cx="50%" cy="8%" r="58%">
+      <stop offset="0" stop-color="#ffcf75" stop-opacity=".55"/>
+      <stop offset=".42" stop-color="#9d2f1d" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="table" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5b2c19"/>
+      <stop offset="1" stop-color="#1d0e09"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#lantern)"/>
+  <path d="M0 190 C260 80 410 130 560 185 C720 244 902 242 1060 180 C1234 112 1410 88 1600 160 L1600 0 L0 0 Z" fill="#11160d" opacity=".7"/>
+  <g opacity=".62">
+    <path d="M180 168 h1240 v42 H180z" fill="#a54628"/>
+    <path d="M260 210 h90 v420 h-90zM1250 210 h90 v420h-90z" fill="#27130c"/>
+    <path d="M280 230 h50 v380h-50zM1270 230h50v380h-50z" fill="#5c2b18"/>
+    <path d="M430 250h740v42H430z" fill="#25120b"/>
+  </g>
+  <g transform="translate(0 30)">
+    <ellipse cx="800" cy="690" rx="560" ry="112" fill="#050806" opacity=".58"/>
+    <path d="M380 520 C500 455 1100 455 1220 520 L1310 725 C1110 790 490 790 290 725 Z" fill="url(#table)" stroke="#c28a45" stroke-width="8"/>
+    <path d="M470 545 C590 505 1010 505 1130 545 L1198 690 C1015 730 585 730 402 690 Z" fill="#142117" stroke="#5fb08b" stroke-opacity=".36" stroke-width="4"/>
+    <circle cx="800" cy="612" r="88" fill="#27120c" stroke="#d5a64d" stroke-width="8"/>
+    <path d="M754 616h92M800 570v92" stroke="#d5a64d" stroke-width="16" stroke-linecap="round"/>
+  </g>
+  <g opacity=".92">
+    <circle cx="410" cy="130" r="45" fill="#a8271d"/>
+    <circle cx="800" cy="105" r="56" fill="#c83b25"/>
+    <circle cx="1190" cy="130" r="45" fill="#a8271d"/>
+    <path d="M410 175v60M800 161v74M1190 175v60" stroke="#d8b76f" stroke-width="6"/>
+  </g>
+  <g opacity=".28" fill="#ead7a2">
+    <rect x="75" y="655" width="1450" height="3"/>
+    <rect x="160" y="720" width="1280" height="3"/>
+    <rect x="240" y="782" width="1120" height="3"/>
+  </g>
+</svg>

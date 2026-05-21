@@ -1,0 +1,621 @@
+import React, { useEffect, useState } from 'react';
+import {
+  Archive,
+  Award,
+  BadgeDollarSign,
+  BookOpen,
+  ChevronRight,
+  ClipboardList,
+  Crown,
+  Gavel,
+  Info,
+  ListChecks,
+  Shield,
+  Trophy,
+  Users,
+  X
+} from 'lucide-react';
+import { gameConfig } from '@bitkingdom/config';
+import type { CoreAuctionMode, PlayerProfile } from '@bitkingdom/shared';
+import { containerArtForKey } from '../../artAssets';
+import { sourcePathForOutgameHub, titleForOutgameHub, type BidKingOutgameHubWindowKey } from '../app/windowRegistry';
+import { RechargePanelView, PassPanelView, type ActivityTargetView, type SimPlanView } from '../activity/ActivityPanels';
+import {
+  BattlePrevPanelView,
+  type BattlePrevTab,
+  type BidKingBattleMapGroup
+} from '../battlePrev/BattlePrevPanelView';
+import { BidderPanelView } from '../bidder/BidderPanelView';
+import { CabinetBrowser } from '../cabinet/CabinetBrowser';
+import { HandBookPanel } from '../catalog/HandBookPanel';
+import { FriendPanelView } from '../friend/FriendPanelView';
+import { ClubPanelView } from '../guild/ClubPanelView';
+import { MailPanelView } from '../mail/MailPanelView';
+import { AuctionHousePanelView, TradePanelView } from '../market/MarketPanels';
+import { PackagePanelView } from '../package/PackagePanelView';
+import { RankDetailPanel } from '../rank/RankDetailPanel';
+import { ShopPanelView } from '../shop/ShopPanelView';
+import { FeedbackPanelView, SettingsPanelView } from '../system/SystemPanels';
+import {
+  bidKingStartupNoticeQueue,
+  nextBidKingGuideStep,
+  safeBidKingDisplayText,
+  translateBidKingLanguage,
+  type BidKingStartupNotice
+} from '../system/bidKingSystemRuntime';
+import { TaskDetailPanel } from '../task/TaskDetailPanel';
+import { taskBoardDefinitions } from '../task/taskDefinitions';
+
+type HallCatalogItem = (typeof gameConfig.items)[number] & {
+  bidKingQuality?: number;
+  collectionCoinPerHour?: number;
+};
+
+type OutgameHub = BidKingOutgameHubWindowKey;
+
+export function MainHallView({
+  botCount,
+  catalogItems,
+  coreAuctionMode,
+  defaultBidMapId,
+  mapGroups,
+  playerName,
+  profile,
+  selectedBidMapId,
+  selectedRoleId,
+  serverUrl,
+  resolveModeForBidMapId,
+  onCreateRoom,
+  onSelectBidMap,
+  onSelectCoreAuctionMode,
+  onSelectRole,
+  onSelectHead,
+  onSetCabinetItem,
+  onClearCabinetItem,
+  onClaimCollectionIncome,
+  onClaimReliefFund,
+  onSelectHeroSkin,
+  onBuyItem,
+  onRefreshShop,
+  onSetShopItemCollection,
+  onClaimMail,
+  onDeleteMail,
+  onMarkMailRead,
+  onClaimMissionReward,
+  onClaimAchievementReward,
+  onClaimLevelReward,
+  onClaimRankReward,
+  onCreateMarketOrder,
+  onActOnMarketOrder,
+  onEquipBattleItems,
+  onClaimActivityReward,
+  onClaimGiftPackage,
+  onCreateDemoPayOrder,
+  onCompleteDemoPayOrder,
+  onCancelDemoPayOrder,
+  onCompletePurchaseListOrder,
+  onUnlockDemoDlc,
+  onAddDemoFriend,
+  onRemoveFriend,
+  onSetFriendRemark,
+  onJoinGuild,
+  onSetGuildRole,
+  onAddDemoGuildApplication,
+  onApproveGuildMember,
+  onKickGuildMember,
+  onUpdateGuildNotice,
+  onDonateGuildCoins,
+  onClaimAreaResource,
+  onClaimGuildResource,
+  onUseGuildResource,
+  onMarkNoticeRead,
+  onCompleteGuide,
+  onUpdateSettings,
+  onApplyLanguageName,
+  onSetBotCount,
+  onSetPlayerName
+}: {
+  botCount: number;
+  catalogItems: HallCatalogItem[];
+  coreAuctionMode: CoreAuctionMode;
+  defaultBidMapId?: number;
+  mapGroups: BidKingBattleMapGroup[];
+  playerName: string;
+  profile: PlayerProfile;
+  selectedBidMapId?: number;
+  selectedRoleId: string;
+  serverUrl: string;
+  resolveModeForBidMapId: (bidMapId?: number) => CoreAuctionMode | undefined;
+  onCreateRoom: (selectedBidMapId?: number) => boolean;
+  onSelectBidMap: (bidMapId: number) => void;
+  onSelectCoreAuctionMode: (mode: CoreAuctionMode) => void;
+  onSelectRole: (roleId: string) => void;
+  onSelectHead: (headId: string) => void;
+  onSetCabinetItem: (itemId: string) => void;
+  onClearCabinetItem: (itemId: string) => void;
+  onClaimCollectionIncome: () => void;
+  onClaimReliefFund: () => void;
+  onSelectHeroSkin: (skinId: number) => void;
+  onBuyItem: (shopItemId: number) => void;
+  onRefreshShop: (shopId?: number) => void;
+  onSetShopItemCollection: (itemId: number, collected: boolean) => void;
+  onClaimMail: (mailId: string) => void;
+  onDeleteMail: (mailId: string) => void;
+  onMarkMailRead: (mailId: string) => void;
+  onClaimMissionReward: (taskId: string) => void;
+  onClaimAchievementReward: (achievementId: string) => void;
+  onClaimLevelReward: (level: number) => void;
+  onClaimRankReward: (rank: number) => void;
+  onCreateMarketOrder: (refId: string, quantity: number, price: number, orderType: 'trade' | 'auction', note?: string) => void;
+  onActOnMarketOrder: (orderId: string, action: 'settle' | 'cancel') => void;
+  onEquipBattleItems: (itemIds: number[]) => void;
+  onClaimActivityReward: (activityId: string) => void;
+  onClaimGiftPackage: (packageId: string) => void;
+  onCreateDemoPayOrder: (payId: string) => void;
+  onCompleteDemoPayOrder: (payId: string) => void;
+  onCancelDemoPayOrder: (orderId: string) => void;
+  onCompletePurchaseListOrder: (purchaseId: string) => void;
+  onUnlockDemoDlc: (dlcId: string) => void;
+  onAddDemoFriend: () => void;
+  onRemoveFriend: (friendId: string) => void;
+  onSetFriendRemark: (friendId: string, remark: string) => void;
+  onJoinGuild: (areaId?: string) => void;
+  onSetGuildRole: (roleId: string) => void;
+  onAddDemoGuildApplication: () => void;
+  onApproveGuildMember: (applicantId: string) => void;
+  onKickGuildMember: (memberId: string) => void;
+  onUpdateGuildNotice: (notice: string) => void;
+  onDonateGuildCoins: (amount: number) => void;
+  onClaimAreaResource: (areaId?: string) => void;
+  onClaimGuildResource: (resourceId: string) => void;
+  onUseGuildResource: (resourceId: string, quantity?: number) => void;
+  onMarkNoticeRead: (noticeId: string) => void;
+  onCompleteGuide: (guideId: string) => void;
+  onUpdateSettings: (settings: Record<string, string | number | boolean>) => void;
+  onApplyLanguageName: () => void;
+  onSetBotCount: (value: number) => void;
+  onSetPlayerName: (value: string) => void;
+}): JSX.Element {
+  const [activeHub, setActiveHub] = useState<OutgameHub>();
+  const [battlePrevOpen, setBattlePrevOpen] = useState(false);
+  const [battlePrevTab, setBattlePrevTab] = useState<BattlePrevTab>('map');
+  const [selectedBattleBidMapId, setSelectedBattleBidMapId] = useState(selectedBidMapId ?? defaultBidMapId);
+  const [selectedItemId, setSelectedItemId] = useState<string>();
+  const [dismissedStartupNoticeIds, setDismissedStartupNoticeIds] = useState<string[]>([]);
+  const selectedRole = gameConfig.roles.find((role) => role.id === selectedRoleId) ?? gameConfig.roles[0]!;
+  const unlockedItems = catalogItems.filter((item) => profile.codex.includes(item.id));
+  const selectedCodexItemId = selectedItemId ?? unlockedItems[0]?.id ?? catalogItems[0]?.id;
+  const startupNotice = bidKingStartupNoticeQueue([...(profile.readNotices ?? []), ...dismissedStartupNoticeIds], 1)[0];
+  const guideTargetWindow = battlePrevOpen ? 'Battle_Main' : activeHub ? sourcePathForOutgameHub(activeHub) : undefined;
+  const guideStep = guideTargetWindow ? nextBidKingGuideStep(profile.completedGuides ?? [], guideTargetWindow) : undefined;
+  useEffect(() => {
+    if (selectedBidMapId) {
+      setSelectedBattleBidMapId(selectedBidMapId);
+    }
+  }, [selectedBidMapId]);
+  useEffect(() => {
+    setDismissedStartupNoticeIds([]);
+  }, [profile.playerId]);
+  const topShortcuts = [
+    { key: 'recharge', label: '钱庄', icon: <BadgeDollarSign size={23} />, onClick: () => openHub('recharge') },
+    { key: 'bag', label: '行囊', icon: <Archive size={23} />, onClick: () => openHub('package') },
+    { key: 'pass', label: '珍宝令', icon: <Shield size={23} />, onClick: () => openHub('pass') },
+    { key: 'rank', label: '名士榜', icon: <Trophy size={23} />, onClick: () => openHub('rank') },
+    { key: 'task', label: '委托', icon: <ClipboardList size={23} />, onClick: () => openHub('tasks') },
+    { key: 'handbook', label: '珍宝谱', icon: <BookOpen size={23} />, onClick: () => openHub('codex') }
+  ];
+  const bottomTabs = [
+    { key: 'storage', label: '珍阁', en: '陈列', icon: <Archive size={19} />, onClick: () => openHub('cabinet') },
+    { key: 'trade', label: '市集', en: '互市', icon: <BadgeDollarSign size={19} />, onClick: () => openHub('trade') },
+    { key: 'auction', label: '拍场', en: '开拍', icon: <Gavel size={19} />, onClick: () => openHub('auctionHouse') },
+    { key: 'shop', label: '宝铺', en: '补给', icon: <Crown size={19} />, onClick: () => openHub('shop') },
+    { key: 'bidder', label: '竞买人', en: '名士', icon: <Users size={19} />, onClick: () => openHub('bidder') },
+    { key: 'club', label: '鉴宝会', en: '会馆', icon: <Award size={19} />, onClick: () => openHub('club') }
+  ];
+
+  function openHub(panel: OutgameHub): void {
+    if (!selectedItemId) {
+      setSelectedItemId(unlockedItems[0]?.id ?? catalogItems[0]?.id);
+    }
+    setActiveHub(panel);
+  }
+
+  function openBattlePrev(): void {
+    setBattlePrevTab('map');
+    setSelectedBattleBidMapId(selectedBidMapId ?? selectedBattleBidMapId ?? defaultBidMapId);
+    setBattlePrevOpen(true);
+  }
+
+  function confirmBattlePrev(): void {
+    if (selectedBattleBidMapId) {
+      onSelectBidMap(selectedBattleBidMapId);
+      const sceneMode = resolveModeForBidMapId(selectedBattleBidMapId);
+      if (sceneMode) {
+        onSelectCoreAuctionMode(sceneMode);
+      }
+    }
+    if (onCreateRoom(selectedBattleBidMapId)) {
+      setBattlePrevOpen(false);
+    }
+  }
+
+  function selectBattleBidMap(bidMapId: number): void {
+    setSelectedBattleBidMapId(bidMapId);
+    const sceneMode = resolveModeForBidMapId(bidMapId);
+    if (sceneMode) {
+      onSelectCoreAuctionMode(sceneMode);
+    }
+  }
+
+  function markStartupNoticeRead(noticeId: string): void {
+    setDismissedStartupNoticeIds((ids) => [...ids, noticeId]);
+    onMarkNoticeRead(noticeId);
+  }
+
+  function confirmStartupNotice(notice: BidKingStartupNotice): void {
+    markStartupNoticeRead(notice.id);
+    if (notice.actionTarget) {
+      setActiveHub(notice.actionTarget);
+    }
+  }
+
+  function applySimPlan(plan: SimPlanView): void {
+    onSetBotCount(plan.roomBotCount);
+    setSelectedBattleBidMapId(selectedBidMapId ?? selectedBattleBidMapId ?? defaultBidMapId);
+    setBattlePrevTab('settings');
+    setBattlePrevOpen(true);
+  }
+
+  function openActivityTarget(target: ActivityTargetView): void {
+    setActiveHub(target);
+  }
+
+  return (
+    <section className="bidking-home">
+      <header className="bk-home-top">
+        <div className="bk-profile-card">
+          <span className="bk-logo-mark">珍</span>
+          <div className="bk-profile-copy">
+            <input
+              aria-label="掌柜名"
+              className="bk-player-name"
+              value={playerName}
+              onChange={(event) => onSetPlayerName(event.target.value)}
+              maxLength={12}
+            />
+            <span>UID:1050858240861420</span>
+            <button className="bk-feedback" type="button" onClick={() => openHub('feedback')}>
+              <Info size={17} />
+              呈报
+            </button>
+          </div>
+        </div>
+
+        <div className="bk-top-actions">
+          <span className="bk-resource gold">
+            <BadgeDollarSign size={24} />
+            <strong>{profile.tickets.current}/{profile.tickets.max}</strong>
+            <button type="button" onClick={() => openHub('recharge')}>+</button>
+          </span>
+          <span className="bk-resource silver">
+            <Award size={24} />
+            <strong>{Math.max(1, Math.round(profile.coins / 1000)).toLocaleString()}K</strong>
+          </span>
+          <button type="button" title="同游" onClick={() => openHub('friend')}>
+            <Users size={24} />
+          </button>
+          <button type="button" title="信札" onClick={() => openHub('mail')}>
+            <ClipboardList size={24} />
+          </button>
+          <button type="button" title="行囊" onClick={() => openHub('package')}>
+            <Archive size={24} />
+          </button>
+          <button type="button" title="章程" onClick={() => openHub('settings')}>
+            <Shield size={24} />
+          </button>
+        </div>
+      </header>
+
+      <main className="bk-home-scene">
+        <section className="bk-main-board">
+          <div className="bk-board-paper" />
+        </section>
+
+        <aside className="bk-right-shelf">
+          <div className="bk-shortcut-row">
+            {topShortcuts.map((shortcut) => (
+              <button key={shortcut.key} onClick={shortcut.onClick} type="button">
+                {shortcut.icon}
+                <span>{shortcut.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <button className="bk-pass-banner" type="button" onClick={() => openHub('pass')}>
+            <img src={containerArtForKey('container_sample_home')} alt="" loading="lazy" />
+            <span>珍宝令</span>
+            <strong>令</strong>
+          </button>
+
+          <div className="bk-shelf-display" aria-hidden="true" />
+
+          <button className="bk-auction-cta" type="button" onClick={openBattlePrev}>
+            <span>开拍</span>
+            <ChevronRight size={40} />
+            <ChevronRight size={40} />
+          </button>
+        </aside>
+      </main>
+
+      <nav className="bk-bottom-tabs" aria-label="主界面模块">
+        {bottomTabs.map((tab) => (
+          <button key={tab.key} onClick={tab.onClick} type="button">
+            {tab.icon}
+            <strong>{tab.label}</strong>
+            <span>{tab.en}</span>
+          </button>
+        ))}
+      </nav>
+
+      {startupNotice && !activeHub && !battlePrevOpen && (
+        <aside className="startup-notice-card" role="dialog" aria-label="启动公告">
+          <span>{startupNotice.typeLabel}</span>
+          <strong>{startupNotice.title}</strong>
+          <p>{startupNotice.body}</p>
+          {startupNotice.actionTarget && <em>{titleForOutgameHub(startupNotice.actionTarget)}</em>}
+          {startupNotice.hasCancel && (
+            <button type="button" onClick={() => markStartupNoticeRead(startupNotice.id)}>
+              {translateBidKingLanguage(startupNotice.cancelLabelKey, profile.settings.languageColumn ?? 1, startupNotice.cancelLabelKey)}
+            </button>
+          )}
+          <button type="button" onClick={() => confirmStartupNotice(startupNotice)}>
+            {translateBidKingLanguage(startupNotice.okLabelKey, profile.settings.languageColumn ?? 1, startupNotice.okLabelKey)}
+          </button>
+        </aside>
+      )}
+
+      {guideStep && (
+        <aside
+          className="guide-overlay-card"
+          data-delay-ms={guideStep.delayMs}
+          data-dynamic={guideStep.isDynamic ? 'true' : 'false'}
+          data-mask-alpha={guideStep.maskAlpha}
+          role="note"
+          aria-label="引导目标"
+        >
+          <strong>{safeBidKingDisplayText(guideStep.title, '引导目标') || '引导目标'}</strong>
+          <p>{guideWindowDisplayLabel(guideStep.targetWindow)} · {guideStepDisplayText(guideStep.textKey, guideStep.targetNode, Number(profile.settings.languageColumn ?? 1))}</p>
+          <em>{guideStep.anchor ? `(${guideStep.anchor.x}, ${guideStep.anchor.y})` : '等待触发'}</em>
+          <button type="button" onClick={() => onCompleteGuide(guideStep.id)}>完成</button>
+        </aside>
+      )}
+
+      {activeHub === 'codex' && (
+        <HandBookPanel
+          items={catalogItems}
+          onClose={() => setActiveHub(undefined)}
+        />
+      )}
+      {activeHub === 'package' && (
+        <PackagePanelView
+          profile={profile}
+          roles={gameConfig.roles}
+          serverUrl={serverUrl}
+          onClose={() => setActiveHub(undefined)}
+          onClaimCollectionIncome={onClaimCollectionIncome}
+          onClaimReliefFund={onClaimReliefFund}
+        />
+      )}
+      {activeHub === 'bidder' && (
+        <BidderPanelView
+          profile={profile}
+          roles={gameConfig.roles}
+          selectedRoleId={selectedRoleId}
+          onClose={() => setActiveHub(undefined)}
+          onSelectHeroSkin={onSelectHeroSkin}
+          onSelectRole={onSelectRole}
+        />
+      )}
+      {activeHub && !['codex', 'package', 'bidder'].includes(activeHub) && (
+        <DetailModal eyebrow="珍宝局" title={titleForOutgameHub(activeHub)} onClose={() => setActiveHub(undefined)}>
+          {activeHub === 'tasks' && (
+            <div className="task-modal-combo">
+              <TaskDetailPanel
+                profile={profile}
+                onClaimMissionReward={onClaimMissionReward}
+                onClaimAchievementReward={onClaimAchievementReward}
+                onClaimLevelReward={onClaimLevelReward}
+              />
+              <TaskBoard profile={profile} />
+            </div>
+          )}
+          {activeHub === 'rank' && <RankDetailPanel profile={profile} serverUrl={serverUrl} onClaimRankReward={onClaimRankReward} />}
+          {activeHub === 'mail' && (
+            <MailPanelView
+              profile={profile}
+              onClaimMail={onClaimMail}
+              onDeleteMail={onDeleteMail}
+              onMarkMailRead={onMarkMailRead}
+            />
+          )}
+          {activeHub === 'friend' && (
+            <FriendPanelView
+              profile={profile}
+              onAddDemoFriend={onAddDemoFriend}
+              onRemoveFriend={onRemoveFriend}
+              onSetFriendRemark={onSetFriendRemark}
+              onSelectHead={onSelectHead}
+            />
+          )}
+          {activeHub === 'settings' && (
+            <SettingsPanelView profile={profile} onApplyLanguageName={onApplyLanguageName} onUpdateSettings={onUpdateSettings} />
+          )}
+          {activeHub === 'feedback' && (
+            <FeedbackPanelView profile={profile} onCompleteGuide={onCompleteGuide} onMarkNoticeRead={onMarkNoticeRead} />
+          )}
+          {activeHub === 'trade' && <TradePanelView profile={profile} serverUrl={serverUrl} onBuyItem={onBuyItem} onCreateMarketOrder={onCreateMarketOrder} onActOnMarketOrder={onActOnMarketOrder} />}
+          {activeHub === 'auctionHouse' && <AuctionHousePanelView profile={profile} serverUrl={serverUrl} onBuyItem={onBuyItem} onCreateMarketOrder={onCreateMarketOrder} onActOnMarketOrder={onActOnMarketOrder} />}
+          {activeHub === 'club' && (
+            <ClubPanelView
+              profile={profile}
+              serverUrl={serverUrl}
+              onJoinGuild={onJoinGuild}
+              onSetGuildRole={onSetGuildRole}
+              onAddDemoGuildApplication={onAddDemoGuildApplication}
+              onApproveGuildMember={onApproveGuildMember}
+              onKickGuildMember={onKickGuildMember}
+              onUpdateGuildNotice={onUpdateGuildNotice}
+              onDonateGuildCoins={onDonateGuildCoins}
+              onClaimAreaResource={onClaimAreaResource}
+              onClaimGuildResource={onClaimGuildResource}
+              onUseGuildResource={onUseGuildResource}
+            />
+          )}
+          {activeHub === 'recharge' && (
+            <RechargePanelView
+              profile={profile}
+              onClaimGiftPackage={onClaimGiftPackage}
+              onCreateDemoPayOrder={onCreateDemoPayOrder}
+              onCompleteDemoPayOrder={onCompleteDemoPayOrder}
+              onCancelDemoPayOrder={onCancelDemoPayOrder}
+              onCompletePurchaseListOrder={onCompletePurchaseListOrder}
+              onUnlockDemoDlc={onUnlockDemoDlc}
+            />
+          )}
+          {activeHub === 'pass' && (
+            <PassPanelView
+              profile={profile}
+              serverUrl={serverUrl}
+              onApplySimPlan={applySimPlan}
+              onClaimActivityReward={onClaimActivityReward}
+              onOpenActivityTarget={openActivityTarget}
+            />
+          )}
+          {activeHub === 'cabinet' && (
+            <CabinetBrowser
+              items={unlockedItems}
+              profile={profile}
+              selectedItemId={selectedCodexItemId}
+              onSelectItem={setSelectedItemId}
+              onSetCabinetItem={onSetCabinetItem}
+              onClearCabinetItem={onClearCabinetItem}
+            />
+          )}
+          {activeHub === 'shop' && (
+            <ShopPanelView
+              profile={profile}
+              onBuyItem={onBuyItem}
+              onRefreshShop={onRefreshShop}
+              onSetShopItemCollection={onSetShopItemCollection}
+            />
+          )}
+        </DetailModal>
+      )}
+      {battlePrevOpen && (
+        <BattlePrevPanelView
+          botCount={botCount}
+          coreAuctionMode={coreAuctionMode}
+          mapGroups={mapGroups}
+          selectedBidMapId={selectedBattleBidMapId}
+          profile={profile}
+          selectedRole={selectedRole}
+          selectedRoleId={selectedRoleId}
+          tab={battlePrevTab}
+          onCancel={() => setBattlePrevOpen(false)}
+          onConfirm={confirmBattlePrev}
+          onSelectCoreAuctionMode={onSelectCoreAuctionMode}
+          onSelectBidMap={selectBattleBidMap}
+          onSelectRole={onSelectRole}
+          onEquipBattleItems={onEquipBattleItems}
+          onSetBotCount={onSetBotCount}
+          onSetTab={setBattlePrevTab}
+        />
+      )}
+    </section>
+  );
+}
+
+function guideWindowDisplayLabel(targetWindow: string): string {
+  const labels: Record<string, string> = {
+    Battle_Main: '竞拍局内',
+    UIMain: '珍宝局主厅'
+  };
+  return labels[targetWindow] ?? '引导目标';
+}
+
+function guideStepDisplayText(textKey: string, targetNode: string, languageColumn: number): string {
+  const translated = safeBidKingDisplayText(translateBidKingLanguage(textKey, languageColumn, ''), '');
+  if (translated && translated !== '文书条目') {
+    return translated;
+  }
+  return `前往${guideNodeDisplayLabel(targetNode)}`;
+}
+
+function guideNodeDisplayLabel(targetNode: string): string {
+  const lastSegment = targetNode.split('/').filter(Boolean).at(-1) ?? targetNode;
+  if (!lastSegment || /^[A-Za-z]+[_A-Za-z0-9]*$/.test(lastSegment)) {
+    return '界面目标';
+  }
+  return safeBidKingDisplayText(lastSegment, '界面目标') || '界面目标';
+}
+
+function DetailModal({
+  eyebrow,
+  title,
+  children,
+  onClose
+}: {
+  eyebrow: string;
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+}): JSX.Element {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div className="detail-modal-backdrop" onMouseDown={onClose}>
+      <section className="detail-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="detail-modal-header">
+          <div>
+            <span>{eyebrow}</span>
+            <h2>{title}</h2>
+          </div>
+          <button className="modal-close" type="button" onClick={onClose} title="关闭">
+            <X size={18} />
+          </button>
+        </header>
+        <div className="detail-modal-body">{children}</div>
+      </section>
+    </div>
+  );
+}
+
+function TaskBoard({ profile }: { profile: PlayerProfile }): JSX.Element {
+  return (
+    <section className="task-board">
+      <div className="section-title small">
+        <ListChecks size={16} />
+        <h3>每日/名望委托</h3>
+      </div>
+      {taskBoardDefinitions(profile).map((task) => {
+        const progress = profile.missionProgress?.[task.id];
+        const done = progress?.completed ?? profile.completedTasks.includes(task.id);
+        const claimable = progress?.claimable ?? false;
+        return (
+          <div className={`task-row ${done ? 'done' : ''} ${claimable ? 'claimable' : ''}`} key={task.id}>
+            <span>{claimable ? '!' : done ? '✓' : '·'}</span>
+            <p>{task.label}</p>
+          </div>
+        );
+      })}
+    </section>
+  );
+}

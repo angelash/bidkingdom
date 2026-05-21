@@ -1,0 +1,14 @@
+{
+  "name": "@bitkingdom/bidking-compat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "validate": "tsx src/validateParity.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  }
+}

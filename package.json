@@ -1,0 +1,34 @@
+{
+  "name": "bitkingdom",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node tools/dev.mjs",
+    "dev:start": "node tools/dev-control.mjs start",
+    "dev:stop": "node tools/dev-control.mjs stop",
+    "dev:restart": "node tools/dev-control.mjs restart",
+    "dev:server": "npm run dev -w @bitkingdom/server",
+    "dev:web": "npm run dev -w @bitkingdom/web",
+    "build": "npm run build -ws --if-present",
+    "typecheck": "npm run typecheck -ws --if-present",
+    "test": "npm run test -ws --if-present",
+    "test:playwright": "playwright test -c apps/web/playwright/playwright.config.ts --workers=1",
+    "validate:config": "npm run validate -w @bitkingdom/config",
+    "validate:bidking-compat": "npm run validate -w @bitkingdom/bidking-compat",
+    "art:validate:bidking-items": "python tools/validate-bidking-item-art.py --sample",
+    "art:validate:bidking-items:all": "python tools/validate-bidking-item-art.py --all",
+    "start": "npm run start -w @bitkingdom/server"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
