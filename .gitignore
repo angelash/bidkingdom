@@ -2,9 +2,13 @@
 *.log
 *.pyc
 __pycache__/
+.env.local
+.env.*.local
 .server/
 .playwright-cli/
 node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
 apps/*/dist/
 apps/*/.vite/
 apps/web/test-results/
