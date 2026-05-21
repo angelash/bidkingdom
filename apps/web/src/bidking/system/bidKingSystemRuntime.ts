@@ -73,6 +73,7 @@ const commonLanguageLabels: Record<string, string> = {
   ui_common_2: '确定',
   ui_common_3: '取消'
 };
+const startupNoticeTypes = new Set(['notice_login', 'notice_announcement', 'notice_activity']);
 
 export function normalizeBidKingLanguageColumn(column: unknown): number {
   return clampInteger(column, 1, 15);
@@ -181,7 +182,7 @@ export function emitBidKingSoundCue(cue: BidKingSoundCue): BidKingSoundCue {
 export function bidKingStartupNoticeQueue(readNoticeIds: readonly string[] = [], limit = 1): BidKingStartupNotice[] {
   const read = new Set(readNoticeIds);
   return Notice
-    .filter((row) => !read.has(row.id))
+    .filter((row) => startupNoticeTypes.has(columnValue(row, 4)) && !read.has(row.id))
     .map(bidKingNoticeRuntime)
     .sort((left, right) => right.priority - left.priority || Number(left.id) - Number(right.id))
     .slice(0, Math.max(0, limit));

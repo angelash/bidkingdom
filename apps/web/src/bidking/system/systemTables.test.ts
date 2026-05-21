@@ -106,19 +106,9 @@ describe('BidKing system table coverage', () => {
     expect(skinVoiceCue.i18nPathKey).toMatch(/^voice_path_/);
   });
 
-  it('builds startup Notice queues and Guide overlay targets from original rows', () => {
+  it('keeps business Notice rows out of startup pushes and builds Guide overlay targets', () => {
     const notices = bidKingStartupNoticeQueue([], 3);
-    expect(notices).toHaveLength(3);
-    expect(notices[0]).toEqual(expect.objectContaining({
-      bodyKey: expect.stringMatching(/^text_Notice_/),
-      okLabelKey: expect.any(String),
-      type: expect.stringMatching(/^notice_/),
-      typeLabel: expect.any(String)
-    }));
-    expect(notices[0]!.title).not.toMatch(/^公告弹窗\d+$/);
-    expect(notices[0]!.body).not.toMatch(/(?:配置行|显示文本使用本项目包装|text_Notice_)/);
-    expect(bidKingStartupNoticeQueue([notices[0]!.id], 1)[0]?.id).not.toBe(notices[0]!.id);
-    expect(notices.some((notice) => notice.hasCancel)).toBe(true);
+    expect(notices).toEqual([]);
 
     const feedbackNotice = Notice.find((row) => row.id === '2011')!;
     expect(bidKingNoticeRuntime(feedbackNotice)).toEqual(expect.objectContaining({

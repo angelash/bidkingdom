@@ -10,11 +10,6 @@ type RewardRowSource = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const rawMailTextPattern = /(?:mail|text|ui)_[a-z0-9_]+|配置行\s+\d+，保留结构、数值和资源键，显示文本使用本项目包装。/i;
 
-export function starterMailRows(): typeof Mail {
-  const withAttachment = Mail.find((row) => mailAttachmentRewards(row).length > 0);
-  return uniqueMailRows([Mail[0], Mail[1], withAttachment ?? Mail[2]]);
-}
-
 export function mailAttachmentRewards(row?: RewardRowSource): number[][] {
   return parseBidKingNumberRows(row?.columns[7]);
 }
@@ -30,36 +25,11 @@ export function mailAttachmentSummary(row: RewardRowSource): string {
 }
 
 export function ensureStarterMail(profile: PlayerProfile): void {
-  const now = Date.now();
-  const rows = starterMailRows();
   profile.deletedMailTemplateIds ??= [];
   for (const mail of profile.mail) {
     if (mail.expiresAt === undefined) {
       mail.expiresAt = mailExpiresAt(Mail.find((row) => row.id === mail.templateId), mail.createdAt);
     }
-  }
-  for (const [index, row] of rows.entries()) {
-    if (profile.mail.length >= bidKingMailMaxCount()) {
-      break;
-    }
-    if (profile.deletedMailTemplateIds.includes(row.id)) {
-      continue;
-    }
-    if (profile.mail.some((mail) => mail.templateId === row.id)) {
-      continue;
-    }
-    const createdAt = now - index * 3600_000;
-    profile.mail.push({
-      id: `mail_${row.id}_${profile.playerId}`,
-      templateId: row.id,
-      title: mailTitle(row),
-      body: mailBody(row),
-      read: index > 0,
-      claimed: false,
-      attachmentSummary: mailAttachmentSummary(row),
-      createdAt,
-      expiresAt: mailExpiresAt(row, createdAt)
-    });
   }
 }
 
@@ -99,16 +69,6 @@ export function mailExpiresAt(row: RewardRowSource | undefined, createdAt: numbe
 
 export function isMailExpired(mail: MailInboxItem, now = Date.now()): boolean {
   return mail.expiresAt !== undefined && mail.expiresAt <= now;
-}
-
-function uniqueMailRows(rows: Array<(typeof Mail)[number] | undefined>): typeof Mail {
-  const unique = new Map<string, (typeof Mail)[number]>();
-  for (const row of rows) {
-    if (row) {
-      unique.set(row.id, row);
-    }
-  }
-  return [...unique.values()];
 }
 
 function mailTitle(row: RewardRowSource): string {

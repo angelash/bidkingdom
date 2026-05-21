@@ -94,6 +94,7 @@ describe('server routes', () => {
       expect(registeredPayload.account.accountName).toBe('formal_user');
       expect(registeredPayload.account.kind).toBe('password');
       expect(registeredPayload.profile.profile.name).toBe('正式掌柜');
+      expect(registeredPayload.profile.profile.mail).toEqual([]);
 
       const session = await app.inject({
         method: 'GET',

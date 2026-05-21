@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { languageNameFromSeed, languageNamesFromSeed } from '../src/domain/profile/languageNameRuntime';
+import { addMailFromTemplate } from '../src/domain/profile/profileMailRuntime';
 import {
   DEFAULT_PROFILE_COINS,
   LEGACY_DEFAULT_PROFILE_COINS
@@ -68,6 +69,7 @@ describe('profile service', () => {
     expect(created.name).toBe('掌柜甲');
     expect(created.headId).toBe(bidKingStarterHeadId());
     expect(created.settings.bidkingStarterRewardsV1).toBe(true);
+    expect(created.mail).toEqual([]);
     expect(inventoryQuantity(created, '7101')).toBe(1);
     expect(inventoryQuantity(created, '8101')).toBe(5);
     expect(created.inventory.length).toBe(new Set(bidKingStarterInventoryRewards().map((reward) => `${reward.type}:${reward.refId}`)).size);
@@ -478,7 +480,7 @@ describe('profile service', () => {
   it('claims configured Mail attachment rewards', () => {
     const profiles = createProfileService(createMemoryStore());
     const created = profiles.getOrCreateProfile('p_mail', '掌柜庚');
-    const attachmentMail = created.mail.find((mail) => mail.templateId === '1001');
+    const attachmentMail = addMailFromTemplate(created, '1001', 'test_attachment');
 
     expect(attachmentMail).toBeDefined();
 
@@ -493,8 +495,8 @@ describe('profile service', () => {
   it('marks, protects, expires, and deletes Mail inbox entries', () => {
     const profiles = createProfileService(createMemoryStore());
     const created = profiles.getOrCreateProfile('p_mail_state', '掌柜邮件状态');
-    const unreadMail = created.mail.find((mail) => !mail.read)!;
-    const attachmentMail = created.mail.find((mail) => mail.templateId === '1001')!;
+    const unreadMail = addMailFromTemplate(created, '101', 'test_unread')!;
+    const attachmentMail = addMailFromTemplate(created, '1001', 'test_attachment')!;
 
     profiles.markMailRead('p_mail_state', unreadMail.id);
     expect(profiles.getSnapshot('p_mail_state').profile.mail.find((mail) => mail.id === unreadMail.id)?.read).toBe(true);
@@ -505,7 +507,7 @@ describe('profile service', () => {
     expect(profiles.getSnapshot('p_mail_state').profile.mail.some((mail) => mail.id === attachmentMail.id)).toBe(false);
 
     const expiredProfile = profiles.getOrCreateProfile('p_mail_expired', '掌柜过期邮件');
-    const expiredMail = expiredProfile.mail[0]!;
+    const expiredMail = addMailFromTemplate(expiredProfile, '101', 'test_expired')!;
     expiredMail.expiresAt = Date.now() - 1;
     expect(() => profiles.claimMail('p_mail_expired', expiredMail.id)).toThrow('邮件已过期');
     profiles.deleteMail('p_mail_expired', expiredMail.id);

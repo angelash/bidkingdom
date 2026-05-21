@@ -37,6 +37,7 @@ import {
 import { parseBidKingNumberRows } from '@bitkingdom/match-core';
 import { describe, expect, it } from 'vitest';
 import { languageNamesFromSeed } from '../src/domain/profile/languageNameRuntime';
+import { addMailFromTemplate } from '../src/domain/profile/profileMailRuntime';
 import { createProfileService } from '../src/services/profileService';
 import type { ServerStore } from '../src/services/store';
 
@@ -366,7 +367,8 @@ describe('BidKing message and system restore coverage', () => {
   it('drives Activity, Mail, Notice, Guide, DirtyWords, and ErrorCode profile state from original rows', () => {
     const profiles = createProfileService(createMemoryStore());
     const profile = profiles.getOrCreateProfile('p_system_tables', '掌柜系统表');
-    const mail = profile.mail.find((entry) => Mail.some((row) => row.id === entry.templateId))!;
+    const mailTemplate = Mail.find((row) => parseBidKingNumberRows(row.columns[7]).length > 0) ?? Mail[0]!;
+    const mail = addMailFromTemplate(profile, mailTemplate.id, 'restore_coverage')!;
     const activity = Activity.find((row) => row.columns[12]?.trim()) ?? Activity[0]!;
     const notice = Notice[0]!;
     const guide = Guide[0]!;
