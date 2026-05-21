@@ -14,6 +14,8 @@ export type BidKingSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 interface UseBidKingSocketArgs {
   serverUrl: string;
   onProfileUpdated: (profile: ProfileSnapshot) => void;
+  profileId?: string;
+  sessionToken?: string;
 }
 
 interface BidKingSocketRuntime {
@@ -30,7 +32,7 @@ interface BidKingSocketRuntime {
   toast: string;
 }
 
-export function useBidKingSocket({ serverUrl, onProfileUpdated }: UseBidKingSocketArgs): BidKingSocketRuntime {
+export function useBidKingSocket({ serverUrl, onProfileUpdated, profileId, sessionToken }: UseBidKingSocketArgs): BidKingSocketRuntime {
   const [socket, setSocket] = useState<BidKingSocket | null>(null);
   const activeRoomCodeRef = useRef<string>();
   const [connected, setConnected] = useState(false);
@@ -45,10 +47,17 @@ export function useBidKingSocket({ serverUrl, onProfileUpdated }: UseBidKingSock
   }, [onProfileUpdated]);
 
   useEffect(() => {
-    const nextSocket: BidKingSocket = io(serverUrl, { transports: ['websocket'] });
+    const nextSocket: BidKingSocket = io(serverUrl, {
+      transports: ['websocket'],
+      auth: sessionToken ? { sessionToken } : undefined
+    });
     nextSocket.on('connect', () => {
       setConnected(true);
       const savedSession = loadSession();
+      if (savedSession && profileId && savedSession.playerId !== profileId) {
+        clearSession();
+        return;
+      }
       if (savedSession) {
         activeRoomCodeRef.current = savedSession.roomCode.trim().toUpperCase();
         nextSocket.emit('rejoinRoom', savedSession, (ack) => {
@@ -86,7 +95,7 @@ export function useBidKingSocket({ serverUrl, onProfileUpdated }: UseBidKingSock
     return () => {
       nextSocket.close();
     };
-  }, [serverUrl]);
+  }, [profileId, serverUrl, sessionToken]);
 
   return {
     activeRoomCodeRef,

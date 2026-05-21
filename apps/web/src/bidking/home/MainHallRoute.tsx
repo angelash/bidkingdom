@@ -1,4 +1,4 @@
-import type { CoreAuctionMode, PlayerProfile } from '@bitkingdom/shared';
+import type { CoreAuctionMode, PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
 import { modeForBidMapId } from '../battlePrev/bidMapRuntime';
 import type { BidKingBattleMapGroup } from '../battlePrev/BattlePrevPanelView';
 import { codexCatalogItems } from '../catalog/codexRuntime';
@@ -13,12 +13,14 @@ interface MainHallRouteProps {
   mapGroups: BidKingBattleMapGroup[];
   playerName: string;
   profile: PlayerProfile;
+  account?: PublicPlayerAccount;
   profileActions: ProfileActions;
   roomActions: RoomActions;
   selectedBidMapId?: number;
   selectedRoleId: string;
   serverUrl: string;
   onSetBotCount: (value: number) => void;
+  onLogoutAccount: () => void;
   onSetPlayerName: (value: string) => void;
 }
 
@@ -29,12 +31,14 @@ export function MainHallRoute({
   mapGroups,
   playerName,
   profile,
+  account,
   profileActions,
   roomActions,
   selectedBidMapId,
   selectedRoleId,
   serverUrl,
   onSetBotCount,
+  onLogoutAccount,
   onSetPlayerName
 }: MainHallRouteProps): JSX.Element {
   return (
@@ -46,6 +50,7 @@ export function MainHallRoute({
       mapGroups={mapGroups}
       playerName={playerName}
       profile={profile}
+      account={account}
       selectedBidMapId={selectedBidMapId}
       selectedRoleId={selectedRoleId}
       serverUrl={serverUrl}
@@ -57,6 +62,7 @@ export function MainHallRoute({
       onSelectHead={profileActions.selectHead}
       onSetCabinetItem={profileActions.setCabinetItem}
       onClearCabinetItem={profileActions.clearCabinetItem}
+      onSellCabinetItem={profileActions.sellCabinetItem}
       onClaimCollectionIncome={profileActions.claimCollectionIncome}
       onClaimReliefFund={profileActions.claimReliefFund}
       onSelectHeroSkin={profileActions.selectHeroSkin}
@@ -98,6 +104,7 @@ export function MainHallRoute({
       onUpdateSettings={profileActions.updateProfileSettings}
       onApplyLanguageName={profileActions.applyLanguageName}
       onSetBotCount={onSetBotCount}
+      onLogoutAccount={onLogoutAccount}
       onSetPlayerName={onSetPlayerName}
     />
   );

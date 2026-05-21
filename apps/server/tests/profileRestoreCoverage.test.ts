@@ -45,7 +45,9 @@ function createMemoryStore(): ServerStore {
     state: {
       profiles: {},
       transactions: [],
-      transactionSourceIds: []
+      transactionSourceIds: [],
+      accounts: {},
+      accountSessions: {}
     },
     save() {
       // In-memory tests do not persist to disk.

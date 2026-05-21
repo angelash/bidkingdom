@@ -13,6 +13,7 @@ import {
   DEFAULT_PROFILE_COINS,
   LEGACY_DEFAULT_PROFILE_COINS
 } from '../src/domain/profile/profileRuntimeConfig';
+import { createAccountService } from '../src/services/accountService';
 import { createProfileService } from '../src/services/profileService';
 import { createSQLiteStore, type ServerStore } from '../src/services/store';
 
@@ -21,7 +22,9 @@ function createMemoryStore(): ServerStore {
     state: {
       profiles: {},
       transactions: [],
-      transactionSourceIds: []
+      transactionSourceIds: [],
+      accounts: {},
+      accountSessions: {}
     },
     save() {
       // In-memory tests do not persist to disk.
@@ -103,6 +106,24 @@ describe('profile service', () => {
     expect(snapshot.profile.name).toBe('掌柜数据库');
     expect(snapshot.profile.coins).toBe(DEFAULT_PROFILE_COINS + 700);
     expect(snapshot.transactions.some((transaction) => transaction.reason === 'pay_demo_complete')).toBe(true);
+  });
+
+  it('persists account bindings and sessions through the SQLite store', () => {
+    const dbPath = join(mkdtempSync(join(tmpdir(), 'bitkingdom-account-sqlite-')), 'store.sqlite');
+    const firstStore = createSQLiteStore(dbPath);
+    const firstProfiles = createProfileService(firstStore);
+    const firstAccounts = createAccountService(firstStore, firstProfiles);
+    const created = firstAccounts.registerAccount({ accountName: 'sqlite_user', password: 'secret123', playerName: '库房掌柜' });
+
+    const secondStore = createSQLiteStore(dbPath);
+    const secondProfiles = createProfileService(secondStore);
+    const secondAccounts = createAccountService(secondStore, secondProfiles);
+    const restored = secondAccounts.getSessionSnapshot(created.sessionToken);
+    const loggedIn = secondAccounts.loginAccount({ accountName: 'sqlite_user', password: 'secret123' });
+
+    expect(restored?.account.profileId).toBe(created.account.profileId);
+    expect(restored?.profile.profile.name).toBe('库房掌柜');
+    expect(loggedIn.account.profileId).toBe(created.account.profileId);
   });
 
   it('sanitizes profile names and string settings through DirtyWords', () => {
@@ -1083,6 +1104,22 @@ describe('profile service', () => {
           footprint: { w: 1, h: 1 }
         }
       ],
+      awardedItemsByPlayerId: {
+        p_match: [
+          {
+            id: 'compat_100102_1',
+            name: '测试藏品',
+            category: '测试',
+            rarity: 'rare',
+            value: 1000,
+            displayValue: 1000,
+            isFake: false,
+            repairCost: 0,
+            iconKey: 'bidking_item_100102',
+            footprint: { w: 1, h: 1 }
+          }
+        ]
+      },
       auctionStats: [{
         playerId: 'p_match',
         totalProfit: 150000,
@@ -1101,7 +1138,7 @@ describe('profile service', () => {
         lowestWinningItemTotalValueByMap: { 101: 12000 },
         lowestWinningItemTotalValueByBidMap: {}
       }],
-      rewards: [{ playerId: 'p_match', xp: 80, coins: 60, rankPoints: 8 }],
+      rewards: [{ playerId: 'p_match', xp: 80, coins: 0, rankPoints: 8 }],
       eventCount: 0,
       transactionCount: 0
     };
@@ -1111,8 +1148,9 @@ describe('profile service', () => {
 
     const profile = profiles.getSnapshot('p_match').profile;
     expect(profile.completedMatches).toEqual(['match_profile_test']);
-    expect(profile.coins).toBe(DEFAULT_PROFILE_COINS + 80);
+    expect(profile.coins).toBe(DEFAULT_PROFILE_COINS);
     expect(profile.rankPoints).toBe(8);
+    expect(inventoryQuantity(profile, 'compat_100102')).toBe(1);
     expect(profile.completedTasks).toEqual(expect.arrayContaining(['daily_complete_match', 'daily_light_codex', 'ach_rare_collector']));
     expect(profile.auctionStats).toEqual(expect.objectContaining({
       totalProfit: 150000,
@@ -1150,6 +1188,15 @@ describe('profile service', () => {
       required: 1,
       completed: true
     }));
+
+    const sold = profiles.sellInventoryItem('p_match', 'compat_100102', 1).profile;
+    expect(inventoryQuantity(sold, 'compat_100102')).toBe(0);
+    expect(sold.coins).toBe(DEFAULT_PROFILE_COINS + (Item.find((item) => item.id === 100102)?.base_value ?? 0));
+    expect(profiles.getSnapshot('p_match').transactions.map((transaction) => transaction.reason)).toEqual(expect.arrayContaining([
+      'match_award_item',
+      'cabinet_sell_item',
+      'cabinet_sell_coins'
+    ]));
   });
 
   it('adds GuildPoints from completed match profit tiers', () => {

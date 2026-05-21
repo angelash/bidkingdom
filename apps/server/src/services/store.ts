@@ -1,4 +1,4 @@
-import type { PlayerProfile, ProfileTransaction } from '@bitkingdom/shared';
+import type { PlayerProfile, ProfileTransaction, PublicPlayerAccount } from '@bitkingdom/shared';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
@@ -8,6 +8,8 @@ export interface ServerStoreState {
   profiles: Record<string, PlayerProfile>;
   transactions: ProfileTransaction[];
   transactionSourceIds: string[];
+  accounts: Record<string, StoredPlayerAccount>;
+  accountSessions: Record<string, StoredAccountSession>;
 }
 
 export interface ServerStore {
@@ -15,10 +17,27 @@ export interface ServerStore {
   save(): void;
 }
 
+export interface StoredPlayerAccount extends PublicPlayerAccount {
+  normalizedName: string;
+  passwordHash?: string;
+}
+
+export interface StoredAccountSession {
+  token: string;
+  accountId: string;
+  profileId: string;
+  createdAt: number;
+  lastSeenAt: number;
+  expiresAt: number;
+  revokedAt?: number;
+}
+
 const EMPTY_STATE: ServerStoreState = {
   profiles: {},
   transactions: [],
-  transactionSourceIds: []
+  transactionSourceIds: [],
+  accounts: {},
+  accountSessions: {}
 };
 
 interface SQLiteDatabaseSync {
@@ -42,6 +61,16 @@ interface SQLiteTransactionRow {
 
 interface SQLiteSourceRow {
   source_id: string;
+}
+
+interface SQLiteAccountRow {
+  account_id: string;
+  value: string;
+}
+
+interface SQLiteSessionRow {
+  token: string;
+  value: string;
 }
 
 const require = createRequire(import.meta.url);
@@ -98,7 +127,9 @@ function readState(filePath: string): ServerStoreState {
     return {
       profiles: parsed.profiles ?? {},
       transactions: parsed.transactions ?? [],
-      transactionSourceIds: parsed.transactionSourceIds ?? []
+      transactionSourceIds: parsed.transactionSourceIds ?? [],
+      accounts: parsed.accounts ?? {},
+      accountSessions: parsed.accountSessions ?? {}
     };
   } catch {
     return cloneEmptyState();
@@ -109,7 +140,9 @@ function cloneEmptyState(): ServerStoreState {
   return {
     profiles: { ...EMPTY_STATE.profiles },
     transactions: [...EMPTY_STATE.transactions],
-    transactionSourceIds: [...EMPTY_STATE.transactionSourceIds]
+    transactionSourceIds: [...EMPTY_STATE.transactionSourceIds],
+    accounts: { ...EMPTY_STATE.accounts },
+    accountSessions: { ...EMPTY_STATE.accountSessions }
   };
 }
 
@@ -129,6 +162,21 @@ function migrateSQLiteStore(db: SQLiteDatabaseSync): void {
     );
     CREATE TABLE IF NOT EXISTS transaction_sources (
       source_id TEXT PRIMARY KEY
+    );
+    CREATE TABLE IF NOT EXISTS accounts (
+      account_id TEXT PRIMARY KEY,
+      normalized_name TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL,
+      profile_id TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS account_sessions (
+      token TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      profile_id TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      value TEXT NOT NULL
     );
   `);
 }
@@ -153,17 +201,37 @@ function readSQLiteState(db: SQLiteDatabaseSync): ServerStoreState {
     .filter((row): row is ProfileTransaction => Boolean(row));
   const transactionSourceIds = (db.prepare('SELECT source_id FROM transaction_sources').all() as SQLiteSourceRow[])
     .map((row) => row.source_id);
+  const accounts: Record<string, StoredPlayerAccount> = {};
+  for (const row of db.prepare('SELECT account_id, value FROM accounts').all() as SQLiteAccountRow[]) {
+    try {
+      const account = JSON.parse(row.value) as StoredPlayerAccount;
+      accounts[row.account_id] = normalizeStoredAccount(account);
+    } catch {
+      // Skip corrupt account rows; users can recreate login state without profile loss.
+    }
+  }
+  const accountSessions: Record<string, StoredAccountSession> = {};
+  for (const row of db.prepare('SELECT token, value FROM account_sessions').all() as SQLiteSessionRow[]) {
+    try {
+      const session = JSON.parse(row.value) as StoredAccountSession;
+      accountSessions[row.token] = session;
+    } catch {
+      // Skip corrupt sessions so the rest of the store remains usable.
+    }
+  }
   return {
     profiles,
     transactions,
-    transactionSourceIds
+    transactionSourceIds,
+    accounts,
+    accountSessions
   };
 }
 
 function saveSQLiteState(db: SQLiteDatabaseSync, state: ServerStoreState): void {
   db.exec('BEGIN IMMEDIATE TRANSACTION');
   try {
-    db.exec('DELETE FROM profiles; DELETE FROM transactions; DELETE FROM transaction_sources;');
+    db.exec('DELETE FROM profiles; DELETE FROM transactions; DELETE FROM transaction_sources; DELETE FROM accounts; DELETE FROM account_sessions;');
     const profileInsert = db.prepare('INSERT INTO profiles (player_id, updated_at, value) VALUES (?, ?, ?)');
     for (const profile of Object.values(state.profiles)) {
       profileInsert.run(profile.playerId, profile.updatedAt, JSON.stringify(profile));
@@ -176,9 +244,32 @@ function saveSQLiteState(db: SQLiteDatabaseSync, state: ServerStoreState): void 
     for (const sourceId of state.transactionSourceIds) {
       sourceInsert.run(sourceId);
     }
+    const accountInsert = db.prepare('INSERT INTO accounts (account_id, normalized_name, kind, profile_id, updated_at, value) VALUES (?, ?, ?, ?, ?, ?)');
+    for (const account of Object.values(state.accounts)) {
+      accountInsert.run(
+        account.accountId,
+        account.normalizedName,
+        account.kind,
+        account.profileId,
+        account.updatedAt,
+        JSON.stringify(account)
+      );
+    }
+    const sessionInsert = db.prepare('INSERT INTO account_sessions (token, account_id, profile_id, expires_at, value) VALUES (?, ?, ?, ?, ?)');
+    for (const session of Object.values(state.accountSessions)) {
+      sessionInsert.run(session.token, session.accountId, session.profileId, session.expiresAt, JSON.stringify(session));
+    }
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
   }
+}
+
+function normalizeStoredAccount(account: StoredPlayerAccount): StoredPlayerAccount {
+  return {
+    ...account,
+    normalizedName: account.normalizedName || account.accountName.trim().toLowerCase(),
+    kind: account.kind === 'password' ? 'password' : 'guest'
+  };
 }

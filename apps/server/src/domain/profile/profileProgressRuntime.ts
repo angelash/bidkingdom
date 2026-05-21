@@ -13,7 +13,7 @@ import type {
 } from '@bitkingdom/shared';
 import { allLevelRewardRows } from './profileRewardCatalog';
 import { PROFILE_TASK_IDS } from './profileRuntimeConfig';
-import { canonicalCodexItemId, inventoryRecord } from './profileInventory';
+import { addInventory, canonicalCodexItemId, inventoryQuantity, inventoryRecord } from './profileInventory';
 import { guildPointsForDonation } from './guildRuntime';
 
 type AchievementMissionSource = {
@@ -154,24 +154,24 @@ export function applyMatchSummaryForProfile(
     return false;
   }
   const reward = summary.rewards.find((candidate) => candidate.playerId === profile.playerId) ?? { xp: 80, coins: 60, rankPoints: 0 };
+  const awardedItems = awardedItemsForProfile(profile, summary);
   const existingCodex = new Set(profile.codex);
-  const newCodex = summary.revealedItems
+  const newCodex = awardedItems
     .map((item) => canonicalCodexItemId(item.id))
     .filter((itemId) => !existingCodex.has(itemId));
   for (const itemId of newCodex) {
     existingCodex.add(itemId);
   }
-  const bonusCoins = newCodex.length * 20;
-  const totalCoins = reward.coins + bonusCoins;
+  const totalCoins = reward.coins;
   const matchTaskIds = new Set(profile.completedTasks);
   matchTaskIds.add('daily_complete_match');
   if (newCodex.length > 0) {
     matchTaskIds.add('daily_light_codex');
   }
-  if (summary.revealedItems.some((item) => ['rare', 'legendary'].includes(item.rarity))) {
+  if (awardedItems.some((item) => ['rare', 'legendary'].includes(item.rarity))) {
     matchTaskIds.add('ach_rare_collector');
   }
-  if (summary.revealedItems.some((item) => item.rarity === 'legendary')) {
+  if (awardedItems.some((item) => item.rarity === 'legendary')) {
     matchTaskIds.add('ach_legendary_find');
   }
   if (summary.rankings.some((player) => player.playerId === profile.playerId && player.netWorth > 0)) {
@@ -180,10 +180,13 @@ export function applyMatchSummaryForProfile(
 
   applyGuildPointsForMatch(profile, summary, recordTransaction);
   mergeAuctionStats(profile, summary, Date.now());
-  recordAuctionAcquiredItems(profile, summary);
+  recordAuctionAcquiredItems(profile, awardedItems);
+  awardMatchItemsToInventory(profile, summary.matchId, awardedItems, recordTransaction);
 
   applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:xp`, 'match_reward_xp', 'xp', reward.xp);
-  applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:coins`, 'match_reward_coins', 'coins', totalCoins);
+  if (totalCoins > 0) {
+    applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:coins`, 'match_reward_coins', 'coins', totalCoins);
+  }
   applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:rank`, 'match_reward_rank', 'rankPoints', reward.rankPoints);
   profile.level = levelFromXp(profile.xp);
   profile.codex = [...existingCodex];
@@ -201,7 +204,38 @@ export function applyMatchSummaryForProfile(
   return true;
 }
 
-function recordAuctionAcquiredItems(profile: PlayerProfile, summary: FinalMatchSummary): void {
+function awardedItemsForProfile(profile: PlayerProfile, summary: FinalMatchSummary) {
+  return summary.awardedItemsByPlayerId
+    ? summary.awardedItemsByPlayerId[profile.playerId] ?? []
+    : summary.revealedItems;
+}
+
+function awardMatchItemsToInventory(
+  profile: PlayerProfile,
+  matchId: string,
+  awardedItems: ReturnType<typeof awardedItemsForProfile>,
+  recordTransaction?: ProgressTransactionRecorder
+): void {
+  const counts = new Map<string, number>();
+  for (const item of awardedItems) {
+    const itemId = canonicalCodexItemId(item.id);
+    counts.set(itemId, (counts.get(itemId) ?? 0) + 1);
+  }
+  for (const [itemId, quantity] of counts) {
+    const before = inventoryQuantity(profile, itemId);
+    addInventory(profile, 'warehouse', itemId, quantity, `match:${matchId}:${profile.playerId}:item:${itemId}`);
+    recordTransaction?.(
+      profile,
+      `match:${matchId}:${profile.playerId}:item:${itemId}`,
+      'match_award_item',
+      'item',
+      before,
+      quantity
+    );
+  }
+}
+
+function recordAuctionAcquiredItems(profile: PlayerProfile, awardedItems: ReturnType<typeof awardedItemsForProfile>): void {
   profile.conditionStats ??= {
     usedItemCount: 0,
     dailyUsedItemCount: {},
@@ -215,7 +249,7 @@ function recordAuctionAcquiredItems(profile: PlayerProfile, summary: FinalMatchS
     updatedAt: Date.now()
   };
   profile.conditionStats.auctionAcquiredItemIds ??= [];
-  for (const item of summary.revealedItems) {
+  for (const item of awardedItems) {
     const itemId = Number(canonicalCodexItemId(item.id).replace(/^compat_/, ''));
     if (Number.isFinite(itemId) && itemId > 0) {
       profile.conditionStats.auctionAcquiredItemIds.push(itemId);

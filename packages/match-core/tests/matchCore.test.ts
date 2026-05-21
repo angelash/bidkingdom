@@ -277,6 +277,9 @@ describe('match core', () => {
       maxBid: expect.any(Number),
       confidence: expect.any(Number),
       targetBid: expect.any(Number),
+      trueValue: expect.any(Number),
+      targetBidRatio: expect.any(Number),
+      maxBidRatio: expect.any(Number),
       nextOpenBid: expect.any(Number)
     }));
     if (action.type === 'bid') {
@@ -331,6 +334,34 @@ describe('match core', () => {
     });
   });
 
+  it('keeps core sealed bots competitive enough to resist cheap second-round closes', () => {
+    const match = makeCoreMatch();
+    const round = match.currentRound!;
+    match.roundIndex = 1;
+    round.index = 1;
+    round.container.publicInfo.estimateMin = 650_000;
+    round.container.publicInfo.estimateMax = 720_000;
+    round.container.publicInfo.risk = 'low';
+    round.container.minimumBid = 60_000;
+    round.warehouseSlots = [];
+    setRoundPhase(match, 'auction', 30000, 3000);
+
+    const bot = match.players.find((player) => player.id === 'b1')!;
+    bot.skillCooldown = 1;
+    bot.skillUsesRemaining = 0;
+
+    const action = chooseBotAction(match, 'b1', 'mentor');
+
+    expect(action.type).toBe('bid');
+    expect(action.amount ?? 0).toBeGreaterThanOrEqual(380_000);
+    expect(action.audit).toEqual(expect.objectContaining({
+      rankAiRoundCount: 2,
+      trueValue: expect.any(Number),
+      actionBidRatio: expect.any(Number),
+      projectedProfitAtAction: expect.any(Number)
+    }));
+  });
+
   it('reveals items only during reveal phase', () => {
     const match = makeMatch();
     setRoundPhase(match, 'auction', 30000, 3000);
@@ -356,6 +387,8 @@ describe('match core', () => {
     expect(summary?.rankings).toHaveLength(4);
     expect(summary?.netWorthCurve.length).toBe(2);
     expect(summary?.revealedItems.length).toBeGreaterThan(0);
+    expect(summary?.awardedItemsByPlayerId?.p1?.length).toBe(summary?.revealedItems.length);
     expect(summary?.rewards.find((reward) => reward.playerId === 'p1')?.xp).toBeGreaterThan(0);
+    expect(summary?.rewards.find((reward) => reward.playerId === 'p1')?.coins).toBe(0);
   });
 });

@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Activity } from '@bitkingdom/bidking-compat';
-import type { AdminReviewSnapshot } from '@bitkingdom/shared';
+import type { AccountSessionSnapshot, AdminReviewSnapshot } from '@bitkingdom/shared';
 import { describe, expect, it } from 'vitest';
 import { createBitKingdomServer, type BitKingdomServerRuntime } from '../src/serverApp';
 
@@ -81,6 +81,50 @@ function restoreEnv(name: string, value: string | undefined): void {
 }
 
 describe('server routes', () => {
+  it('creates persisted account sessions bound to server profiles', async () => {
+    await withRouteRuntime(async ({ app }) => {
+      const registered = await app.inject({
+        method: 'POST',
+        url: '/api/account/register',
+        payload: { accountName: 'formal_user', password: 'secret123', playerName: '正式掌柜' }
+      });
+      const registeredPayload = JSON.parse(registered.payload) as AccountSessionSnapshot;
+
+      expect(registered.statusCode).toBe(200);
+      expect(registeredPayload.account.accountName).toBe('formal_user');
+      expect(registeredPayload.account.kind).toBe('password');
+      expect(registeredPayload.profile.profile.name).toBe('正式掌柜');
+
+      const session = await app.inject({
+        method: 'GET',
+        url: '/api/account/session',
+        headers: { authorization: `Bearer ${registeredPayload.sessionToken}` }
+      });
+      const sessionPayload = JSON.parse(session.payload) as AccountSessionSnapshot;
+
+      expect(session.statusCode).toBe(200);
+      expect(sessionPayload.account.profileId).toBe(registeredPayload.account.profileId);
+      expect(sessionPayload.profile.profile.playerId).toBe(registeredPayload.account.profileId);
+
+      const mismatch = await app.inject({
+        method: 'GET',
+        url: '/api/profile?playerId=p_other_profile',
+        headers: { authorization: `Bearer ${registeredPayload.sessionToken}` }
+      });
+      expect(mismatch.statusCode).toBe(403);
+
+      const login = await app.inject({
+        method: 'POST',
+        url: '/api/account/login',
+        payload: { accountName: 'formal_user', password: 'secret123' }
+      });
+      const loginPayload = JSON.parse(login.payload) as AccountSessionSnapshot;
+
+      expect(login.statusCode).toBe(200);
+      expect(loginPayload.account.profileId).toBe(registeredPayload.account.profileId);
+    });
+  });
+
   it('serves system bootstrap and config parity from modular route registration', async () => {
     await withRouteRuntime(async ({ app }) => {
       const health = await app.inject({ method: 'GET', url: '/health' });

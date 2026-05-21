@@ -69,6 +69,7 @@ import {
   reliefFundSnapshotForProfile,
   type ReliefFundSnapshot
 } from '../domain/profile/profileReliefFundRuntime';
+import { sellInventoryItemForProfile } from '../domain/profile/profileInventorySaleRuntime';
 import { consumeTicketForMatchProfile, refreshTicketState } from '../domain/profile/profileTicketRuntime';
 import { createEconomyLedger } from '../domain/economy/economyLedger';
 import {
@@ -226,6 +227,13 @@ export function createProfileService(store: ServerStore): ProfileService {
     if (applyMatchSummaryForProfile(profile, summary, applyNumberChange, recordTransaction)) {
       store.save();
     }
+    return getSnapshot(playerId);
+  }
+
+  function sellInventoryItem(playerId: string, refId: string, quantity: number): ProfileSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    sellInventoryItemForProfile(profile, refId, quantity, applyNumberChange, recordTransaction);
+    store.save();
     return getSnapshot(playerId);
   }
 
@@ -633,6 +641,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     claimAchievementReward,
     claimLevelReward,
     applyMatchSummary,
+    sellInventoryItem,
     buyShopItem,
     refreshShop,
     setShopItemCollection,

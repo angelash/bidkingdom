@@ -58,6 +58,7 @@ import {
 } from './domain/battle/roomLifecycleRuntime';
 import type { Room } from './domain/battle/roomLifecycleRuntime';
 import { appendServerLog } from './services/serverLogSink';
+import type { AccountService } from './services/accountService';
 import type { ProfileService } from './services/profileService';
 
 type AppServer = Server<ClientToServerEvents, ServerToClientEvents>;
@@ -71,7 +72,7 @@ export interface RoomManager {
   findMatch(matchId: string): MatchRuntimeState | undefined;
 }
 
-export function createRoomManager(io: AppServer, log: FastifyBaseLogger, services: { profiles: ProfileService }): RoomManager {
+export function createRoomManager(io: AppServer, log: FastifyBaseLogger, services: { accounts?: AccountService; profiles: ProfileService }): RoomManager {
   const rooms = new Map<string, Room>();
   const socketToRoom = new Map<string, string>();
   const socketToPlayer = new Map<string, string>();
@@ -140,7 +141,13 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
         ack({ ok: false, error: '房间不存在' });
         return;
       }
-      const player = room.players.find((candidate) => candidate.id === payload.playerId && candidate.kind === 'human');
+      const sessionProfileId = profileIdForSocket(socket);
+      const requestedPlayerId = sessionProfileId ?? payload.playerId;
+      if (sessionProfileId && payload.playerId !== sessionProfileId) {
+        ack({ ok: false, error: '账号会话与玩家档案不匹配' });
+        return;
+      }
+      const player = room.players.find((candidate) => candidate.id === requestedPlayerId && candidate.kind === 'human');
       if (!player) {
         ack({ ok: false, error: '席位不存在' });
         return;
@@ -413,7 +420,12 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     requestedProfileId?: string
   ): Room {
     const code = createUniqueRoomCode((candidate) => rooms.has(candidate));
-    const playerId = requestedProfileId?.trim() || `p_${randomUUID()}`;
+    const sessionProfileId = profileIdForSocket(socket);
+    if (sessionProfileId && requestedProfileId && requestedProfileId !== sessionProfileId) {
+      emitError(socket, new Error('账号会话与玩家档案不匹配'));
+    }
+    const requestedPlayerId = requestedProfileId?.trim();
+    const playerId = sessionProfileId ?? (requestedPlayerId || `p_${randomUUID()}`);
     services.profiles.getOrCreateProfile(playerId, playerName);
     const room = createRoomState({
       id: `room_${randomUUID()}`,
@@ -433,7 +445,11 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
   }
 
   function addHumanToRoom(room: Room, socket: AppSocket, playerName: string, roleId?: string, fixedPlayerId?: string): ReturnType<typeof createHumanRoomPlayer> | undefined {
-    const playerId = fixedPlayerId ?? `p_${randomUUID()}`;
+    const sessionProfileId = profileIdForSocket(socket);
+    if (sessionProfileId && fixedPlayerId && fixedPlayerId !== sessionProfileId) {
+      emitError(socket, new Error('账号会话与玩家档案不匹配'));
+    }
+    const playerId = sessionProfileId ?? fixedPlayerId ?? `p_${randomUUID()}`;
     const player = createHumanRoomPlayer({
       id: playerId,
       name: services.profiles.getOrCreateProfile(playerId, playerName).name,
@@ -537,6 +553,13 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     }
     const room = rooms.get(roomCode);
     return room ? { room, playerId } : undefined;
+  }
+
+  function profileIdForSocket(socket: AppSocket): string | undefined {
+    const token = typeof socket.handshake.auth?.sessionToken === 'string'
+      ? socket.handshake.auth.sessionToken
+      : undefined;
+    return services.accounts?.resolveProfileIdForSession(token);
   }
 
   function getPlayingContext(socketId: string): { room: Room; playerId: string } | undefined {

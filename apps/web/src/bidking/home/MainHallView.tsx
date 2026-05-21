@@ -10,13 +10,14 @@ import {
   Gavel,
   Info,
   ListChecks,
+  LogOut,
   Shield,
   Trophy,
   Users,
   X
 } from 'lucide-react';
 import { gameConfig } from '@bitkingdom/config';
-import type { CoreAuctionMode, PlayerProfile } from '@bitkingdom/shared';
+import type { CoreAuctionMode, PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
 import { containerArtForKey } from '../../artAssets';
 import { sourcePathForOutgameHub, titleForOutgameHub, type BidKingOutgameHubWindowKey } from '../app/windowRegistry';
 import { RechargePanelView, PassPanelView, type ActivityTargetView, type SimPlanView } from '../activity/ActivityPanels';
@@ -61,6 +62,7 @@ export function MainHallView({
   mapGroups,
   playerName,
   profile,
+  account,
   selectedBidMapId,
   selectedRoleId,
   serverUrl,
@@ -72,6 +74,7 @@ export function MainHallView({
   onSelectHead,
   onSetCabinetItem,
   onClearCabinetItem,
+  onSellCabinetItem,
   onClaimCollectionIncome,
   onClaimReliefFund,
   onSelectHeroSkin,
@@ -113,6 +116,7 @@ export function MainHallView({
   onUpdateSettings,
   onApplyLanguageName,
   onSetBotCount,
+  onLogoutAccount,
   onSetPlayerName
 }: {
   botCount: number;
@@ -122,6 +126,7 @@ export function MainHallView({
   mapGroups: BidKingBattleMapGroup[];
   playerName: string;
   profile: PlayerProfile;
+  account?: PublicPlayerAccount;
   selectedBidMapId?: number;
   selectedRoleId: string;
   serverUrl: string;
@@ -133,6 +138,7 @@ export function MainHallView({
   onSelectHead: (headId: string) => void;
   onSetCabinetItem: (itemId: string) => void;
   onClearCabinetItem: (itemId: string) => void;
+  onSellCabinetItem: (refId: string, quantity: number) => void;
   onClaimCollectionIncome: () => void;
   onClaimReliefFund: () => void;
   onSelectHeroSkin: (skinId: number) => void;
@@ -174,6 +180,7 @@ export function MainHallView({
   onUpdateSettings: (settings: Record<string, string | number | boolean>) => void;
   onApplyLanguageName: () => void;
   onSetBotCount: (value: number) => void;
+  onLogoutAccount: () => void;
   onSetPlayerName: (value: string) => void;
 }): JSX.Element {
   const [activeHub, setActiveHub] = useState<OutgameHub>();
@@ -283,11 +290,17 @@ export function MainHallView({
               onChange={(event) => onSetPlayerName(event.target.value)}
               maxLength={12}
             />
-            <span>UID:1050858240861420</span>
-            <button className="bk-feedback" type="button" onClick={() => openHub('feedback')}>
-              <Info size={17} />
-              呈报
-            </button>
+            <span>{account ? `${account.kind === 'guest' ? '游客' : '账号'}:${account.accountName}` : `UID:${profile.playerId}`}</span>
+            <div className="bk-profile-mini-actions">
+              <button className="bk-feedback" type="button" onClick={() => openHub('feedback')}>
+                <Info size={17} />
+                呈报
+              </button>
+              <button className="bk-feedback" type="button" onClick={onLogoutAccount}>
+                <LogOut size={17} />
+                切换
+              </button>
+            </div>
           </div>
         </div>
 
@@ -493,12 +506,13 @@ export function MainHallView({
           )}
           {activeHub === 'cabinet' && (
             <CabinetBrowser
-              items={unlockedItems}
+              items={catalogItems}
               profile={profile}
               selectedItemId={selectedCodexItemId}
               onSelectItem={setSelectedItemId}
               onSetCabinetItem={onSetCabinetItem}
               onClearCabinetItem={onClearCabinetItem}
+              onSellCabinetItem={onSellCabinetItem}
             />
           )}
           {activeHub === 'shop' && (

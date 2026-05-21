@@ -1280,9 +1280,15 @@ function buildFinalSummary(state: MatchRuntimeState): FinalMatchSummary {
   };
 
   const uniqueItems = new Map<string, RevealedItem>();
+  const awardedItemsByPlayerId: Record<string, RevealedItem[]> = Object.fromEntries(
+    state.players.map((player) => [player.id, []])
+  );
   for (const round of state.roundHistory) {
     for (const item of round.revealedItems) {
       uniqueItems.set(item.id, item);
+    }
+    if (round.winnerId) {
+      awardedItemsByPlayerId[round.winnerId]?.push(...round.revealedItems.map((item) => ({ ...item })));
     }
   }
   const auctionStats = buildAuctionStats(state);
@@ -1295,11 +1301,12 @@ function buildFinalSummary(state: MatchRuntimeState): FinalMatchSummary {
     bestMove,
     biggestMistake,
     revealedItems: [...uniqueItems.values()],
+    awardedItemsByPlayerId,
     auctionStats,
     rewards: rankings.map((player) => ({
       playerId: player.playerId,
       xp: 110 + (4 - player.rank) * 25,
-      coins: 80 + (4 - player.rank) * 20,
+      coins: 0,
       rankPoints: [35, 15, -5, -15][player.rank - 1] ?? 0
     })),
     eventCount: state.events.length + 1,

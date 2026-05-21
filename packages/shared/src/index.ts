@@ -338,6 +338,7 @@ export interface FinalMatchSummary {
   bestMove: FinalMatchInsight;
   biggestMistake: FinalMatchInsight;
   revealedItems: RevealedItem[];
+  awardedItemsByPlayerId?: Record<string, RevealedItem[]>;
   auctionStats?: FinalPlayerAuctionStats[];
   rewards: MatchReward[];
   eventCount: number;
@@ -844,6 +845,26 @@ export interface ProfileTransaction {
 export interface ProfileSnapshot {
   profile: PlayerProfile;
   transactions: ProfileTransaction[];
+}
+
+export type PlayerAccountKind = 'guest' | 'password';
+
+export interface PublicPlayerAccount {
+  accountId: string;
+  accountName: string;
+  displayName: string;
+  kind: PlayerAccountKind;
+  profileId: string;
+  createdAt: number;
+  updatedAt: number;
+  lastLoginAt?: number;
+}
+
+export interface AccountSessionSnapshot {
+  account: PublicPlayerAccount;
+  sessionToken: string;
+  expiresAt: number;
+  profile: ProfileSnapshot;
 }
 
 export interface AdminProfileAuditItem {

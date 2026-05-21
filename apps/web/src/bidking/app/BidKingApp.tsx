@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { AdminDashboard } from '../admin/AdminDashboard';
+import { AccountGate } from './AccountGate';
 import { AppTopBar } from './AppTopBar';
 import { useGameKeyboardLayer } from './useGameKeyboardLayer';
 import { useBidKingAppNavigation } from './useBidKingAppNavigation';
@@ -27,15 +28,23 @@ import { bidKingToastErrorStyle } from '../system/errorCodeStyleRuntime';
 
 export function BidKingApp(): JSX.Element {
   const {
+    account,
     applyProfileSnapshot,
+    authError,
+    authStatus,
     botCount,
     coreAuctionMode,
+    continueAsGuest,
     dismissTutorial,
+    loginAccount,
+    logoutAccount,
     playerName,
     profile,
     profileId,
+    registerAccount,
     selectedBidMapId,
     selectedRoleId,
+    sessionToken,
     setBotCount,
     setCoreAuctionMode,
     setPlayerName,
@@ -63,11 +72,12 @@ export function BidKingApp(): JSX.Element {
     snapshot,
     socket,
     toast
-  } = useBidKingSocket({ serverUrl: SERVER_URL, onProfileUpdated: applyProfileSnapshot });
+  } = useBidKingSocket({ serverUrl: SERVER_URL, onProfileUpdated: applyProfileSnapshot, profileId, sessionToken });
   const profileActions = useProfileActions({
     onError: setToast,
     onProfileSnapshot: applyProfileSnapshot,
     playerId: profileId,
+    sessionToken,
     serverUrl: SERVER_URL
   });
 
@@ -154,6 +164,22 @@ export function BidKingApp(): JSX.Element {
     onReturnHome: navigation.returnHome
   });
 
+  if (view === 'play' && authStatus !== 'ready') {
+    return (
+      <main className="app-shell home-screen">
+        <div className="backdrop" />
+        <AccountGate
+          defaultPlayerName={playerName}
+          error={authError}
+          status={authStatus}
+          onContinueAsGuest={continueAsGuest}
+          onLogin={loginAccount}
+          onRegister={registerAccount}
+        />
+      </main>
+    );
+  }
+
   const isActiveMatchView = view === 'play' && Boolean(snapshot && matchState.currentRound && snapshot.public.status !== 'ended');
   const isHomeView = view === 'play' && !room;
 
@@ -179,12 +205,14 @@ export function BidKingApp(): JSX.Element {
           mapGroups={bidKingBattleMapGroups}
           playerName={playerName}
           profile={profile}
+          account={account}
           profileActions={profileActions}
           roomActions={roomActions}
           selectedBidMapId={selectedBidMapId}
           selectedRoleId={selectedRoleId}
           serverUrl={SERVER_URL}
           onSetBotCount={setBotCount}
+          onLogoutAccount={logoutAccount}
           onSetPlayerName={setPlayerName}
         />
       )}

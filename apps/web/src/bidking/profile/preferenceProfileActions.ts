@@ -10,6 +10,7 @@ export interface PreferenceProfileActions {
   selectHeroSkin: (skinId: number) => void;
   clearCabinetItem: (itemId: string) => void;
   setCabinetItem: (itemId: string) => void;
+  sellCabinetItem: (refId: string, quantity: number) => void;
   updateProfileSettings: (settings: Record<string, string | number | boolean>) => void;
 }
 
@@ -41,6 +42,9 @@ export function createPreferenceProfileActions(postProfileAction: PostProfileAct
     },
     setCabinetItem: (itemId) => {
       postProfileAction('/api/cabinet/set', { itemId });
+    },
+    sellCabinetItem: (refId, quantity) => {
+      postProfileAction('/api/cabinet/sell', { refId, quantity });
     },
     updateProfileSettings: (settings) => {
       postProfileAction('/api/profile/settings', { settings });

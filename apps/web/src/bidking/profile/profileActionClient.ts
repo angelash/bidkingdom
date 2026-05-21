@@ -4,6 +4,7 @@ export interface UseProfileActionsArgs {
   onError: (message: string) => void;
   onProfileSnapshot: (snapshot: ProfileSnapshot) => void;
   playerId: string;
+  sessionToken?: string;
   serverUrl: string;
 }
 

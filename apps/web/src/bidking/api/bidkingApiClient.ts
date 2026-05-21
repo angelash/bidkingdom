@@ -1,4 +1,5 @@
 import type {
+  AccountSessionSnapshot,
   MatchEventLog,
   ProfileSnapshot,
   TransactionLog
@@ -15,11 +16,11 @@ export interface ReplayBundlePayload {
   transactions: TransactionLog[];
 }
 
-export async function fetchProfileSnapshot(serverUrl: string, playerId: string, playerName: string): Promise<ProfileSnapshot> {
+export async function fetchProfileSnapshot(serverUrl: string, playerId: string, playerName: string, sessionToken?: string): Promise<ProfileSnapshot> {
   const url = new URL('/api/profile', serverUrl);
   url.searchParams.set('playerId', playerId);
   url.searchParams.set('playerName', playerName);
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: authHeaders(sessionToken) });
   if (!response.ok) {
     throw new Error('profile fetch failed');
   }
@@ -30,11 +31,12 @@ export async function postProfileActionSnapshot(
   serverUrl: string,
   playerId: string,
   path: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  sessionToken?: string
 ): Promise<ProfileSnapshot> {
   const response = await fetch(new URL(path, serverUrl), {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...authHeaders(sessionToken) },
     body: JSON.stringify({ playerId, ...body })
   });
   const payload = await response.json() as ProfileSnapshot | ApiErrorPayload;
@@ -42,6 +44,45 @@ export async function postProfileActionSnapshot(
     throw new Error(apiErrorText(payload, '操作失败'));
   }
   return payload;
+}
+
+export async function fetchAccountSession(serverUrl: string, sessionToken: string): Promise<AccountSessionSnapshot> {
+  const response = await fetch(new URL('/api/account/session', serverUrl), {
+    headers: authHeaders(sessionToken)
+  });
+  const payload = await response.json() as AccountSessionSnapshot | ApiErrorPayload;
+  if (!response.ok || !isAccountSessionSnapshot(payload)) {
+    throw new Error(apiErrorText(payload, '登录已过期'));
+  }
+  return payload;
+}
+
+export async function createGuestAccountSession(
+  serverUrl: string,
+  input: { deviceId: string; playerName: string; legacyProfileId?: string }
+): Promise<AccountSessionSnapshot> {
+  return postAccountSession(serverUrl, '/api/account/guest', input);
+}
+
+export async function registerAccountSession(
+  serverUrl: string,
+  input: { accountName: string; password: string; playerName: string }
+): Promise<AccountSessionSnapshot> {
+  return postAccountSession(serverUrl, '/api/account/register', input);
+}
+
+export async function loginAccountSession(
+  serverUrl: string,
+  input: { accountName: string; password: string; playerName?: string }
+): Promise<AccountSessionSnapshot> {
+  return postAccountSession(serverUrl, '/api/account/login', input);
+}
+
+export async function logoutAccountSession(serverUrl: string, sessionToken: string): Promise<void> {
+  await fetch(new URL('/api/account/logout', serverUrl), {
+    method: 'POST',
+    headers: authHeaders(sessionToken)
+  });
 }
 
 export async function fetchReplayBundle(serverUrl: string, matchId: string): Promise<ReplayBundlePayload> {
@@ -59,6 +100,31 @@ export async function fetchReplayBundle(serverUrl: string, matchId: string): Pro
 
 function isProfileSnapshot(payload: ProfileSnapshot | ApiErrorPayload): payload is ProfileSnapshot {
   return 'profile' in payload && 'transactions' in payload;
+}
+
+function isAccountSessionSnapshot(payload: AccountSessionSnapshot | ApiErrorPayload): payload is AccountSessionSnapshot {
+  return 'account' in payload && 'sessionToken' in payload && 'profile' in payload;
+}
+
+async function postAccountSession(
+  serverUrl: string,
+  path: string,
+  body: Record<string, unknown>
+): Promise<AccountSessionSnapshot> {
+  const response = await fetch(new URL(path, serverUrl), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json() as AccountSessionSnapshot | ApiErrorPayload;
+  if (!response.ok || !isAccountSessionSnapshot(payload)) {
+    throw new Error(apiErrorText(payload, '登录失败'));
+  }
+  return payload;
+}
+
+function authHeaders(sessionToken?: string): Record<string, string> {
+  return sessionToken ? { authorization: `Bearer ${sessionToken}` } : {};
 }
 
 function apiErrorText(payload: unknown, fallback: string): string {

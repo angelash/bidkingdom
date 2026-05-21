@@ -16,15 +16,16 @@ export function useProfileActions({
   onError,
   onProfileSnapshot,
   playerId,
+  sessionToken,
   serverUrl
 }: UseProfileActionsArgs): ProfileActions {
   const postProfileAction = useCallback<PostProfileAction>((path, body) => {
-    void postProfileActionSnapshot(serverUrl, playerId, path, body)
+    void postProfileActionSnapshot(serverUrl, playerId, path, body, sessionToken)
       .then(onProfileSnapshot)
       .catch((error: unknown) => {
         onError(error instanceof Error ? error.message : '操作失败');
       });
-  }, [onError, onProfileSnapshot, playerId, serverUrl]);
+  }, [onError, onProfileSnapshot, playerId, serverUrl, sessionToken]);
 
   return useMemo(() => ({
     ...createCommerceProfileActions(postProfileAction),

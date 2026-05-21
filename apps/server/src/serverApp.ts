@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Server } from 'socket.io';
 import { createRoomManager } from './roomManager';
+import { registerAccountRoutes } from './routes/accountRoutes';
 import { registerAdminRoutes } from './routes/adminRoutes';
 import { registerEconomyRoutes } from './routes/economyRoutes';
 import { registerErrorEnvelope } from './routes/errorEnvelope';
@@ -9,6 +10,7 @@ import { registerMatchRoutes } from './routes/matchRoutes';
 import { registerProfileRoutes } from './routes/profileRoutes';
 import { registerSocialRoutes } from './routes/socialRoutes';
 import { registerSystemRoutes } from './routes/systemRoutes';
+import { bearerToken, createAccountService, type AccountService } from './services/accountService';
 import { createProfileService, type ProfileService } from './services/profileService';
 import { createServerStore, type ServerStore } from './services/store';
 
@@ -20,6 +22,7 @@ export interface BitKingdomServerRuntime {
   app: FastifyInstance;
   io: Server;
   store: ServerStore;
+  accounts: AccountService;
   profiles: ProfileService;
   rooms: ReturnType<typeof createRoomManager>;
 }
@@ -42,9 +45,12 @@ export async function createBitKingdomServer(options: BitKingdomServerOptions = 
 
   const store = createServerStore();
   const profiles = createProfileService(store);
-  const rooms = createRoomManager(io, app.log, { profiles });
+  const accounts = createAccountService(store, profiles);
+  const rooms = createRoomManager(io, app.log, { accounts, profiles });
 
   registerAdminRoutes(app, { profiles, rooms, store });
+  registerAccountRoutes(app, accounts);
+  registerAccountSessionGuard(app, accounts);
   registerEconomyRoutes(app, profiles);
   registerMatchRoutes(app, rooms);
   registerProfileRoutes(app, profiles);
@@ -56,5 +62,31 @@ export async function createBitKingdomServer(options: BitKingdomServerOptions = 
     rooms.bindSocket(socket);
   });
 
-  return { app, io, store, profiles, rooms };
+  return { app, io, store, accounts, profiles, rooms };
+}
+
+function registerAccountSessionGuard(app: FastifyInstance, accounts: AccountService): void {
+  app.addHook('preHandler', async (request, reply) => {
+    const token = bearerToken(request.headers.authorization);
+    if (!token) {
+      return;
+    }
+    const sessionProfileId = accounts.resolveProfileIdForSession(token);
+    if (!sessionProfileId) {
+      await reply.code(401).send({ error: 'session expired' });
+      return;
+    }
+    const requestedPlayerId = requestPlayerId(request.body) ?? requestPlayerId(request.query);
+    if (requestedPlayerId && requestedPlayerId !== sessionProfileId) {
+      await reply.code(403).send({ error: 'profile session mismatch' });
+    }
+  });
+}
+
+function requestPlayerId(source: unknown): string | undefined {
+  if (!source || typeof source !== 'object' || !('playerId' in source)) {
+    return undefined;
+  }
+  const value = (source as { playerId?: unknown }).playerId;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }

@@ -8,16 +8,25 @@ import {
   bidKingStarterHeadId,
   bidKingStarterInventoryRewards
 } from '@bitkingdom/match-core';
-import type { CoreAuctionMode, PlayerInventoryEntry, PlayerProfile } from '@bitkingdom/shared';
+import type { AccountSessionSnapshot, CoreAuctionMode, PlayerInventoryEntry, PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
 import { codexCatalogItems } from '../catalog/codexRuntime';
 
 const PROFILE_KEY = 'bk_profile_v2';
 const PROFILE_ID_KEY = 'bk_profile_id_v1';
 const SESSION_KEY = 'bk_session_v2';
+const ACCOUNT_SESSION_KEY = 'bk_account_session_v1';
+const DEVICE_ID_KEY = 'bk_device_id_v1';
 const CORE_AUCTION_MODE_KEY = 'bk_core_auction_mode';
 const UNLOCK_ALL_CODEX_FOR_REVIEW = true;
 const LEGACY_DEFAULT_PROFILE_COINS = 12_000;
 const DEFAULT_PROFILE_COINS = bidKingStarterCoins(LEGACY_DEFAULT_PROFILE_COINS);
+
+export interface StoredAccountSession {
+  account: PublicPlayerAccount;
+  sessionToken: string;
+  expiresAt: number;
+  profileId: string;
+}
 
 export function loadProfileId(): string {
   const existing = localStorage.getItem(PROFILE_ID_KEY);
@@ -45,6 +54,51 @@ export function loadProfile(): PlayerProfile {
 
 export function saveProfile(profile: PlayerProfile): void {
   localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+}
+
+export function loadStoredAccountSession(): StoredAccountSession | undefined {
+  const raw = localStorage.getItem(ACCOUNT_SESSION_KEY);
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(raw) as StoredAccountSession;
+    if (!parsed.sessionToken || !parsed.profileId || parsed.expiresAt <= Date.now()) {
+      clearStoredAccountSession();
+      return undefined;
+    }
+    return parsed;
+  } catch {
+    clearStoredAccountSession();
+    return undefined;
+  }
+}
+
+export function saveAccountSession(snapshot: AccountSessionSnapshot): void {
+  localStorage.setItem(ACCOUNT_SESSION_KEY, JSON.stringify({
+    account: snapshot.account,
+    sessionToken: snapshot.sessionToken,
+    expiresAt: snapshot.expiresAt,
+    profileId: snapshot.account.profileId
+  } satisfies StoredAccountSession));
+  localStorage.setItem(PROFILE_ID_KEY, snapshot.account.profileId);
+  localStorage.setItem('bk_player_name', snapshot.profile.profile.name);
+}
+
+export function clearStoredAccountSession(): void {
+  localStorage.removeItem(ACCOUNT_SESSION_KEY);
+}
+
+export function loadDeviceId(): string {
+  const existing = localStorage.getItem(DEVICE_ID_KEY);
+  if (existing) {
+    return existing;
+  }
+  const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+  localStorage.setItem(DEVICE_ID_KEY, id);
+  return id;
 }
 
 export function loadCoreAuctionMode(): CoreAuctionMode {
