@@ -5,7 +5,7 @@ import {
   bidKingBidRateChoices,
   bidKingDefaultRoundTimeSeconds,
   bidKingInitialCashChoices,
-  bidKingInitialCashForBidMap,
+  bidKingInitialCashForProfileCoins,
   bidKingItemBudgetChoices,
   bidKingReliefFundRuntime,
   bidKingRoomPlayerCountChoices
@@ -78,6 +78,7 @@ export function BattlePrevPanelView({
   const selectedBidMap = selectedGroup.children.find((map) => map.id === selectedBidMapId) ?? selectedGroup.children[0]!;
   const selectedParentMap = selectedGroup.parent;
   const selectedRankMap = bidKingRankMaps.find((rankMap) => rankMap.id === selectedBidMap.id);
+  const selectedInitialCash = bidKingInitialCashForProfileCoins(profile.coins, selectedBidMap.id, gameConfig.rules.initialCash);
   const sceneMode = modeForBidKingMap(selectedParentMap);
   const selectedRoleSkill = roleSkillDetails[selectedRole.skillId];
   const tabs = [
@@ -164,7 +165,7 @@ export function BattlePrevPanelView({
                   <DetailStat label="人数" value={`${selectedBidMap.bidder_number} 人同局`} />
                   <DetailStat label="格数" value={`${selectedBidMap.map_cell} 格`} />
                   <DetailStat label="时间" value={bidKingRoundTimes(selectedBidMap)} />
-                  <DetailStat label="起始资金" value={formatCompactCurrency(bidKingInitialCashForBidMap(selectedBidMap.id, gameConfig.rules.initialCash))} />
+                  <DetailStat label="起始资金" value={formatCompactCurrency(selectedInitialCash)} />
                   <DetailStat label="最低出价" value={bidKingMinBidLabel(selectedRankMap)} />
                 </div>
                 <BidKingBidMapSelector
@@ -172,7 +173,7 @@ export function BattlePrevPanelView({
                   selectedBidMapId={selectedBidMap.id}
                   onSelect={onSelectBidMap}
                 />
-                <BidKingRuleSummary bidMap={selectedBidMap} rankMap={selectedRankMap} />
+                <BidKingRuleSummary bidMap={selectedBidMap} profileCoins={profile.coins} rankMap={selectedRankMap} />
               </div>
             )}
 
@@ -314,9 +315,11 @@ function BidKingBidMapSelector({
 
 function BidKingRuleSummary({
   bidMap,
+  profileCoins,
   rankMap
 }: {
   bidMap: BidKingBidMapRow;
+  profileCoins: number;
   rankMap?: (typeof bidKingRankMaps)[number];
 }): JSX.Element {
   const roundRules = bidMap.auction_rounds_rate.map((rate, index) => {
@@ -329,6 +332,7 @@ function BidKingRuleSummary({
     .slice(0, 3);
   const skillGroups = bidMap.map_random_skill.filter((groupId) => groupId > 0);
   const reliefFund = bidKingReliefFundRuntime();
+  const initialCash = bidKingInitialCashForProfileCoins(profileCoins, bidMap.id, gameConfig.rules.initialCash);
   return (
     <section className="bidking-rule-summary">
       <div className="bidking-round-rate">
@@ -341,7 +345,7 @@ function BidKingRuleSummary({
       </div>
       <div className="bidking-rule-list">
         <p><strong>入场</strong>{bidKingCostText(bidMap)}</p>
-        <p><strong>起始资金</strong>{formatCompactCurrency(bidKingInitialCashForBidMap(bidMap.id, gameConfig.rules.initialCash))} · 档位 {bidKingInitialCashChoices().map(formatCompactCurrency).join(' / ')}</p>
+        <p><strong>起始资金</strong>{formatCompactCurrency(initialCash)} · 档位 {bidKingInitialCashChoices().map(formatCompactCurrency).join(' / ')}</p>
         <p><strong>产出</strong>{bidMap.item_count_min}-{bidMap.item_count_max} 件 · {bidKingBidMapDesc(bidMap)}</p>
         <p><strong>最低价池</strong>{minBidRanges?.join(' / ') || '-'}</p>
         <p><strong>估值预算</strong>{bidKingItemBudgetChoices().map(formatCompactCurrency).join(' / ')}</p>

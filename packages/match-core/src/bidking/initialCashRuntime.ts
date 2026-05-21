@@ -36,3 +36,16 @@ export function bidKingInitialCashForBidMap(bidMapId?: number, fallback = FALLBA
   const target = Math.max(bidKingDefaultInitialCash(fallback), requiredByMap, requestedInitialCash);
   return choices.find((value) => value >= target) ?? choices[choices.length - 1] ?? fallback;
 }
+
+export function bidKingInitialCashForProfileCoins(
+  profileCoins: number | undefined,
+  bidMapId?: number,
+  fallback = FALLBACK_INITIAL_CASH
+): number {
+  const choices = bidKingInitialCashChoices();
+  const safeCoins = Number.isFinite(profileCoins) && profileCoins && profileCoins > 0
+    ? Math.floor(profileCoins)
+    : 0;
+  const profileTier = choices.filter((value) => value <= safeCoins).at(-1);
+  return bidKingInitialCashForBidMap(bidMapId, profileTier ?? fallback);
+}

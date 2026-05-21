@@ -6,7 +6,7 @@ import type {
   RoomSnapshot
 } from '@bitkingdom/shared';
 import { gameConfig } from '@bitkingdom/config';
-import { bidKingInitialCashForBidMap } from '@bitkingdom/match-core';
+import { bidKingInitialCashForProfileCoins } from '@bitkingdom/match-core';
 import {
   SELECTED_BID_MAP_KEY,
   modeForBidMapId
@@ -24,6 +24,7 @@ interface UseRoomActionsArgs {
   defaultBidMapId?: number;
   isHost: boolean;
   playerName: string;
+  profileCoins: number;
   profileId: string;
   room?: RoomSnapshot;
   selectedBidMapId?: number;
@@ -53,6 +54,7 @@ export function useRoomActions({
   defaultBidMapId,
   isHost,
   playerName,
+  profileCoins,
   profileId,
   room,
   selectedBidMapId,
@@ -86,7 +88,7 @@ export function useRoomActions({
       botCount,
       coreAuctionMode: sceneMode,
       selectedBidMapId: bidMapId,
-      initialCash: bidKingInitialCashForBidMap(bidMapId, gameConfig.rules.initialCash)
+      initialCash: bidKingInitialCashForProfileCoins(profileCoins, bidMapId, gameConfig.rules.initialCash)
     }, (ack: RoomAck) => {
       activeRoomCodeRef.current = ack.room.code;
       setSelfPlayerId(ack.selfPlayerId);
@@ -101,6 +103,7 @@ export function useRoomActions({
     coreAuctionMode,
     defaultBidMapId,
     playerName,
+    profileCoins,
     profileId,
     selectedBidMapId,
     selectedRoleId,

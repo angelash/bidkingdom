@@ -9,6 +9,7 @@ export {
   bidKingHighestConfiguredMinimumBidForBidMap,
   bidKingInitialCashChoices,
   bidKingInitialCashForBidMap,
+  bidKingInitialCashForProfileCoins,
   bidKingItemBudgetChoices
 } from './bidking/initialCashRuntime';
 export {

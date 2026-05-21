@@ -2,6 +2,7 @@ import { gameConfig } from '@bitkingdom/config';
 import {
   bidKingInitialCashChoices,
   bidKingInitialCashForBidMap,
+  bidKingInitialCashForProfileCoins,
   bidKingDefaultBidGameCount,
   bidKingMaxBotCount,
   createMatch,
@@ -209,7 +210,11 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
         return;
       }
       context.room.selectedBidMapId = validBidMapId(payload.bidMapId);
-      context.room.initialCash = bidKingInitialCashForBidMap(context.room.selectedBidMapId, gameConfig.rules.initialCash);
+      context.room.initialCash = bidKingInitialCashForProfileCoins(
+        services.profiles.getSnapshot(context.playerId).profile.coins,
+        context.room.selectedBidMapId,
+        gameConfig.rules.initialCash
+      );
       broadcasts.broadcastRoom(context.room);
     });
 
@@ -427,14 +432,17 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     }
     const requestedPlayerId = requestedProfileId?.trim();
     const playerId = sessionProfileId ?? (requestedPlayerId || `p_${randomUUID()}`);
-    services.profiles.getOrCreateProfile(playerId, playerName);
+    const hostProfile = services.profiles.getOrCreateProfile(playerId, playerName);
     const room = createRoomState({
       id: `room_${randomUUID()}`,
       code,
       hostId: playerId,
       botCount: Math.max(0, Math.min(maxBotCount, requestedBotCount)),
       totalRounds: bidKingDefaultBidGameCount(gameConfig.rules.totalRounds),
-      initialCash: validInitialCashForBidMap(requestedInitialCash, validBidMapId(requestedBidMapId)),
+      initialCash: validInitialCashForBidMap(
+        requestedInitialCash ?? bidKingInitialCashForProfileCoins(hostProfile.coins, validBidMapId(requestedBidMapId), gameConfig.rules.initialCash),
+        validBidMapId(requestedBidMapId)
+      ),
       coreAuctionMode: validCoreAuctionMode(requestedCoreAuctionMode),
       selectedBidMapId: validBidMapId(requestedBidMapId),
     });

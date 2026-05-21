@@ -5,6 +5,7 @@ import {
   bidKingHighestConfiguredMinimumBidForBidMap,
   bidKingInitialCashChoices,
   bidKingInitialCashForBidMap,
+  bidKingInitialCashForProfileCoins,
   bidKingItemBudgetChoices
 } from './initialCashRuntime';
 import {
@@ -38,6 +39,13 @@ describe('BidKing initial cash runtime', () => {
     expect(bidKingInitialCashForBidMap(2201, 2_000_000)).toBe(2_000_000);
     expect(bidKingHighestConfiguredMinimumBidForBidMap(2601)).toBe(3_000_000);
     expect(bidKingInitialCashForBidMap(2601)).toBe(3_000_000);
+  });
+
+  it('uses account coins to pick the highest affordable initial cash tier while honoring map minimums', () => {
+    expect(bidKingInitialCashForProfileCoins(2_090_000, 2201)).toBe(2_000_000);
+    expect(bidKingInitialCashForProfileCoins(2_000_000, 2201)).toBe(2_000_000);
+    expect(bidKingInitialCashForProfileCoins(1_999_999, 2201)).toBe(1_000_000);
+    expect(bidKingInitialCashForProfileCoins(2_090_000, 2601)).toBe(3_000_000);
   });
 
   it('applies the resolved cash tier to every runtime player in core matches', () => {
