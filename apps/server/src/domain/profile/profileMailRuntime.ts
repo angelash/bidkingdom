@@ -1,6 +1,7 @@
 import { Mail } from '@bitkingdom/bidking-compat';
 import { bidKingMailMaxCount, parseBidKingNumberRows } from '@bitkingdom/match-core';
 import type { MailInboxItem, PlayerProfile } from '@bitkingdom/shared';
+import { sanitizeText } from '../system/textGuard';
 
 type RewardRowSource = {
   id?: string;
@@ -15,7 +16,10 @@ export function mailAttachmentRewards(row?: RewardRowSource): number[][] {
 }
 
 export function mailAttachmentSummary(row: RewardRowSource): string {
-  const rewards = mailAttachmentRewards(row);
+  return rewardRowsSummary(mailAttachmentRewards(row));
+}
+
+export function rewardRowsSummary(rewards: readonly (readonly number[])[]): string {
   if (rewards.length === 0) {
     return '无附件';
   }
@@ -62,6 +66,44 @@ export function addMailFromTemplate(profile: PlayerProfile, templateId: string, 
   return mail;
 }
 
+export function addCustomMailToProfile(
+  profile: PlayerProfile,
+  input: {
+    sourceKey: string;
+    title: string;
+    body: string;
+    attachmentRewards?: number[][];
+    expiresAt?: number;
+    now?: number;
+  }
+): MailInboxItem | undefined {
+  if (profile.mail.length >= bidKingMailMaxCount()) {
+    return undefined;
+  }
+  const sourceKey = safeMailKey(input.sourceKey);
+  const mailId = `mail_custom_${profile.playerId}_${sourceKey}`;
+  if (profile.mail.some((mail) => mail.id === mailId)) {
+    return undefined;
+  }
+  const rewards = normalizeRewardRows(input.attachmentRewards ?? []);
+  const createdAt = input.now ?? Date.now();
+  const mail: MailInboxItem = {
+    id: mailId,
+    templateId: `custom:${sourceKey}`,
+    title: sanitizeText(input.title).trim().slice(0, 40) || '系统补偿',
+    body: sanitizeText(input.body).trim().slice(0, 240) || '系统补偿已送达，请查收附件。',
+    read: false,
+    claimed: false,
+    attachmentSummary: rewardRowsSummary(rewards),
+    attachmentRewards: rewards,
+    createdAt,
+    expiresAt: input.expiresAt
+  };
+  profile.mail.unshift(mail);
+  profile.updatedAt = createdAt;
+  return mail;
+}
+
 export function mailExpiresAt(row: RewardRowSource | undefined, createdAt: number): number | undefined {
   const days = Number(row?.columns[8] ?? 0);
   return Number.isFinite(days) && days > 0 ? createdAt + days * DAY_MS : undefined;
@@ -87,4 +129,18 @@ function safeMailText(value: string): string {
     return '';
   }
   return normalized;
+}
+
+function safeMailKey(value: string): string {
+  return value.trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 48) || String(Date.now());
+}
+
+function normalizeRewardRows(rewards: readonly (readonly number[])[]): number[][] {
+  return rewards
+    .map(([type = 0, refId = 0, quantity = 0]) => [
+      Math.floor(Number(type) || 0),
+      Math.floor(Number(refId) || 0),
+      Math.max(0, Math.floor(Number(quantity) || 0))
+    ] satisfies [number, number, number])
+    .filter((row) => row[0] > 0 && row[1] >= 0 && row[2] > 0);
 }

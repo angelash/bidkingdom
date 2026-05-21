@@ -188,6 +188,77 @@ describe('server routes', () => {
     });
   });
 
+  it('exports safe admin snapshots, runs maintenance, and sends compensation mail', async () => {
+    await withRouteRuntime(async ({ app, store }) => {
+      const registered = await app.inject({
+        method: 'POST',
+        url: '/api/account/register',
+        payload: { accountName: 'ops_user', password: 'secret123', playerName: '运营掌柜' }
+      });
+      const registeredPayload = JSON.parse(registered.payload) as AccountSessionSnapshot;
+      const playerId = registeredPayload.account.profileId;
+
+      const exported = await app.inject({ method: 'GET', url: '/api/admin/export?includeTransactions=1' });
+      const exportedPayload = JSON.parse(exported.payload) as {
+        schemaVersion: number;
+        accounts: Array<{ accountName: string; passwordConfigured: boolean; passwordHash?: string }>;
+        sessions: Array<{ token?: string }>;
+        profiles: Array<{ playerId: string }>;
+      };
+      expect(exported.statusCode).toBe(200);
+      expect(exportedPayload.schemaVersion).toBe(2);
+      expect(exportedPayload.accounts.find((account) => account.accountName === 'ops_user')?.passwordConfigured).toBe(true);
+      expect(JSON.stringify(exportedPayload)).not.toContain('passwordHash');
+      expect(exportedPayload.sessions.every((session) => session.token === undefined)).toBe(true);
+      expect(exportedPayload.profiles.some((profile) => profile.playerId === playerId)).toBe(true);
+
+      const compensation = await app.inject({
+        method: 'POST',
+        url: '/api/admin/compensation/mail',
+        payload: {
+          playerIds: [playerId],
+          sourceKey: 'ops_compensation_test',
+          title: '补偿测试',
+          body: '测试补偿到账',
+          rewards: [[1, 1, 321]]
+        }
+      });
+      expect(compensation.statusCode).toBe(200);
+
+      const profileBeforeClaim = await app.inject({ method: 'GET', url: `/api/profile?playerId=${playerId}` });
+      const profileBeforeClaimPayload = JSON.parse(profileBeforeClaim.payload) as { profile: { coins: number; mail: Array<{ id: string; title: string }> } };
+      const mail = profileBeforeClaimPayload.profile.mail.find((entry) => entry.title === '补偿测试');
+      expect(mail).toBeDefined();
+
+      const claimed = await app.inject({
+        method: 'POST',
+        url: '/api/mail/claim',
+        payload: { playerId, mailId: mail!.id }
+      });
+      const claimedPayload = JSON.parse(claimed.payload) as { profile: { coins: number } };
+      expect(claimed.statusCode).toBe(200);
+      expect(claimedPayload.profile.coins).toBe(profileBeforeClaimPayload.profile.coins + 321);
+
+      store.state.accountSessions.expired_ops_session = {
+        token: 'expired_ops_session',
+        accountId: registeredPayload.account.accountId,
+        profileId: playerId,
+        createdAt: 1,
+        lastSeenAt: 1,
+        expiresAt: 1
+      };
+      const maintenance = await app.inject({
+        method: 'POST',
+        url: '/api/admin/maintenance/run',
+        payload: {}
+      });
+      const maintenancePayload = JSON.parse(maintenance.payload) as { profilesRefreshed: number; prunedSessions: number };
+      expect(maintenance.statusCode).toBe(200);
+      expect(maintenancePayload.profilesRefreshed).toBeGreaterThan(0);
+      expect(maintenancePayload.prunedSessions).toBeGreaterThanOrEqual(1);
+    });
+  });
+
   it('serves system bootstrap and config parity from modular route registration', async () => {
     await withRouteRuntime(async ({ app }) => {
       const health = await app.inject({ method: 'GET', url: '/health' });

@@ -70,6 +70,7 @@ import {
   type ReliefFundSnapshot
 } from '../domain/profile/profileReliefFundRuntime';
 import { sellInventoryItemForProfile } from '../domain/profile/profileInventorySaleRuntime';
+import { addCustomMailToProfile } from '../domain/profile/profileMailRuntime';
 import { consumeTicketForMatchProfile, refreshTicketState } from '../domain/profile/profileTicketRuntime';
 import { createEconomyLedger } from '../domain/economy/economyLedger';
 import {
@@ -262,6 +263,26 @@ export function createProfileService(store: ServerStore): ProfileService {
   function claimMail(playerId: string, mailId: string): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
     claimMailForProfile(profile, mailId, applyRewardRows, recordTransaction);
+    store.save();
+    return getSnapshot(playerId);
+  }
+
+  function deliverSystemMail(
+    playerId: string,
+    input: { sourceKey: string; title: string; body: string; rewards?: number[][]; expiresAt?: number }
+  ): ProfileSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    const mail = addCustomMailToProfile(profile, {
+      sourceKey: input.sourceKey,
+      title: input.title,
+      body: input.body,
+      attachmentRewards: input.rewards,
+      expiresAt: input.expiresAt
+    });
+    if (!mail) {
+      throw new Error('邮件已存在或信箱已满');
+    }
+    recordTransaction(profile, `mail:${profile.playerId}:${mail.id}:deliver`, 'mail_system_deliver', 'mail', 0, 1);
     store.save();
     return getSnapshot(playerId);
   }
@@ -646,6 +667,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     refreshShop,
     setShopItemCollection,
     claimMail,
+    deliverSystemMail,
     markMailRead,
     deleteMail,
     equipBattleItems,

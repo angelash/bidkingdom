@@ -606,6 +606,7 @@ export interface MailInboxItem {
   read: boolean;
   claimed: boolean;
   attachmentSummary: string;
+  attachmentRewards?: number[][];
   createdAt: number;
   expiresAt?: number;
 }

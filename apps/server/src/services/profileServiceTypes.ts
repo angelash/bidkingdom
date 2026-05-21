@@ -37,6 +37,7 @@ export interface ProfileService {
   refreshShop(playerId: string, shopId?: number): ProfileSnapshot;
   setShopItemCollection(playerId: string, itemId: number, collected: boolean): ProfileSnapshot;
   claimMail(playerId: string, mailId: string): ProfileSnapshot;
+  deliverSystemMail(playerId: string, input: { sourceKey: string; title: string; body: string; rewards?: number[][]; expiresAt?: number }): ProfileSnapshot;
   markMailRead(playerId: string, mailId: string): ProfileSnapshot;
   deleteMail(playerId: string, mailId: string): ProfileSnapshot;
   equipBattleItems(playerId: string, itemIds: number[]): ProfileSnapshot;

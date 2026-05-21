@@ -38,7 +38,7 @@ export function claimMailForProfile(
   if (!mail.claimed) {
     mail.claimed = true;
     const template = Mail.find((row) => row.id === mail.templateId);
-    applyRewardRows(profile, `mail:${profile.playerId}:${mail.id}`, mailAttachmentRewards(template), 'mail_reward');
+    applyRewardRows(profile, `mail:${profile.playerId}:${mail.id}`, mail.attachmentRewards ?? mailAttachmentRewards(template), 'mail_reward');
     recordTransaction(profile, `mail:${profile.playerId}:${mail.id}:claim`, 'mail_claim', 'mail', 0, 1);
   }
   profile.updatedAt = Date.now();
@@ -73,7 +73,8 @@ export function deleteMailForProfile(
     throw new Error('邮件不存在');
   }
   const template = Mail.find((row) => row.id === mail.templateId);
-  if (!mail.claimed && !isMailExpired(mail) && mailAttachmentRewards(template).length > 0) {
+  const rewards = mail.attachmentRewards ?? mailAttachmentRewards(template);
+  if (!mail.claimed && !isMailExpired(mail) && rewards.length > 0) {
     throw new Error('邮件附件未领取');
   }
   profile.deletedMailTemplateIds ??= [];

@@ -72,6 +72,97 @@ export function registerAdminRoutes(
 ): void {
   const { profiles, rooms, store } = deps;
 
+  app.get<{
+    Querystring: { includeTransactions?: string; transactionLimit?: string };
+  }>('/api/admin/export', async (request) => {
+    const profileList = profiles.listProfiles();
+    const includeTransactions = request.query.includeTransactions === '1' || request.query.includeTransactions === 'true';
+    return {
+      generatedAt: Date.now(),
+      schemaVersion: store.state.schemaVersion,
+      counts: {
+        accounts: Object.keys(store.state.accounts).length,
+        activeSessions: activeAccountSessionCount(store),
+        profiles: profileList.length,
+        transactions: store.state.transactions.length
+      },
+      accounts: Object.values(store.state.accounts).map(redactedAccount),
+      sessions: Object.values(store.state.accountSessions).map(redactedSession),
+      profiles: profileList,
+      transactions: includeTransactions
+        ? profiles.listTransactions(numberQuery(request.query.transactionLimit, 500))
+        : []
+    };
+  });
+
+  app.post<{
+    Body: { pruneSessions?: boolean };
+  }>('/api/admin/maintenance/run', async (request) => {
+    const now = Date.now();
+    const expiredMarketOrders = expiredListedMarketOrderCount(Object.values(store.state.profiles), now);
+    profiles.listMarketOrders();
+    const profileList = profiles.listProfiles();
+    const prunedSessions = request.body?.pruneSessions === false ? 0 : pruneInactiveSessions(store, now);
+    store.save();
+    return {
+      generatedAt: now,
+      profilesRefreshed: profileList.length,
+      expiredMarketOrders,
+      prunedSessions,
+      activeSessions: activeAccountSessionCount(store)
+    };
+  });
+
+  app.post<{
+    Body: {
+      all?: boolean;
+      playerIds?: string[];
+      title?: string;
+      body?: string;
+      rewards?: number[][];
+      sourceKey?: string;
+      expiresInDays?: number;
+    };
+  }>('/api/admin/compensation/mail', async (request, reply) => {
+    const now = Date.now();
+    const targetPlayerIds = request.body?.all
+      ? profiles.listProfiles().map((profile) => profile.playerId)
+      : uniqueIds(request.body?.playerIds ?? []);
+    if (targetPlayerIds.length === 0) {
+      reply.code(400);
+      return { error: 'target playerIds are required' };
+    }
+    const expiresInDays = Math.max(0, Math.floor(Number(request.body?.expiresInDays ?? 0) || 0));
+    const sourceKey = request.body?.sourceKey?.trim() || `admin_${now}`;
+    const delivered: string[] = [];
+    const skipped: Array<{ playerId: string; reason: string }> = [];
+    for (const playerId of targetPlayerIds) {
+      try {
+        profiles.deliverSystemMail(playerId, {
+          sourceKey,
+          title: request.body?.title ?? '系统补偿',
+          body: request.body?.body ?? '补偿已送达，请查收附件。',
+          rewards: normalizeAdminRewardRows(request.body?.rewards ?? []),
+          expiresAt: expiresInDays > 0 ? now + expiresInDays * 24 * 3600_000 : undefined
+        });
+        delivered.push(playerId);
+      } catch (error) {
+        skipped.push({
+          playerId,
+          reason: error instanceof Error ? error.message : 'deliver failed'
+        });
+      }
+    }
+    return {
+      generatedAt: now,
+      sourceKey,
+      deliveredCount: delivered.length,
+      skippedCount: skipped.length,
+      delivered,
+      skipped
+    };
+  });
+
   app.get('/api/admin/matches', async () => ({
     matches: rooms.listMatches()
   }));
@@ -210,6 +301,70 @@ export function registerAdminRoutes(
 
 function sortedTableNames(rows: Array<{ table: string }>): string[] {
   return rows.map((row) => row.table).sort((left, right) => left.localeCompare(right));
+}
+
+function redactedAccount(account: ServerStore['state']['accounts'][string]) {
+  return {
+    accountId: account.accountId,
+    accountName: account.accountName,
+    displayName: account.displayName,
+    kind: account.kind,
+    normalizedName: account.normalizedName,
+    profileId: account.profileId,
+    createdAt: account.createdAt,
+    updatedAt: account.updatedAt,
+    lastLoginAt: account.lastLoginAt,
+    passwordConfigured: Boolean(account.passwordHash)
+  };
+}
+
+function redactedSession(session: ServerStore['state']['accountSessions'][string]) {
+  return {
+    accountId: session.accountId,
+    profileId: session.profileId,
+    createdAt: session.createdAt,
+    lastSeenAt: session.lastSeenAt,
+    expiresAt: session.expiresAt,
+    revokedAt: session.revokedAt
+  };
+}
+
+function activeAccountSessionCount(store: ServerStore): number {
+  const now = Date.now();
+  return Object.values(store.state.accountSessions)
+    .filter((session) => !session.revokedAt && session.expiresAt > now)
+    .length;
+}
+
+function pruneInactiveSessions(store: ServerStore, now: number): number {
+  let pruned = 0;
+  for (const [token, session] of Object.entries(store.state.accountSessions)) {
+    if (session.revokedAt || session.expiresAt <= now) {
+      delete store.state.accountSessions[token];
+      pruned += 1;
+    }
+  }
+  return pruned;
+}
+
+function expiredListedMarketOrderCount(profiles: PlayerProfile[], now: number): number {
+  return profiles.reduce((sum, profile) => sum + (profile.marketOrders ?? [])
+    .filter((order) => order.status === 'listed' && typeof order.expiresAt === 'number' && order.expiresAt <= now)
+    .length, 0);
+}
+
+function uniqueIds(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function normalizeAdminRewardRows(rewards: readonly (readonly number[])[]): number[][] {
+  return rewards
+    .map(([type = 0, refId = 0, quantity = 0]) => [
+      Math.floor(Number(type) || 0),
+      Math.floor(Number(refId) || 0),
+      Math.max(0, Math.floor(Number(quantity) || 0))
+    ] satisfies [number, number, number])
+    .filter((row) => row[0] > 0 && row[1] >= 0 && row[2] > 0);
 }
 
 function buildEquivalentBoundaries(
