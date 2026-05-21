@@ -75,10 +75,19 @@ export function eventPayloadText(payload: unknown, detail: AdminMatchDetail): st
   }
   if (typeof record.actionType === 'string') {
     const audit = asRecord(record.audit);
-    const rankAi = typeof audit?.rankAiRowId === 'number' ? `，RankAi ${audit.rankAiRowId}` : '';
-    const estimate = typeof audit?.estimate === 'number' ? `，估值 ${audit.estimate.toLocaleString()}` : '';
+    const amount = numberPart('出价', record.amount);
+    const rankAi = typeof audit?.rankAiRowId === 'number' ? `RankAi ${audit.rankAiRowId}` : undefined;
+    const estimate = numberPart('估值', audit?.estimate);
+    const target = numberPart('目标', audit?.targetBid, audit?.targetBidRatio);
+    const maxBid = numberPart('上限', audit?.maxBid, audit?.maxBidRatio);
+    const floor = numberPart('底价', audit?.bidFloor, audit?.bidFloorRatio);
+    const trueValue = numberPart('真值', audit?.trueValue);
+    const projectedProfit = numberPart('预盈', audit?.projectedProfitAtAction);
+    const details = [amount, rankAi, estimate, target, maxBid, floor, trueValue, projectedProfit]
+      .filter(Boolean)
+      .join('，');
     const error = typeof record.error === 'string' ? `，失败：${record.error}` : '';
-    return `${record.actionType}${rankAi}${estimate}${error}`;
+    return `${record.actionType}${details ? `，${details}` : ''}${error}`;
   }
   const effectPlan = asRecord(record.effectPlan);
   if (typeof record.itemId === 'number' && effectPlan) {
@@ -192,4 +201,12 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function trimText(text: string, maxLength: number): string {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function numberPart(label: string, value: unknown, ratio?: unknown): string | undefined {
+  if (typeof value !== 'number') {
+    return undefined;
+  }
+  const ratioText = typeof ratio === 'number' ? `(${Math.round(ratio * 100)}%)` : '';
+  return `${label} ${Math.round(value).toLocaleString()}${ratioText}`;
 }

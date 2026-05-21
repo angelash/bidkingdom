@@ -7,6 +7,7 @@ import {
 } from '@bitkingdom/match-core';
 import { bidKingEmojiPresentation, emojiSoundId, findBidKingEmoji } from '@bitkingdom/bidking-compat';
 import type { Room } from './roomLifecycleRuntime';
+import { appendServerLog } from '../../services/serverLogSink';
 
 export function runBotAuctionForRoom(room: Room): void {
   const match = room.match;
@@ -48,6 +49,7 @@ export function runBotAuctionForRoom(room: Room): void {
           reason: action.reason,
           audit: action.audit
         }, now);
+        logBotAction(room, 'bot_action_chosen', player.id, action, now);
       } catch (error) {
         pushEvent(match, 'bot_action_failed', player.id, {
           roundId: match.currentRound?.id,
@@ -59,9 +61,42 @@ export function runBotAuctionForRoom(room: Room): void {
           audit: action.audit,
           error: error instanceof Error ? error.message : String(error)
         }, now);
+        logBotAction(room, 'bot_action_failed', player.id, action, now, error instanceof Error ? error.message : String(error));
         player.passed = match.currentRound?.phase === 'auction';
         followUp = false;
       }
     }
   }
+}
+
+function logBotAction(
+  room: Room,
+  event: 'bot_action_chosen' | 'bot_action_failed',
+  playerId: string,
+  action: ReturnType<typeof chooseBotAction>,
+  now: number,
+  error?: string
+): void {
+  const match = room.match;
+  const round = match?.currentRound;
+  appendServerLog(error ? 'warn' : 'info', event, {
+    roomCode: room.code,
+    roomStatus: room.status,
+    matchId: match?.id,
+    matchStatus: match?.status,
+    roundId: round?.id,
+    roundIndex: round?.index,
+    totalRounds: match?.totalRounds,
+    phase: round?.phase,
+    auctionMode: round?.auctionMode,
+    playerId,
+    actionType: action.type,
+    amount: action.amount,
+    targetPlayerId: action.targetPlayerId,
+    emote: action.emote,
+    reason: action.reason,
+    audit: action.audit,
+    error,
+    decidedAt: now
+  });
 }

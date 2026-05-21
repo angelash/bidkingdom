@@ -283,8 +283,12 @@ describe('BidKing compatible core runtime', () => {
     expect(RankAi.length).toBeGreaterThan(0);
     expect(RankAi.every((row) => row.risk_appetite >= 0 && row.risk_appetite <= 1)).toBe(true);
     expect(action.type).toBe('emote');
-    expect(action.audit?.rankAiRowId).toBe(RankAi[bot.seat]!.id);
-    expect(action.audit?.riskAppetite).toBe(RankAi[bot.seat]!.risk_appetite);
+    const expectedRankAi = RankAi.find((row) =>
+      row.role_id === Hero[bot.seat % Hero.length]!.id &&
+      row.round_count === match.roundIndex + 1
+    )!;
+    expect(action.audit?.rankAiRowId).toBe(expectedRankAi.id);
+    expect(action.audit?.riskAppetite).toBe(expectedRankAi.risk_appetite);
     expect(Emoji.map((row) => bidKingRawTableDisplayName(row))).toContain(action.emote);
   });
 

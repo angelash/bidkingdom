@@ -1,8 +1,8 @@
 import type { GameConfig } from '@bitkingdom/config';
-import { Emoji, RankAi, bidKingRawTableDisplayName } from '@bitkingdom/bidking-compat';
+import { Emoji, Hero, RankAi, bidKingRawTableDisplayName } from '@bitkingdom/bidking-compat';
 import type { AuctionMode, Clue, Rarity, SkillId, WarehouseSlotView } from '@bitkingdom/shared';
 import { getBidKingCloseThreshold } from './bidking/compatRuntime';
-import { calculateNetWorth } from './scoring';
+import { calculateNetWorth, sumItemValue } from './scoring';
 import type { MatchRuntimeState, RuntimePlayer, RuntimeRound } from './types';
 
 export interface BotActionAudit {
@@ -29,12 +29,20 @@ export interface BotActionAudit {
   maxBid?: number;
   targetBid?: number;
   bidFloor?: number;
+  minimumBid?: number;
   availableCash?: number;
   nextOpenBid?: number;
   previousOwnBid?: number;
   previousRank?: number;
   closeThreshold?: number;
   desiredCloseBid?: number;
+  trueValue?: number;
+  targetBidRatio?: number;
+  maxBidRatio?: number;
+  bidFloorRatio?: number;
+  actionBidRatio?: number;
+  projectedProfitAtTarget?: number;
+  projectedProfitAtAction?: number;
   targetPlayerId?: string;
   skillIntent?: string;
   decisionStyle?: string;
@@ -277,7 +285,7 @@ function assessAuction(
   const availableCash = availableCashForBid(state, player, round);
   const bidFloor = bidFloorForRound(state, player, round);
   const nextOpenBid = Math.max(round.container.minimumBid ?? 0, round.currentBid + state.config.rules.minIncrement);
-  const maxBid = maxBidForAssessment(estimate, confidence, riskPenalty, availableCash, tuning, round, state.config.rules.minIncrement);
+  const maxBid = maxBidForAssessment(estimate, confidence, riskPenalty, availableCash, tuning, round, state.coreMode, state.config.rules.minIncrement);
   const closeThreshold = state.coreMode ? getBidKingCloseThreshold(round.index) : 0;
   const desiredCloseBid = desiredOpenCloseBid(state, round, closeThreshold);
   const targetBid = targetBidForAssessment({
@@ -460,11 +468,16 @@ function maxBidForAssessment(
   availableCash: number,
   tuning: BotTuning,
   round: RuntimeRound,
+  coreMode: boolean,
   minIncrement: number
 ): number {
+  const corePressure = coreMode
+    ? 0.06 + Math.min(round.index, 4) * 0.045 + tuning.riskAppetite * 0.05
+    : 0;
   const finalPressure = round.index >= 4 ? 0.06 + tuning.riskAppetite * 0.05 : 0;
   const confidenceFactor = 0.82 + confidence * 0.24;
-  const styleFactor = 0.72 + tuning.bidAggression * 0.2 + tuning.overpayTolerance * 0.24 + finalPressure;
+  const styleBase = coreMode ? 0.86 : 0.72;
+  const styleFactor = styleBase + tuning.bidAggression * 0.2 + tuning.overpayTolerance * 0.24 + corePressure + finalPressure;
   const riskFactor = 1 - riskPenalty * (confidence < 0.48 ? 0.9 : 0.55);
   const raw = estimate * confidenceFactor * styleFactor * riskFactor;
   return floorToIncrement(Math.min(availableCash, raw), minIncrement);
@@ -499,9 +512,14 @@ function targetBidForAssessment(params: {
     round.index >= 4 ? 1.16 : 1.02
   );
   const tableAnchor = estimate * clamp(tuning.minBidRatio / 1000, 0.35, 1.35);
-  const rawTarget = estimate * commitment * 0.78 + tableAnchor * 0.22;
+  const rawTarget = state.coreMode
+    ? estimate * commitment * 0.9 + tableAnchor * 0.1
+    : estimate * commitment * 0.78 + tableAnchor * 0.22;
+  const competitiveFloor = state.coreMode
+    ? estimate * coreCompetitiveBidFloorRatio(round, tuning, confidence, riskPenalty)
+    : 0;
   const minimum = coreExtraRoundMinimum(state, round, previous?.ownBid, bidFloor);
-  const target = Math.min(maxBid, rawTarget);
+  const target = Math.min(maxBid, Math.max(rawTarget, competitiveFloor));
   if (target >= minimum) {
     return roundToIncrement(target, state.config.rules.minIncrement);
   }
@@ -514,11 +532,30 @@ function commitmentForRound(state: MatchRuntimeState, round: RuntimeRound): numb
   if (!state.coreMode) {
     return round.auctionMode === 'flash' ? 0.82 : 0.94;
   }
-  const coreCommitment = [0.52, 0.64, 0.76, 0.9, 1.02];
+  const coreCommitment = [0.58, 0.72, 0.84, 0.96, 1.06];
   if (round.index >= 5) {
     return 1.08;
   }
   return coreCommitment[Math.max(0, Math.min(round.index, coreCommitment.length - 1))] ?? 0.9;
+}
+
+function coreCompetitiveBidFloorRatio(
+  round: RuntimeRound,
+  tuning: BotTuning,
+  confidence: number,
+  riskPenalty: number
+): number {
+  const baseByRound = [0.46, 0.62, 0.74, 0.84, 0.93];
+  const base = baseByRound[Math.max(0, Math.min(round.index, baseByRound.length - 1))] ?? 0.93;
+  const confidenceAdjustment = clamp((confidence - 0.5) * 0.18, -0.05, 0.08);
+  const aggressionAdjustment = clamp(
+    (tuning.bidAggression - 0.5) * 0.12 + (clamp(tuning.pkRatio / 1000, 0.4, 1.8) - 1) * 0.05,
+    -0.04,
+    0.08
+  );
+  const riskAdjustment = riskPenalty * 0.22;
+  const roundCeiling = round.index >= 4 ? 1.02 : 0.92;
+  return clamp(base + confidenceAdjustment + aggressionAdjustment - riskAdjustment, 0.38, roundCeiling);
 }
 
 function previousRankAdjustment(previous: PreviousRoundSignal | undefined, confidence: number): number {
@@ -805,7 +842,15 @@ function botTuningForPlayer(
 }
 
 function rankAiRowForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
-  return RankAi[(Math.max(0, state.roundIndex) * state.players.length + player.seat) % RankAi.length] ?? RankAi[0]!;
+  const hero = Hero[player.seat % Math.max(1, Hero.length)];
+  const roundCount = Math.max(1, state.roundIndex + 1);
+  const heroRows = hero ? RankAi.filter((row) => row.role_id === hero.id) : [];
+  return heroRows.find((row) => row.round_count === roundCount) ??
+    heroRows.find((row) => row.round_count > roundCount) ??
+    heroRows.at(-1) ??
+    RankAi.find((row) => row.round_count === roundCount) ??
+    RankAi[(Math.max(0, state.roundIndex) * state.players.length + player.seat) % RankAi.length] ??
+    RankAi[0]!;
 }
 
 function weightedRangeValue(
@@ -951,6 +996,9 @@ function decisionStyleFor(
 
 function buildBotActionAudit(context: BotContext, trace: string[], action: BotAction): BotActionAudit {
   const { profile, round, role, tuning, assessment, skillIntent } = context;
+  const trueValue = sumItemValue(round.container.hiddenItems);
+  const ratioBase = Math.max(1, assessment.estimate || assessment.publicEstimate);
+  const actionBid = action.type === 'bid' ? action.amount : undefined;
   return {
     profileId: profile.id,
     phase: round.phase,
@@ -975,12 +1023,20 @@ function buildBotActionAudit(context: BotContext, trace: string[], action: BotAc
     maxBid: assessment.maxBid,
     targetBid: assessment.targetBid,
     bidFloor: assessment.bidFloor,
+    minimumBid: round.container.minimumBid,
     availableCash: assessment.availableCash,
     nextOpenBid: assessment.nextOpenBid,
     previousOwnBid: assessment.previous?.ownBid,
     previousRank: assessment.previous?.rank,
     closeThreshold: assessment.closeThreshold,
     desiredCloseBid: assessment.desiredCloseBid,
+    trueValue,
+    targetBidRatio: roundNumber(assessment.targetBid / ratioBase, 3),
+    maxBidRatio: roundNumber(assessment.maxBid / ratioBase, 3),
+    bidFloorRatio: roundNumber(assessment.bidFloor / ratioBase, 3),
+    actionBidRatio: actionBid !== undefined ? roundNumber(actionBid / ratioBase, 3) : undefined,
+    projectedProfitAtTarget: trueValue - assessment.targetBid,
+    projectedProfitAtAction: actionBid !== undefined ? trueValue - actionBid : undefined,
     targetPlayerId: action.targetPlayerId,
     skillIntent: `${skillIntent.reason} (${roundNumber(skillIntent.score, 2)})`,
     decisionStyle: assessment.decisionStyle
