@@ -12,7 +12,8 @@ import {
   bidKingInitialCashChoices,
   bidKingInitialCashForBidMap,
   bidKingInitialCashForProfileCoins,
-  bidKingItemBudgetChoices
+  bidKingItemBudgetChoices,
+  bidKingWorldProcessRows
 } from './initialCashRuntime';
 import {
   bidKingStarterCoins,
@@ -54,7 +55,16 @@ describe('BidKing initial cash runtime', () => {
     expect(bidKingBidMapRequiredCoins(2401)).toBe(2_000_000);
     expect(bidKingBidMapEntryCostCoins(2401)).toBe(10_000);
     expect(bidKingBidMapEntryCosts(2101)).toEqual([{ refId: 101, quantity: 1 }]);
-    expect(bidKingBidMapAccess({ coins: 2_090_000 }, 2401).canEnter).toBe(true);
+    expect(bidKingWorldProcessRows()[0]).toEqual(expect.objectContaining({
+      statusCid: 1,
+      requiredValue: 2_000_000,
+      requiredPeopleCount: 500
+    }));
+    expect(bidKingBidMapAccess({ coins: 2_090_000 }, 2401).reasons).toContain('世界进度 0/500，目标 200万');
+    expect(bidKingBidMapAccess({
+      coins: 2_090_000,
+      auctionStats: { highestWinningItemTotalValue: 2_000_000 }
+    }, 2401).canEnter).toBe(true);
     expect(bidKingBidMapAccess({ coins: 20_000, inventory: [{ refId: 101, quantity: 1 }] }, 2101).canEnter).toBe(true);
     expect(bidKingBidMapAccess({ coins: 20_000, inventory: [] }, 2101).canEnter).toBe(false);
     expect(bidKingBidMapAccess({ coins: 1_999_999 }, 2401).canEnter).toBe(false);
@@ -66,7 +76,11 @@ describe('BidKing initial cash runtime', () => {
       dailyMapEntries: { [bidKingDailyMapEntryKey(101, now)]: 100 }
     }, 2101, now).reasons).toContain('今日次数 100/100');
     expect(bidKingBestAvailableBidMapId({ coins: 2_090_000 }, 2201)).toBe(2201);
-    expect(bidKingBestAvailableBidMapId({ coins: 2_090_000 })).toBe(2401);
+    expect(bidKingBestAvailableBidMapId({ coins: 2_090_000 })).toBe(2301);
+    expect(bidKingBestAvailableBidMapId({
+      coins: 2_090_000,
+      auctionStats: { highestWinningItemTotalValue: 2_000_000 }
+    })).toBe(2401);
     expect(bidKingBestAvailableBidMapId({ coins: 20_000, inventory: [{ refId: 101, quantity: 1 }] })).toBe(2101);
     expect(bidKingInitialCashForProfileCoins(2_090_000, 2201)).toBe(500_000);
     expect(bidKingInitialCashForProfileCoins(2_090_000, 2601)).toBe(3_000_000);

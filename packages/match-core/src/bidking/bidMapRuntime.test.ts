@@ -3,7 +3,9 @@ import { RankMap } from '@bitkingdom/bidking-compat';
 import {
   bidKingBidMapPlayerCount,
   bidKingBotHeroIdsForBidMap,
-  bidKingPlayableBidMaps
+  bidKingPlayableBidMaps,
+  bidKingRandomBidMapCandidates,
+  bidKingResolveRandomBidMapId
 } from './bidMapRuntime';
 import { createMatch } from '../match';
 
@@ -56,5 +58,16 @@ describe('BidKing bid map runtime', () => {
       seed: 'rankmap-spawn-test',
       excludeHeroIds: [101]
     }));
+  });
+
+  it('resolves original random BidMap branches from map_group weights', () => {
+    const candidates = bidKingRandomBidMapCandidates(2101);
+    const resolved = bidKingResolveRandomBidMapId(2101, 'random-map-test');
+
+    expect(candidates).toEqual(expect.arrayContaining([2101, 2102, 2103, 2104, 2105, 2106, 2107]));
+    expect(candidates).toContain(resolved);
+    expect(bidKingResolveRandomBidMapId(2101, 'random-map-test')).toBe(resolved);
+    expect(bidKingRandomBidMapCandidates(999999)).toEqual([999999]);
+    expect(bidKingResolveRandomBidMapId(999999, 'random-map-test')).toBe(999999);
   });
 });

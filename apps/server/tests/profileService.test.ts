@@ -112,6 +112,7 @@ describe('profile service', () => {
 
     const coinCostProfile = profiles.getOrCreateProfile('p_bidmap_coin_cost', '入场扣费');
     coinCostProfile.coins = 2_010_000;
+    coinCostProfile.auctionStats!.highestWinningItemTotalValue = 2_000_000;
     profiles.consumeBidMapEntryCost(coinCostProfile.playerId, 2401, 'match_start:entry_coin');
     profiles.consumeBidMapEntryCost(coinCostProfile.playerId, 2401, 'match_start:entry_coin');
     const afterCoinCost = profiles.getSnapshot(coinCostProfile.playerId);

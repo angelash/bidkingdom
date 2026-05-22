@@ -1,7 +1,7 @@
 import { BidMap, Map as BidKingMap, RankMap } from '@bitkingdom/bidking-compat';
 import type { BidKingBidMapRow, BidKingMapRow } from '@bitkingdom/bidking-compat';
 import { bidKingPlayableBidMaps } from './bidMapRuntime';
-import { constantNumberArray } from './constant/constantEngine';
+import { constantNumberArray, constantNumberRows } from './constant/constantEngine';
 
 const FALLBACK_INITIAL_CASH = 100_000;
 const PREFERRED_DEFAULT_INITIAL_CASH = 1_000_000;
@@ -21,6 +21,9 @@ export interface BidKingBidMapAccessProfile {
   coins: number;
   inventory?: readonly BidKingEntryInventoryItem[];
   dailyMapEntries?: Record<string, number>;
+  auctionStats?: {
+    highestWinningItemTotalValue?: number;
+  };
 }
 
 export interface BidKingBidMapAccessResult {
@@ -34,6 +37,15 @@ export interface BidKingBidMapAccessResult {
   dailyCountLimit: number;
   dailyCountUsed: number;
   nextOpenAt?: number;
+  worldProcess?: BidKingWorldProcessStatus;
+}
+
+export interface BidKingWorldProcessStatus {
+  statusCid: number;
+  requiredValue: number;
+  requiredPeopleCount: number;
+  peopleCounts: number;
+  unlocked: boolean;
 }
 
 export function bidKingInitialCashChoices(): number[] {
@@ -126,6 +138,7 @@ export function bidKingBidMapAccess(
   const dailyCountLimit = parentMap?.daily_counts && parentMap.daily_counts > 0 ? parentMap.daily_counts : 0;
   const dailyCountUsed = parentMap ? bidKingMapDailyEntryCount(profile, parentMap.id, now) : 0;
   const nextOpenAt = parentMap ? bidKingMapNextOpenAt(parentMap, now) : undefined;
+  const worldProcess = parentMap ? bidKingWorldProcessStatusForProfile(profile, parentMap.world_process) : undefined;
 
   if (!bidMap) {
     reasons.push('拍场不存在');
@@ -149,6 +162,9 @@ export function bidKingBidMapAccess(
   if (nextOpenAt && nextOpenAt > now) {
     reasons.push(`开放时间 ${formatDateTime(nextOpenAt)}`);
   }
+  if (worldProcess && !worldProcess.unlocked) {
+    reasons.push(`世界进度 ${worldProcess.peopleCounts}/${worldProcess.requiredPeopleCount}，目标 ${formatCompactNumber(worldProcess.requiredValue)}`);
+  }
 
   for (const cost of bidKingBidMapEntryCosts(bidMapId)) {
     if (cost.refId === COIN_ITEM_ID) {
@@ -169,7 +185,40 @@ export function bidKingBidMapAccess(
     initialCash,
     dailyCountLimit,
     dailyCountUsed,
-    nextOpenAt
+    nextOpenAt,
+    worldProcess
+  };
+}
+
+export function bidKingWorldProcessRows(): BidKingWorldProcessStatus[] {
+  return constantNumberRows('world_process')
+    .map((row) => ({
+      statusCid: Math.max(0, Math.floor(row[0] ?? 0)),
+      requiredValue: Math.max(0, Math.floor(row[1] ?? 0)),
+      requiredPeopleCount: Math.max(0, Math.floor(row[2] ?? 0)),
+      peopleCounts: 0,
+      unlocked: false
+    }))
+    .filter((row) => row.statusCid > 0 && row.requiredPeopleCount > 0);
+}
+
+export function bidKingWorldProcessStatusForProfile(
+  profile: Pick<BidKingBidMapAccessProfile, 'auctionStats'>,
+  statusCid: number
+): BidKingWorldProcessStatus | undefined {
+  if (statusCid <= 0) {
+    return undefined;
+  }
+  const row = bidKingWorldProcessRows().find((candidate) => candidate.statusCid === statusCid);
+  if (!row) {
+    return undefined;
+  }
+  const qualified = (profile.auctionStats?.highestWinningItemTotalValue ?? 0) >= row.requiredValue;
+  const peopleCounts = qualified ? row.requiredPeopleCount : 0;
+  return {
+    ...row,
+    peopleCounts,
+    unlocked: peopleCounts >= row.requiredPeopleCount
   };
 }
 

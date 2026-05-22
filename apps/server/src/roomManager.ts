@@ -5,6 +5,7 @@ import {
   bidKingHeroIdForRoleId,
   bidKingHeroSkinForHero,
   bidKingInitialCashForBidMap,
+  bidKingResolveRandomBidMapId,
   bidKingRoleIdForHeroId,
   bidKingDefaultBidGameCount,
   bidKingMaxBotCount,
@@ -525,7 +526,8 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     if (room.players.length > maxPlayers) {
       throw new Error(`当前拍场仅支持 ${maxPlayers} 人同局`);
     }
-    room.initialCash = bidKingInitialCashForBidMap(room.selectedBidMapId, room.initialCash);
+    const matchBidMapId = bidKingResolveRandomBidMapId(room.selectedBidMapId, room.id);
+    room.initialCash = bidKingInitialCashForBidMap(matchBidMapId, room.initialCash);
     const humanPlayers = room.players.filter((candidate) => candidate.kind === 'human');
     for (const player of humanPlayers) {
       const access = bidKingBidMapAccess(services.profiles.getSnapshot(player.id).profile, room.selectedBidMapId);
@@ -558,7 +560,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       totalRounds: room.totalRounds,
       coreMode: true,
       coreAuctionMode: room.coreAuctionMode,
-      coreBidMapId: room.selectedBidMapId,
+      coreBidMapId: matchBidMapId,
       config: { ...gameConfig, rules: { ...gameConfig.rules, initialCash: room.initialCash } }
     });
     room.match = match;

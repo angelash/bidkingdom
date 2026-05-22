@@ -24,7 +24,9 @@ export {
   bidKingBidMapPlayerCount,
   bidKingBotHeroIdForBidMap,
   bidKingBotHeroIdsForBidMap,
-  bidKingPlayableBidMaps
+  bidKingPlayableBidMaps,
+  bidKingRandomBidMapCandidates,
+  bidKingResolveRandomBidMapId
 } from './bidking/bidMapRuntime';
 export type {
   BidKingBotHeroSpawnOptions
@@ -43,13 +45,16 @@ export {
   bidKingInitialCashForProfileCoins,
   bidKingItemBudgetChoices,
   bidKingMapDailyEntryCount,
-  bidKingMapNextOpenAt
+  bidKingMapNextOpenAt,
+  bidKingWorldProcessRows,
+  bidKingWorldProcessStatusForProfile
 } from './bidking/initialCashRuntime';
 export type {
   BidKingBidMapAccessProfile,
   BidKingBidMapAccessResult,
   BidKingBidMapEntryCost,
-  BidKingEntryInventoryItem
+  BidKingEntryInventoryItem,
+  BidKingWorldProcessStatus
 } from './bidking/initialCashRuntime';
 export {
   bidKingStarterCoins,
