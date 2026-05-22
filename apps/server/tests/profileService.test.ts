@@ -665,12 +665,23 @@ describe('profile service', () => {
     const sellerBefore = listed.coins;
     const order = listed.marketOrders[0]!;
 
+    expect(order).toEqual(expect.objectContaining({
+      itemCid: 100102,
+      numberCid: expect.any(Number),
+      itemNo: expect.any(Number),
+      lockedStockBoxes: [expect.objectContaining({
+        item: expect.objectContaining({ cid: 100102, isLock: true })
+      })]
+    }));
+    expect(listed.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.item.cid === 100102)).toBe(false);
+
     const buyerSnapshot = profiles.settleMarketOrder('p_market_buyer', order.id);
     const sellerSnapshot = profiles.getSnapshot('p_market_seller');
     const soldOrder = sellerSnapshot.profile.marketOrders.find((candidate) => candidate.id === order.id)!;
 
     expect(buyerSnapshot.profile.coins).toBe(buyerBefore - order.price);
     expect(buyerSnapshot.profile.inventory.find((entry) => entry.refId === '100102')?.quantity).toBe(1);
+    expect(buyerSnapshot.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.item.cid === 100102)).toBe(true);
     expect(soldOrder).toEqual(expect.objectContaining({ status: 'sold', buyerId: 'p_market_buyer' }));
     expect(sellerSnapshot.profile.coins).toBe(sellerBefore + order.price - (order.fee ?? 0));
     expect(buyerSnapshot.profile.conditionStats?.tradeBoughtCount).toBe(1);
@@ -702,6 +713,7 @@ describe('profile service', () => {
 
     const sellerSnapshot = profiles.getSnapshot('p_market_broke_seller').profile;
     expect(sellerSnapshot.marketOrders[0]).toEqual(expect.objectContaining({ id: order.id, status: 'listed' }));
+    expect(sellerSnapshot.marketOrders[0]?.lockedStockBoxes).toHaveLength(1);
     expect(inventoryQuantity(sellerSnapshot, '100102')).toBe(0);
   });
 
@@ -716,10 +728,12 @@ describe('profile service', () => {
     expect(sold.coins).toBe(DEFAULT_PROFILE_COINS + 1_122);
 
     const auctionOrder = profiles.createMarketOrder('p_market_actions', '100102', 1, 1500, 'auction').profile.marketOrders[0]!;
+    const lockedBoxId = auctionOrder.lockedStockBoxes?.[0]?.boxId;
     const cancelled = profiles.cancelMarketOrder('p_market_actions', auctionOrder.id).profile;
 
     expect(cancelled.marketOrders[0]?.status).toBe('cancelled');
     expect(inventoryQuantity(cancelled, '100102')).toBe(1);
+    expect(cancelled.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.boxId === lockedBoxId)).toBe(true);
   });
 
   it('lists global market orders for audit and UI snapshots', () => {
@@ -740,6 +754,7 @@ describe('profile service', () => {
     const profile = profiles.getOrCreateProfile('p_market_expire', '掌柜过期');
     grantInventory(profile, '100102', 1);
     const order = profiles.createMarketOrder('p_market_expire', '100102', 1, 2400, 'trade').profile.marketOrders[0]!;
+    const lockedBoxId = order.lockedStockBoxes?.[0]?.boxId;
     profiles.getOrCreateProfile('p_market_expire').marketOrders[0]!.expiresAt = Date.now() - 1;
 
     const snapshot = profiles.listMarketOrders('trade');
@@ -748,6 +763,7 @@ describe('profile service', () => {
     expect(snapshot.orders.find((candidate) => candidate.id === order.id)).toEqual(expect.objectContaining({ status: 'expired' }));
     expect(sellerSnapshot.profile.marketOrders[0]).toEqual(expect.objectContaining({ status: 'expired' }));
     expect(inventoryQuantity(sellerSnapshot.profile, '100102')).toBe(1);
+    expect(sellerSnapshot.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.boxId === lockedBoxId)).toBe(true);
     expect(sellerSnapshot.transactions.some((entry) => entry.reason === 'market_order_expired_return')).toBe(true);
   });
 

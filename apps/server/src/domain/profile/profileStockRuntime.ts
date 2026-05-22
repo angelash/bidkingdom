@@ -119,6 +119,90 @@ export function consumeStockItemsForInventoryRef(
   return consumed;
 }
 
+export function extractStockItemsForInventoryRef(
+  profile: PlayerProfile,
+  refId: number | string,
+  quantity: number,
+  now = Date.now(),
+  kinds: readonly ProfileStockContainerKind[] = ['warehouse']
+): ProfileStockBoxState[] {
+  const item = bidKingItemByInventoryRef(refId);
+  const safeQuantity = Math.max(0, Math.floor(quantity));
+  if (!item || item.slot_type <= 0 || safeQuantity <= 0) {
+    return [];
+  }
+
+  ensureProfileStockState(profile, now);
+  reconcileInventoryRefToWarehouse(profile, refId, item, now);
+  const extracted: ProfileStockBoxState[] = [];
+  for (const kind of kinds) {
+    for (const container of profile.stockContainers ?? []) {
+      if (extracted.length >= safeQuantity || container.kind !== kind) {
+        continue;
+      }
+      const kept: ProfileStockBoxState[] = [];
+      for (const box of container.boxes) {
+        if (extracted.length < safeQuantity && box.item.cid === item.id && !box.item.isLock) {
+          extracted.push(cloneStockBoxForTransfer(box, true));
+          continue;
+        }
+        kept.push(box);
+      }
+      if (kept.length !== container.boxes.length) {
+        container.boxes = kept;
+        container.updatedAt = now;
+      }
+    }
+  }
+
+  if (extracted.length > 0) {
+    refreshProfileStockCabinetRewards(profile, now);
+    syncCabinetItemIdsFromStock(profile);
+    profile.updatedAt = now;
+  }
+  return extracted;
+}
+
+export function returnStockBoxesToWarehouse(
+  profile: PlayerProfile,
+  boxes: readonly ProfileStockBoxState[],
+  now = Date.now(),
+  options: { preserveBoxIds?: boolean } = {}
+): number {
+  if (boxes.length === 0) {
+    return 0;
+  }
+  ensureProfileStockState(profile, now);
+  const warehouse = ensureWarehouseContainer(profile, now);
+  let restored = 0;
+  for (const box of boxes) {
+    const item = Item.find((candidate) => candidate.id === box.item.cid);
+    const restoredBox = cloneStockBoxForTransfer(box, false);
+    if (!options.preserveBoxIds) {
+      profile.stockState ??= {
+        nextBoxId: nextBoxIdFromContainers(profile.stockContainers ?? []),
+        nextItemNo: nextItemNoFromContainers(profile.stockContainers ?? [])
+      };
+      restoredBox.boxId = profile.stockState.nextBoxId++;
+    }
+    if (item) {
+      const position = firstAvailablePosition(warehouse, item);
+      if (position < 0) {
+        throw new Error('主仓库空间不足，无法返还上架藏品');
+      }
+      restoredBox.position = position;
+      restoredBox.item.rotate = false;
+    }
+    warehouse.boxes.push(restoredBox);
+    restored += 1;
+  }
+  warehouse.updatedAt = now;
+  profile.stockState!.nextBoxId = Math.max(profile.stockState!.nextBoxId, nextBoxIdFromContainers(profile.stockContainers ?? []));
+  profile.stockState!.nextItemNo = Math.max(profile.stockState!.nextItemNo, nextItemNoFromContainers(profile.stockContainers ?? []));
+  profile.updatedAt = now;
+  return restored;
+}
+
 export interface ProfileStockItemSelection {
   stockId: number;
   boxId: number;
@@ -324,6 +408,25 @@ function migrateInventoryEntriesToWarehouse(profile: PlayerProfile, now: number)
     for (let index = 0; index < missing; index += 1) {
       warehouse.boxes.push(createStockBox(profile, item, warehouse, `inventory_migration:${entry.key}`, entry.updatedAt || now));
     }
+  }
+  warehouse.updatedAt = now;
+}
+
+function reconcileInventoryRefToWarehouse(
+  profile: PlayerProfile,
+  refId: number | string,
+  item: BidKingItemRow,
+  now: number
+): void {
+  const expected = stockBackedInventoryQuantity(profile, refId);
+  const existing = countStockItem(profile, item.id);
+  const missing = Math.max(0, expected - existing);
+  if (missing <= 0) {
+    return;
+  }
+  const warehouse = ensureWarehouseContainer(profile, now);
+  for (let index = 0; index < missing; index += 1) {
+    warehouse.boxes.push(createStockBox(profile, item, warehouse, `stock_reconcile:${refId}:${index}`, now));
   }
   warehouse.updatedAt = now;
 }
@@ -561,11 +664,38 @@ function countStockItem(profile: PlayerProfile, itemId: number): number {
   ), 0);
 }
 
+function stockBackedInventoryQuantity(profile: PlayerProfile, refId: number | string): number {
+  return (profile.inventory ?? [])
+    .filter((entry) => inventoryRefMatches(entry.refId, refId))
+    .reduce((sum, entry) => sum + entry.quantity, 0);
+}
+
 function bidKingItemByInventoryRef(refId: number | string): BidKingItemRow | undefined {
   const raw = String(refId);
   const compatMatch = /^compat_(\d+)/.exec(raw);
   const sourceId = Number(compatMatch?.[1] ?? raw);
   return Number.isFinite(sourceId) ? Item.find((item) => item.id === sourceId) : undefined;
+}
+
+function cloneStockBoxForTransfer(box: ProfileStockBoxState, locked: boolean): ProfileStockBoxState {
+  return {
+    boxId: box.boxId,
+    position: box.position,
+    item: {
+      ...box.item,
+      isLock: locked
+    }
+  };
+}
+
+function inventoryRefMatches(left: number | string, right: number | string): boolean {
+  return sourceInventoryItemId(left) === sourceInventoryItemId(right);
+}
+
+function sourceInventoryItemId(value: number | string): string {
+  const raw = String(value);
+  const compatMatch = /^compat_(\d+)/.exec(raw);
+  return compatMatch?.[1] ?? raw;
 }
 
 function cabinetForItem(item: BidKingItemRow): BidKingCabinetRow | undefined {

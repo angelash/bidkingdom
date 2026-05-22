@@ -831,6 +831,10 @@ export interface MarketOrderState {
   listingCost?: number;
   fee?: number;
   netPrice?: number;
+  itemCid?: number;
+  numberCid?: number;
+  itemNo?: number;
+  lockedStockBoxes?: ProfileStockBoxState[];
   note?: string;
   status: 'listed' | 'locked' | 'sold' | 'cancelled' | 'expired' | 'failed';
   buyerId?: string;

@@ -1,4 +1,5 @@
-import type { MarketOrdersSnapshot, PlayerProfile, ProfileTransaction } from '@bitkingdom/shared';
+import { Item } from '@bitkingdom/bidking-compat';
+import type { MarketOrdersSnapshot, PlayerProfile, ProfileStockBoxState, ProfileTransaction } from '@bitkingdom/shared';
 import {
   bidKingMailMaxCount,
   bidKingMarketBidIncrement,
@@ -13,6 +14,11 @@ import {
 import { randomUUID } from 'node:crypto';
 import { addInventory, consumeInventory, inventoryQuantity } from '../profile/profileInventory';
 import { ensureProfileShape } from '../profile/profileShape';
+import {
+  extractStockItemsForInventoryRef,
+  isStockBackedInventoryRef,
+  returnStockBoxesToWarehouse
+} from '../profile/profileStockRuntime';
 import { sanitizeText } from '../system/textGuard';
 import { marketOrderFee, marketOrderPriceBreakdown, marketOrderQuantityLimit } from './profileCommerceRuntime';
 
@@ -72,6 +78,17 @@ export function createMarketOrderForProfile(
   if (before < safeQuantity) {
     throw new Error('库存不足，无法上架');
   }
+  const stockBacked = isStockBackedInventoryRef(refId);
+  let lockedStockBoxes: ProfileStockBoxState[] = [];
+  if (stockBacked) {
+    lockedStockBoxes = extractStockItemsForInventoryRef(profile, refId, safeQuantity, now, ['warehouse']);
+    if (lockedStockBoxes.length < safeQuantity) {
+      if (lockedStockBoxes.length > 0) {
+        returnStockBoxesToWarehouse(profile, lockedStockBoxes, now, { preserveBoxIds: true });
+      }
+      throw new Error('仓库实体库存不足，无法上架');
+    }
+  }
   if (breakdown.listingCost > 0) {
     if (!applyNumberChange) {
       throw new Error('缺少上架费扣款处理');
@@ -81,7 +98,12 @@ export function createMarketOrderForProfile(
     }
     applyNumberChange(profile, `market:${profile.playerId}:${now}:listing_cost`, 'market_order_listing_cost', 'coins', -breakdown.listingCost);
   }
-  consumeInventory(profile, refId, safeQuantity);
+  if (stockBacked) {
+    decrementInventoryCounter(profile, refId, safeQuantity, now);
+  } else {
+    consumeInventory(profile, refId, safeQuantity);
+  }
+  const itemMetadata = marketOrderItemMetadata(refId, lockedStockBoxes);
   const order = {
     id: `order_${randomUUID()}`,
     orderType,
@@ -94,6 +116,8 @@ export function createMarketOrderForProfile(
     listingCost: breakdown.listingCost,
     fee: breakdown.fee,
     netPrice: breakdown.netPrice,
+    ...itemMetadata,
+    ...(lockedStockBoxes.length > 0 ? { lockedStockBoxes } : {}),
     ...(safeNote ? { note: safeNote } : {}),
     status: 'listed' as const,
     createdAt: now,
@@ -138,6 +162,7 @@ export function settleMarketOrderForProfile(
       throw new Error('买家铜钱不足');
     }
   }
+  const lockedStockBoxes = order.lockedStockBoxes ?? [];
   order.status = 'locked';
   order.lockedAt = now;
   order.updatedAt = now;
@@ -145,7 +170,12 @@ export function settleMarketOrderForProfile(
     const buyerSource = `market:${profile.playerId}:${order.id}:buyer:${buyerProfile.playerId}`;
     const buyerBefore = inventoryQuantity(buyerProfile, order.refId);
     applyNumberChange(buyerProfile, `${buyerSource}:coins`, 'market_order_buy_spend', 'coins', -totalPrice);
-    addInventory(buyerProfile, order.orderType, order.refId, order.quantity, `${buyerSource}:item`);
+    if (lockedStockBoxes.length > 0) {
+      returnStockBoxesToWarehouse(buyerProfile, lockedStockBoxes, now, { preserveBoxIds: false });
+      incrementInventoryCounter(buyerProfile, 'warehouse', order.refId, order.quantity, now);
+    } else {
+      addInventory(buyerProfile, order.orderType, order.refId, order.quantity, `${buyerSource}:item`);
+    }
     recordTransaction(buyerProfile, `${buyerSource}:item`, 'market_order_bought_item', 'item', buyerBefore, order.quantity);
     order.buyerId = buyerProfile.playerId;
     order.buyerName = buyerProfile.name;
@@ -182,7 +212,7 @@ export function cancelMarketOrderForProfile(
     return true;
   }
   const before = inventoryQuantity(profile, order.refId);
-  addInventory(profile, order.orderType, order.refId, order.quantity, `market:${profile.playerId}:${order.id}:cancel`);
+  returnMarketOrderInventory(profile, order, now, `market:${profile.playerId}:${order.id}:cancel`);
   recordTransaction(profile, `market:${profile.playerId}:${order.id}:cancel`, 'market_order_cancel', 'item', before, order.quantity);
   order.status = 'cancelled';
   order.cancelledAt = now;
@@ -260,10 +290,96 @@ function expireMarketOrder(
   now: number
 ): void {
   const before = inventoryQuantity(profile, order.refId);
-  addInventory(profile, order.orderType, order.refId, order.quantity, `market:${profile.playerId}:${order.id}:expire`);
+  returnMarketOrderInventory(profile, order, now, `market:${profile.playerId}:${order.id}:expire`);
   recordTransaction(profile, `market:${profile.playerId}:${order.id}:expire`, 'market_order_expired_return', 'item', before, order.quantity);
   order.status = 'expired';
   order.expiredAt = now;
   order.updatedAt = now;
   profile.updatedAt = now;
+}
+
+function returnMarketOrderInventory(
+  profile: PlayerProfile,
+  order: PlayerProfile['marketOrders'][number],
+  now: number,
+  sourceId: string
+): void {
+  const lockedStockBoxes = order.lockedStockBoxes ?? [];
+  if (lockedStockBoxes.length > 0) {
+    returnStockBoxesToWarehouse(profile, lockedStockBoxes, now, { preserveBoxIds: true });
+    incrementInventoryCounter(profile, 'warehouse', order.refId, order.quantity, now);
+    order.lockedStockBoxes = unlockedStockBoxes(lockedStockBoxes);
+    return;
+  }
+  addInventory(profile, order.orderType, order.refId, order.quantity, sourceId);
+}
+
+function marketOrderItemMetadata(
+  refId: string,
+  lockedStockBoxes: readonly ProfileStockBoxState[]
+): Pick<PlayerProfile['marketOrders'][number], 'itemCid' | 'itemNo' | 'numberCid'> {
+  const item = Item.find((row) => String(row.id) === String(refId) || `compat_${row.id}` === String(refId));
+  const firstBox = lockedStockBoxes[0];
+  return {
+    itemCid: item?.id ?? firstBox?.item.cid,
+    numberCid: item?.number?.[1] ?? 0,
+    itemNo: firstBox?.item.no
+  };
+}
+
+function decrementInventoryCounter(profile: PlayerProfile, refId: string, quantity: number, now: number): void {
+  let remaining = Math.max(0, Math.floor(quantity));
+  for (const entry of profile.inventory.filter((candidate) => inventoryRefMatches(candidate.refId, refId))) {
+    if (remaining <= 0) {
+      break;
+    }
+    const consumed = Math.min(entry.quantity, remaining);
+    entry.quantity -= consumed;
+    entry.updatedAt = now;
+    remaining -= consumed;
+  }
+  if (remaining > 0) {
+    throw new Error('库存不足，无法上架');
+  }
+  profile.inventory = profile.inventory.filter((entry) => entry.quantity > 0);
+  profile.updatedAt = now;
+}
+
+function incrementInventoryCounter(profile: PlayerProfile, type: string, refId: string, quantity: number, now: number): void {
+  const key = `${type}:${refId}`;
+  let entry = profile.inventory.find((candidate) => candidate.key === key);
+  if (!entry) {
+    entry = {
+      key,
+      type,
+      refId,
+      quantity: 0,
+      updatedAt: now
+    };
+    profile.inventory.push(entry);
+  }
+  entry.quantity += Math.max(0, Math.floor(quantity));
+  entry.updatedAt = now;
+  profile.updatedAt = now;
+}
+
+function unlockedStockBoxes(boxes: readonly ProfileStockBoxState[]): ProfileStockBoxState[] {
+  return boxes.map((box) => ({
+    boxId: box.boxId,
+    position: box.position,
+    item: {
+      ...box.item,
+      isLock: false
+    }
+  }));
+}
+
+function inventoryRefMatches(left: number | string, right: number | string): boolean {
+  return sourceInventoryItemId(left) === sourceInventoryItemId(right);
+}
+
+function sourceInventoryItemId(value: number | string): string {
+  const raw = String(value);
+  const compatMatch = /^compat_(\d+)/.exec(raw);
+  return compatMatch?.[1] ?? raw;
 }
