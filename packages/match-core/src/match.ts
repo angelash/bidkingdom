@@ -64,7 +64,10 @@ export function createMatch(params: {
   const seed = params.seed ?? hashSeed(params.id);
   const now = params.now ?? Date.now();
   const rng = createRandom(seed);
-  const players = params.players.slice(0, 4).map<RuntimePlayer>((player, seat) => ({
+  const expectedPlayerCount = params.coreMode
+    ? bidKingBidMapPlayerCount(params.coreBidMapId, 4)
+    : 4;
+  const players = params.players.slice(0, expectedPlayerCount).map<RuntimePlayer>((player, seat) => ({
     ...(() => {
       const role = runtimeConfig.roles.find((candidate) => candidate.id === player.roleId);
       return { skillUsesRemaining: role?.usesPerMatch ?? 1 };
@@ -89,8 +92,8 @@ export function createMatch(params: {
     privateClues: []
   }));
 
-  if (players.length !== 4) {
-    throw new Error(`A match requires exactly 4 players, got ${players.length}`);
+  if (players.length !== expectedPlayerCount) {
+    throw new Error(`A match requires exactly ${expectedPlayerCount} players, got ${players.length}`);
   }
 
   return {

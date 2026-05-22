@@ -1,4 +1,5 @@
 import { gameConfig } from '@bitkingdom/config';
+import { BattleItem } from '@bitkingdom/bidking-compat';
 import { describe, expect, it } from 'vitest';
 import { finishRound, passAuction, revealNextItem, settleCurrentRound, submitBid } from '../src/auction';
 import { chooseBotAction } from '../src/bots';
@@ -396,6 +397,9 @@ describe('match core', () => {
     const bot = match.players.find((player) => player.id === 'b1')!;
     bot.skillCooldown = 1;
     bot.skillUsesRemaining = 0;
+    for (const item of BattleItem) {
+      bot.battleItemCooldowns[String(item.id)] = 1;
+    }
     const action = chooseBotAction(match, 'b1', 'aggressive');
 
     expect(action.type).toBe('bid');

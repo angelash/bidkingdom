@@ -1,7 +1,8 @@
 import type { GameConfig } from '@bitkingdom/config';
-import { Emoji, Hero, RankAi, bidKingRawTableDisplayName } from '@bitkingdom/bidking-compat';
+import { BattleItem, Drop, Emoji, Hero, RankAi, bidKingBattleItemDisplayName, bidKingRawTableDisplayName } from '@bitkingdom/bidking-compat';
 import type { AuctionMode, Clue, Rarity, SkillId, WarehouseSlotView } from '@bitkingdom/shared';
 import { getBidKingCloseThreshold } from './bidking/compatRuntime';
+import { battleItemCooldownRemaining, battleItemEffectPlanForItem } from './items';
 import { createRandom, hashSeed } from './random';
 import { calculateNetWorth, sumItemValue } from './scoring';
 import type { MatchRuntimeState, RuntimePlayer, RuntimeRound } from './types';
@@ -18,6 +19,10 @@ export interface BotActionAudit {
   rankAiRoundCount?: number;
   rankAiMinBidRatio?: number;
   rankAiPkRatio?: number;
+  rankAiItemUseProbability?: number;
+  rankAiItemUsageGroupId?: number;
+  battleItemId?: number;
+  battleItemName?: string;
   riskAppetite: number;
   bluffChance: number;
   overpayTolerance: number;
@@ -52,8 +57,10 @@ export interface BotActionAudit {
 }
 
 export interface BotAction {
-  type: 'bid' | 'pass' | 'skill' | 'emote';
+  type: 'bid' | 'pass' | 'skill' | 'battle_item' | 'emote';
   amount?: number;
+  itemId?: number;
+  itemUsageGroupId?: number;
   targetPlayerId?: string;
   emote?: string;
   reason: string;
@@ -93,6 +100,7 @@ interface BotTuning {
   minBidRatio: number;
   pkRatio: number;
   itemUseProbability: number;
+  itemUsageGroup: readonly (readonly number[])[];
   rankAiRowId?: number;
   rankAiRoleId?: number;
   rankAiRoundCount?: number;
@@ -159,11 +167,23 @@ export function chooseBotAction(
 }
 
 const BOT_ROOT = selector('BidKingBotRoot', [
+  sequence('IntelBattleItemSequence', [
+    condition('IsIntelPhaseForItem', (context) => context.round.phase === 'intel'),
+    condition('CanUseRankAiBattleItem', canUseBattleItem),
+    condition('RankAiItemHasIntelValue', (context) => shouldUseBattleItem(context, 'intel')),
+    action('UseRankAiBattleItemForIntel', (context) => battleItemAction(context, 'Bot uses RankAi item group before bidding'))
+  ]),
   sequence('IntelSkillSequence', [
     condition('IsIntelPhase', (context) => context.round.phase === 'intel'),
     condition('CanUseSkill', canUseSkill),
     condition('SkillHasIntelValue', (context) => shouldUseSkill(context, 'intel')),
     action('UseSkillForIntel', (context) => skillAction(context, 'Bot uses skill to reduce valuation uncertainty before bidding'))
+  ]),
+  sequence('AuctionBattleItemSequence', [
+    condition('IsAuctionPhase', (context) => context.round.phase === 'auction'),
+    condition('CanUseRankAiBattleItemInAuction', canUseBattleItem),
+    condition('RankAiItemCanStillChangeBid', (context) => shouldUseBattleItem(context, 'auction')),
+    action('UseRankAiBattleItemBeforeBid', (context) => battleItemAction(context, 'Bot uses RankAi item group before committing a bid'))
   ]),
   sequence('AuctionSkillSequence', [
     condition('IsAuctionPhase', (context) => context.round.phase === 'auction'),
@@ -696,6 +716,91 @@ function skillAction(context: BotContext, reason: string): BotAction {
   };
 }
 
+function canUseBattleItem(context: BotContext): boolean {
+  const { player, round, state } = context;
+  if (!state.coreMode || !['intel', 'auction'].includes(round.phase)) {
+    return false;
+  }
+  if (round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === player.id))) {
+    return false;
+  }
+  const choice = rankAiBattleItemChoice(context);
+  if (!choice || battleItemCooldownRemaining(state, player.id, choice.item.id) > 0) {
+    return false;
+  }
+  const plan = battleItemEffectPlanForItem(choice.item);
+  return !plan.targetPlayerRequired || Boolean(context.targetOpponent);
+}
+
+function shouldUseBattleItem(context: BotContext, timing: 'intel' | 'auction'): boolean {
+  const probability = clamp(context.tuning.itemUseProbability / 1000, 0, 1);
+  if (probability <= 0 || !rankAiBattleItemChoice(context)) {
+    return false;
+  }
+  const pressure = timing === 'intel'
+    ? context.assessment.confidence < 0.72 || context.round.index >= 2
+    : context.assessment.confidence < 0.64 || context.assessment.targetBid > context.assessment.availableCash * 0.35;
+  if (!pressure && context.skillIntent.score < 0.36) {
+    return false;
+  }
+  return rankAiBattleItemRoll(context, timing) < probability;
+}
+
+function battleItemAction(context: BotContext, reason: string): BotAction {
+  const choice = rankAiBattleItemChoice(context);
+  if (!choice) {
+    return idleEmoteAction(context, 'RankAi item group had no usable battle item');
+  }
+  const plan = battleItemEffectPlanForItem(choice.item);
+  return {
+    type: 'battle_item',
+    itemId: choice.item.id,
+    itemUsageGroupId: choice.dropGroupId,
+    targetPlayerId: plan.targetPlayerRequired ? context.targetOpponent?.id : undefined,
+    reason: `${reason}: ${bidKingBattleItemDisplayName(choice.item)} from Drop ${choice.dropGroupId}`
+  };
+}
+
+function rankAiBattleItemChoice(context: BotContext): { item: (typeof BattleItem)[number]; dropGroupId: number } | undefined {
+  const groups = context.tuning.itemUsageGroup
+    .map((row) => ({ usageKey: row[0] ?? 0, dropGroupId: row[1] ?? 0 }))
+    .filter((row) => row.dropGroupId > 0);
+  if (groups.length === 0) {
+    return undefined;
+  }
+  const rng = rankAiBattleItemRng(context, 'choice');
+  const group = rng.pick(groups);
+  const drop = Drop.find((candidate) => candidate.group_id === group.dropGroupId);
+  const candidates = drop?.items_list
+    .map((entry) => ({
+      item: BattleItem.find((candidate) => candidate.id === entry.item_id),
+      weight: Math.max(0, entry.drop_weight)
+    }))
+    .filter((entry): entry is { item: (typeof BattleItem)[number]; weight: number } => Boolean(entry.item) && entry.weight > 0);
+  if (!candidates || candidates.length === 0) {
+    return undefined;
+  }
+  return {
+    item: rng.weighted(candidates),
+    dropGroupId: group.dropGroupId
+  };
+}
+
+function rankAiBattleItemRoll(context: BotContext, timing: 'intel' | 'auction'): number {
+  return rankAiBattleItemRng(context, timing).next();
+}
+
+function rankAiBattleItemRng(context: BotContext, salt: string) {
+  const seed = [
+    context.state.id,
+    context.round.id,
+    context.player.id,
+    context.tuning.rankAiRowId ?? 'fallback',
+    salt
+  ].join(':');
+  return createRandom(hashSeed(seed));
+}
+
 function chooseAuctionAction(context: BotContext): BotAction {
   const { round, player, assessment } = context;
 
@@ -851,7 +956,8 @@ function botTuningForPlayer(
       bidAggression: profile.riskAppetite,
       minBidRatio: 740 + profile.riskAppetite * 320,
       pkRatio: 820 + profile.riskAppetite * 420,
-      itemUseProbability: Math.round(220 + profile.riskAppetite * 420)
+      itemUseProbability: Math.round(220 + profile.riskAppetite * 420),
+      itemUsageGroup: []
     };
   }
   const row = rankAiRowForPlayer(state, player);
@@ -865,7 +971,8 @@ function botTuningForPlayer(
     bidAggression: row.bid_aggression,
     minBidRatio: weightedRangeValue(row.min_bid_ratio, state, 850, `${player.id}:${row.id}:min_bid_ratio`),
     pkRatio: weightedRangeValue(row.bid_pk, state, 1000, `${player.id}:${row.id}:bid_pk`),
-    itemUseProbability: row.item_use_probability
+    itemUseProbability: row.item_use_probability,
+    itemUsageGroup: row.item_usage_group
   };
 }
 
@@ -1064,6 +1171,10 @@ function buildBotActionAudit(context: BotContext, trace: string[], action: BotAc
     rankAiRoundCount: tuning.rankAiRoundCount,
     rankAiMinBidRatio: tuning.rankAiRowId !== undefined ? tuning.minBidRatio : undefined,
     rankAiPkRatio: tuning.rankAiRowId !== undefined ? tuning.pkRatio : undefined,
+    rankAiItemUseProbability: tuning.rankAiRowId !== undefined ? tuning.itemUseProbability : undefined,
+    rankAiItemUsageGroupId: action.itemUsageGroupId,
+    battleItemId: action.itemId,
+    battleItemName: action.itemId ? bidKingBattleItemDisplayName(BattleItem.find((item) => item.id === action.itemId) ?? BattleItem[0]!) : undefined,
     riskAppetite: tuning.riskAppetite,
     bluffChance: tuning.bluffChance,
     overpayTolerance: tuning.overpayTolerance,

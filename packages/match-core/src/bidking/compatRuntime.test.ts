@@ -305,7 +305,7 @@ describe('BidKing compatible core runtime', () => {
     const bot = match.players.find((player) => player.kind === 'bot')!;
     bot.skillCooldown = 1;
     bot.skillUsesRemaining = 0;
-    setRoundPhase(match, 'intel', 3200, 1200);
+    setRoundPhase(match, 'reveal', 3200, 1200);
 
     const action = chooseBotAction(match, bot.id, 'mentor');
 
@@ -319,6 +319,38 @@ describe('BidKing compatible core runtime', () => {
     expect(action.audit?.rankAiRowId).toBe(expectedRankAi.id);
     expect(action.audit?.riskAppetite).toBe(expectedRankAi.risk_appetite);
     expect(Emoji.map((row) => bidKingRawTableDisplayName(row))).toContain(action.emote);
+  });
+
+  it('uses RankAi item usage groups to choose bot battle items', () => {
+    const match = createMatch({
+      id: 'rank-ai-item-2',
+      players: [
+        { id: 'p1', name: '玩家一', kind: 'human' as const, roleId: 'appraiser', heroCid: 101 },
+        { id: 'b1', name: '机器人', kind: 'bot' as const, roleId: 'appraiser', heroCid: 101 }
+      ],
+      seed: 1002,
+      totalRounds: 5,
+      coreMode: true,
+      coreBidMapId: 2101
+    });
+    startNextRound(match, 1000);
+    setRoundPhase(match, 'intel', 3200, 1200);
+    const bot = match.players.find((player) => player.id === 'b1')!;
+    bot.skillCooldown = 99;
+    bot.skillUsesRemaining = 0;
+
+    const action = chooseBotAction(match, bot.id, 'clue_reader');
+
+    expect(action.type).toBe('battle_item');
+    expect(BattleItem.some((item) => item.id === action.itemId)).toBe(true);
+    expect(action.itemUsageGroupId).toBeGreaterThan(0);
+    expect(action.audit).toEqual(expect.objectContaining({
+      rankAiRowId: 1011,
+      rankAiItemUseProbability: 700,
+      rankAiItemUsageGroupId: action.itemUsageGroupId,
+      battleItemId: action.itemId
+    }));
+    expect(action.audit?.behaviorTree).toContain('IntelBattleItemSequence');
   });
 
   it('binds core bot bidding to heroCid and source RankAi bid ratios', () => {
@@ -337,6 +369,9 @@ describe('BidKing compatible core runtime', () => {
     const bot = match.players.find((player) => player.id === 'p2')!;
     bot.skillCooldown = 1;
     bot.skillUsesRemaining = 0;
+    for (const item of BattleItem) {
+      bot.battleItemCooldowns[String(item.id)] = 1;
+    }
     setRoundPhase(match, 'auction', 60000, 1200);
 
     const action = chooseBotAction(match, bot.id, 'mentor');

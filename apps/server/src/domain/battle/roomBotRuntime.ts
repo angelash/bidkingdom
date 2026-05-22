@@ -3,9 +3,10 @@ import {
   passAuction,
   pushEvent,
   submitBid,
+  useBattleItem,
   useSkill
 } from '@bitkingdom/match-core';
-import { bidKingEmojiPresentation, emojiSoundId, findBidKingEmoji } from '@bitkingdom/bidking-compat';
+import { BattleItem, bidKingEmojiPresentation, emojiSoundId, findBidKingEmoji } from '@bitkingdom/bidking-compat';
 import type { Room } from './roomLifecycleRuntime';
 import { appendServerLog } from '../../services/serverLogSink';
 
@@ -30,6 +31,13 @@ export function runBotAuctionForRoom(room: Room): void {
         } else if (action.type === 'skill') {
           useSkill(match, player.id, action.targetPlayerId, now);
           followUp = match.currentRound?.phase === 'auction';
+        } else if (action.type === 'battle_item' && action.itemId !== undefined) {
+          const item = BattleItem.find((candidate) => candidate.id === action.itemId);
+          if (!item) {
+            throw new Error(`Unknown bot battle item ${action.itemId}`);
+          }
+          useBattleItem(match, player.id, item, now, action.targetPlayerId);
+          followUp = match.currentRound?.phase === 'auction';
         } else if (action.type === 'emote' && action.emote) {
           const emoji = findBidKingEmoji(action.emote);
           const presentation = emoji ? bidKingEmojiPresentation(emoji) : undefined;
@@ -44,6 +52,8 @@ export function runBotAuctionForRoom(room: Room): void {
           roundId: match.currentRound?.id,
           actionType: action.type,
           amount: action.amount,
+          itemId: action.itemId,
+          itemUsageGroupId: action.itemUsageGroupId,
           targetPlayerId: action.targetPlayerId,
           emote: action.emote,
           reason: action.reason,
@@ -55,6 +65,8 @@ export function runBotAuctionForRoom(room: Room): void {
           roundId: match.currentRound?.id,
           actionType: action.type,
           amount: action.amount,
+          itemId: action.itemId,
+          itemUsageGroupId: action.itemUsageGroupId,
           targetPlayerId: action.targetPlayerId,
           emote: action.emote,
           reason: action.reason,
@@ -92,6 +104,8 @@ function logBotAction(
     playerId,
     actionType: action.type,
     amount: action.amount,
+    itemId: action.itemId,
+    itemUsageGroupId: action.itemUsageGroupId,
     targetPlayerId: action.targetPlayerId,
     emote: action.emote,
     reason: action.reason,

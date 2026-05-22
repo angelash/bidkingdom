@@ -132,4 +132,62 @@ describe('BidKing room bot runtime', () => {
       })
     }));
   });
+
+  it('executes RankAi battle item actions for bots during intel', () => {
+    const match = createMatch({
+      id: 'rank-ai-item-2',
+      seed: 1002,
+      players: [
+        { id: 'p1', name: '甲', kind: 'human', roleId: gameConfig.roles[0]!.id, heroCid: 101 },
+        { id: 'b1', name: '乙', kind: 'bot', roleId: gameConfig.roles[0]!.id, heroCid: 101 }
+      ],
+      totalRounds: 5,
+      coreMode: true,
+      coreBidMapId: 2101,
+      config: gameConfig,
+      now: 1000
+    });
+    startNextRound(match, 2000);
+    setRoundPhase(match, 'intel', 15000, 3000);
+    const bot = match.players.find((player) => player.id === 'b1')!;
+    bot.skillCooldown = 99;
+    bot.skillUsesRemaining = 0;
+    const room: Room = {
+      id: 'room_bot_item',
+      code: 'BTIT',
+      hostId: 'p1',
+      botCount: 1,
+      totalRounds: 5,
+      initialCash: gameConfig.rules.initialCash,
+      coreAuctionMode: 'sealed',
+      selectedBidMapId: 2101,
+      status: 'playing',
+      players: [],
+      botProfiles: new Map([['b1', 'clue_reader']]),
+      match,
+      timers: []
+    };
+
+    runBotAuctionForRoom(room);
+
+    const itemEvent = match.events.find((event) => event.type === 'battle_item_used' && event.actorId === 'b1');
+    expect(itemEvent?.payload).toEqual(expect.objectContaining({
+      itemId: expect.any(Number),
+      effectPlan: expect.any(Object)
+    }));
+    const botChoice = match.events.find((event) => {
+      const payload = event.payload as { actionType?: string } | undefined;
+      return event.type === 'bot_action_chosen' && payload?.actionType === 'battle_item';
+    });
+    expect(botChoice?.payload).toEqual(expect.objectContaining({
+      actionType: 'battle_item',
+      itemId: expect.any(Number),
+      itemUsageGroupId: expect.any(Number),
+      audit: expect.objectContaining({
+        rankAiItemUseProbability: 700,
+        rankAiItemUsageGroupId: expect.any(Number),
+        battleItemId: expect.any(Number)
+      })
+    }));
+  });
 });
