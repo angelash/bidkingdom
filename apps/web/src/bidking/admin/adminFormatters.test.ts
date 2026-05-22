@@ -38,4 +38,36 @@ describe('admin match event formatters', () => {
     expect(text).toContain('冷却 2 回合');
     expect(text).toContain('目标 掌柜乙');
   });
+
+  it('explains manual SkillEffect plans in the replay timeline', () => {
+    const detail = {
+      summary: {
+        players: [
+          { id: 'p1', name: '掌柜甲' },
+          { id: 'p2', name: '掌柜乙' }
+        ]
+      }
+    } as AdminMatchDetail;
+
+    const text = eventPayloadText({
+      skillCid: 100101,
+      targetPlayerId: 'p2',
+      effectPlan: {
+        effectId: 5000,
+        effectCategory: 5,
+        targetCount: 1,
+        skillTarget: 6
+      },
+      clue: {
+        text: '卧龙掌眼：命中一个候选格，价值约 100,000。'
+      }
+    }, detail);
+
+    expect(eventName('skill_used')).toBe('使用掌眼');
+    expect(text).toContain('掌眼 100101');
+    expect(text).toContain('效果 5000');
+    expect(text).toContain('Category 5');
+    expect(text).toContain('命中 1 个目标');
+    expect(text).toContain('目标 掌柜乙');
+  });
 });

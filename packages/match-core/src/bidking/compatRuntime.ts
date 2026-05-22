@@ -29,6 +29,7 @@ import {
   bidKingHighestConfiguredMinimumBidForBidMap,
   bidKingInitialCashForBidMap
 } from './initialCashRuntime';
+import { bidKingHeroIdForRoleId } from './heroRuntime';
 
 export { getBidKingCloseThreshold };
 
@@ -98,12 +99,14 @@ export function buildBidKingRoundStartSkillFeed(
     if (mapSkill) {
       const bidMapName = bidKingBidMapDisplayName(bidMap);
       const mapSkillName = bidKingSkillDisplayName(mapSkill);
+      const mapEffect = effectForSkill(mapSkill);
       entries.push({
         id: `${round.id}_map_skill_${mapSkill.id}`,
         round: roundNumber,
         source: 'map',
         sourceName: bidMapName,
         skillName: mapSkillName,
+        ...skillFeedEffectMetadata(mapSkill, mapEffect, undefined),
         text: `${bidMapName}触发${mapSkillName}，本轮公共情报与仓库可见格更新。`,
         iconKey: mapSkill.skill_icon || bidMap.art_key,
         visibility: 'public',
@@ -113,8 +116,9 @@ export function buildBidKingRoundStartSkillFeed(
   }
 
   for (const player of state.players) {
-    const hero = heroForPlayer(player);
+    const hero = heroForPlayer(player, state);
     const skill = skillForHero(hero, round.index);
+    const effect = effectForSkill(skill);
     const skillName = bidKingSkillDisplayName(skill);
     const clue = player.privateClues.find((candidate) => (
       candidate.id.includes(`_auto_${player.id}_${roundNumber}_${hero.id}_${skill.id}`)
@@ -126,6 +130,7 @@ export function buildBidKingRoundStartSkillFeed(
       source: 'hero',
       sourceName: hero.packaged_name,
       skillName,
+      ...skillFeedEffectMetadata(skill, effect, clue),
       text: clue?.text ?? `${hero.packaged_name}触发${skillName}，获得一条专属情报。`,
       iconKey: skill.skill_icon,
       visibility: 'private',
@@ -142,6 +147,29 @@ export interface BidKingManualSkillResult {
   publishTo: 'public' | 'private';
   insuranceActive: boolean;
   cooldownRounds: number;
+  effectPlan: BidKingSkillEffectPlan;
+}
+
+export interface BidKingSkillEffectPlan {
+  skillId: number;
+  skillName: string;
+  skillTarget: number;
+  skillTargetValue: readonly number[];
+  secondaryTargets: readonly {
+    target: number;
+    values: readonly number[];
+  }[];
+  requestedTargetCount: number;
+  targetCount: number;
+  durationRounds: number;
+  cooldownRounds: number;
+  effectId: number;
+  effectCategory: number;
+  effectKey: string;
+  effectName: string;
+  targetItemIds: readonly string[];
+  trigger: 'auto' | 'manual' | 'map' | 'item';
+  description: string;
 }
 
 export function buildBidKingManualSkillResult(
@@ -153,14 +181,17 @@ export function buildBidKingManualSkillResult(
   if (!round) {
     return undefined;
   }
-  const hero = heroForPlayer(player);
+  const hero = heroForPlayer(player, state);
   const skill = skillForHero(hero, round.index);
+  const effect = effectForSkill(skill);
   const clue = buildBidKingSkillClue(round.container, state, player, round.index, 'manual', targetPlayerId);
+  const cooldownRounds = Math.max(1, skill.skill_CD);
   return {
     clue,
     publishTo: 'private',
     insuranceActive: false,
-    cooldownRounds: Math.max(1, skill.skill_CD)
+    cooldownRounds,
+    effectPlan: buildBidKingSkillEffectPlan(skill, effect, clue, 'manual', cooldownRounds)
   };
 }
 
@@ -174,8 +205,9 @@ export function buildBidKingManualSkillFeedEntry(
   if (!round) {
     return undefined;
   }
-  const hero = heroForPlayer(player);
+  const hero = heroForPlayer(player, state);
   const skill = skillForHero(hero, round.index);
+  const effect = effectForSkill(skill);
   const skillName = bidKingSkillDisplayName(skill);
   return {
     id: `${round.id}_manual_skill_${player.id}_${skill.id}_${round.skillFeed.length + 1}`,
@@ -184,6 +216,7 @@ export function buildBidKingManualSkillFeedEntry(
     source: 'manual',
     sourceName: hero.packaged_name,
     skillName,
+    ...skillFeedEffectMetadata(skill, effect, clue),
     text: clue?.text ?? `${hero.packaged_name}使用${skillName}，获得一条专属情报。`,
     iconKey: skill.skill_icon,
     visibility: 'private',
@@ -440,7 +473,7 @@ function buildBidKingSkillClue(
   trigger: 'auto' | 'manual',
   _targetPlayerId?: string
 ): Clue | undefined {
-  const hero = heroForPlayer(player);
+  const hero = heroForPlayer(player, state);
   const skill = skillForHero(hero, roundIndex);
   const effect = effectForSkill(skill);
   const clueId = `${core.id}_${trigger}_${player.id}_${roundIndex + 1}_${hero.id}_${skill.id}`;
@@ -619,8 +652,9 @@ function buildBidKingSkillClue(
   };
 }
 
-function heroForPlayer(player: RuntimePlayer) {
-  return Hero.find((hero) => hero.id === player.heroCid) ?? Hero[player.seat % Hero.length]!;
+function heroForPlayer(player: RuntimePlayer, state?: MatchRuntimeState) {
+  const mappedHeroId = player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, state?.config.roles ?? []);
+  return Hero.find((hero) => hero.id === mappedHeroId) ?? Hero[player.seat % Hero.length]!;
 }
 
 function skillForHero(hero: ReturnType<typeof heroForPlayer>, roundIndex: number) {
@@ -634,6 +668,62 @@ function skillForHero(hero: ReturnType<typeof heroForPlayer>, roundIndex: number
 function effectForSkill(skill: BidKingSkillRow): BidKingSkillEffectRow {
   const effectId = skill.skilleffect_position[0] ?? 1000;
   return skillEffectById(effectId) ?? { EffectId: 1000, Category: 1, Param: [0], effect_key: 'category_1', effect_desc: '显示轮廓尺寸' };
+}
+
+function skillFeedEffectMetadata(
+  skill: BidKingSkillRow,
+  effect: BidKingSkillEffectRow,
+  clue: Clue | undefined
+): Pick<SkillFeedEntry, 'skillCid' | 'effectId' | 'effectCategory' | 'effectKey' | 'effectName' | 'skillTarget' | 'targetCount'> {
+  return {
+    skillCid: skill.id,
+    effectId: effect.EffectId,
+    effectCategory: effect.Category,
+    effectKey: effect.effect_key,
+    effectName: effect.effect_desc,
+    skillTarget: skill.skilltarget,
+    targetCount: clueTargetItemIds(clue).length
+  };
+}
+
+function buildBidKingSkillEffectPlan(
+  skill: BidKingSkillRow,
+  effect: BidKingSkillEffectRow,
+  clue: Clue | undefined,
+  trigger: BidKingSkillEffectPlan['trigger'],
+  cooldownRounds = Math.max(0, skill.skill_CD)
+): BidKingSkillEffectPlan {
+  const targetItemIds = clueTargetItemIds(clue);
+  const requestedTargetCount = skill.skill_count === 0 ? 999 : skill.skill_count;
+  const skillName = bidKingSkillDisplayName(skill);
+  return {
+    skillId: skill.id,
+    skillName,
+    skillTarget: skill.skilltarget,
+    skillTargetValue: skill.skilltargetvalue,
+    secondaryTargets: [
+      { target: skill.skilltarget2, values: skill.skilltargetvalue2 },
+      { target: skill.skilltarget3, values: skill.skilltargetvalue3 }
+    ],
+    requestedTargetCount,
+    targetCount: targetItemIds.length,
+    durationRounds: Math.max(0, skill.skill_round),
+    cooldownRounds,
+    effectId: effect.EffectId,
+    effectCategory: effect.Category,
+    effectKey: effect.effect_key,
+    effectName: effect.effect_desc,
+    targetItemIds,
+    trigger,
+    description: `${skillName}/${effect.effect_desc} 命中 ${targetItemIds.length} 个目标`
+  };
+}
+
+function clueTargetItemIds(clue: Clue | undefined): string[] {
+  if (!clue) {
+    return [];
+  }
+  return clue.targetItemIds ?? (clue.targetItemId ? [clue.targetItemId] : []);
 }
 
 function selectSlotsBySkill(

@@ -69,6 +69,9 @@ export function useSkill(
   pushEvent(state, 'skill_used', playerId, {
     roleId: role.id,
     skillId: role.skillId,
+    skillCid: bidKingResult?.effectPlan.skillId,
+    effectCategory: bidKingResult?.effectPlan.effectCategory,
+    effectPlan: bidKingResult?.effectPlan,
     targetPlayerId,
     clue
   });

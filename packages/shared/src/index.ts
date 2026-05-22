@@ -38,6 +38,13 @@ export interface SkillFeedEntry {
   source: SkillFeedSource;
   sourceName: string;
   skillName: string;
+  skillCid?: number;
+  effectId?: number;
+  effectCategory?: number;
+  effectKey?: string;
+  effectName?: string;
+  skillTarget?: number;
+  targetCount?: number;
   text: string;
   iconKey?: string;
   visibility: 'public' | 'private';

@@ -15,6 +15,7 @@ import {
   bidKingRawTableDisplayName,
   bidKingSkillDisplayName,
   dropsForGroup,
+  itemById,
   skillById,
   skillEffectById,
   validateBidKingParity
@@ -205,8 +206,19 @@ describe('BidKing compatible core runtime', () => {
     startNextRound(match, 1000);
     setRoundPhase(match, 'intel', 3200, 1200);
     useSkill(match, 'p1', 'p2', 1300);
+    const hero = Hero.find((candidate) => candidate.id === bidKingHeroIdForRoleId(players[0]!.roleId, match.config.roles))!;
+    const skill = skillById(hero.cast_type[0]!)!;
+    const effect = skillEffectById(skill.skilleffect_position[0]!)!;
+    const skillEvent = match.events.find((event) => event.type === 'skill_used' && event.actorId === 'p1');
+    const skillPayload = skillEvent?.payload as { skillCid?: number; effectCategory?: number; effectPlan?: { effectId?: number } } | undefined;
+    const feedEntry = match.currentRound?.skillFeed.find((entry) => entry.source === 'manual' && entry.playerId === 'p1');
     expect(match.players[0]?.skillUsedThisRound).toBe(true);
     expect(match.players[0]?.privateClues.at(-1)?.text).toContain('卧龙掌眼');
+    expect(skillPayload?.skillCid).toBe(skill.id);
+    expect(skillPayload?.effectCategory).toBe(effect.Category);
+    expect(skillPayload?.effectPlan?.effectId).toBe(effect.EffectId);
+    expect(feedEntry?.skillCid).toBe(skill.id);
+    expect(feedEntry?.effectCategory).toBe(effect.Category);
     expect(match.currentRound?.skillFeed.some((entry) => entry.playerId === 'p1' && entry.source === 'manual')).toBe(true);
     expect(buildSnapshot(match, 'p1').public.players[0]?.bidRanks?.[0]?.usedSkillName).toBeTruthy();
   });
@@ -466,6 +478,10 @@ describe('BidKing compatible core runtime', () => {
     match.currentRound!.index = 4;
     match.roundIndex = 4;
     setRoundPhase(match, 'intel', 3200, 1200);
+    const manualHero = Hero[1]!;
+    const manualCastIds = manualHero.cast_type.filter((skillId) => skillId > 0);
+    const manualSkill = skillById(manualCastIds[Math.min(4, manualCastIds.length - 1)]!)!;
+    useSkill(match, 'p1', undefined, 1250);
     useBattleItem(match, 'p1', BattleItem[0]!, 1300);
     setRoundPhase(match, 'auction', 60000, 1400);
     submitBid(match, 'p1', Math.max(match.currentRound?.container.minimumBid ?? 0, 500_000), 1500);
@@ -488,6 +504,12 @@ describe('BidKing compatible core runtime', () => {
     expect(gameData?.selectItemCount).toBe(1);
     expect(p1Log?.priceLog.at(-1)?.itemCidOrPrice).toBeGreaterThanOrEqual(500_000);
     expect(p1Log?.useItemLog.at(-1)?.itemCidOrPrice).toBe(BattleItem[0]!.id);
+    const manualSkillLog = gameData?.heroSkillLog.find((entry) => entry.skillCid === manualSkill.id);
+    const firstHitBox = manualSkillLog?.hitBoxList[0];
+    const firstHitItem = firstHitBox ? itemById(firstHitBox.itemCid) : undefined;
+    expect(manualSkillLog?.allHitItemAvgBoxIndex).toBeGreaterThan(0);
+    expect(firstHitBox?.itemType).toEqual(firstHitItem ? [...firstHitItem.item_type_ids] : undefined);
+    expect(manualSkillLog?.hitItemTypeList).toEqual(expect.arrayContaining(firstHitItem ? [...firstHitItem.item_type_ids] : []));
     expect(gameData?.itemSkillLog.some((entry) => entry.itemCid === BattleItem[0]!.id)).toBe(true);
     expect(buildSnapshot(match, 'p1').public.finalSummary?.bidKingReplay).toHaveLength(1);
   });

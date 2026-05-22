@@ -1,4 +1,4 @@
-import { BidMap, Hero } from '@bitkingdom/bidking-compat';
+import { BidMap, Hero, itemById } from '@bitkingdom/bidking-compat';
 import type {
   BidKingBoxInfoDataSnapshot,
   BidKingBoxPositionDataSnapshot,
@@ -13,6 +13,7 @@ import type {
   SkillFeedEntry
 } from '@bitkingdom/shared';
 import type { MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } from '../types';
+import { bidKingHeroIdForRoleId } from './heroRuntime';
 
 export function buildBidKingGameDataSnapshot(
   state: MatchRuntimeState,
@@ -55,7 +56,7 @@ function buildGameUserLog(
   previousRounds: readonly RoundHistoryEntry[],
   player: RuntimePlayer
 ): BidKingGameUserDataSnapshot {
-  const hero = Hero.find((candidate) => candidate.id === player.heroCid) ?? Hero[player.seat % Hero.length];
+  const hero = heroForPlayer(state, player);
   const priceLog = [
     ...previousRounds.map((history) => history.bids.find((bid) => bid.playerId === player.id)),
     round.bids.find((bid) => bid.playerId === player.id)
@@ -178,7 +179,7 @@ function skillFeedToGameSkillLog(
   uidSalt: number
 ): { kind: 'hero' | 'item' | 'map'; log: BidKingGameSkillDataSnapshot } {
   const player = entry.playerId ? state.players.find((candidate) => candidate.id === entry.playerId) : undefined;
-  const hero = player ? Hero.find((candidate) => candidate.id === player.heroCid) ?? Hero[player.seat % Hero.length] : undefined;
+  const hero = player ? heroForPlayer(state, player) : undefined;
   const hitSlots = hitSlotsForEntry(round, entry);
   const hitBoxList = hitSlots.map((slot, index) => boxInfoForSlot(slot, round, index));
   const hitItemTotalPrice = hitSlots.reduce((sum, slot) => sum + slot.item.value, 0);
@@ -186,7 +187,7 @@ function skillFeedToGameSkillLog(
   const itemQualities = [...new Set(hitSlots.map((slot) => qualityFromItem(slot.item)))];
 
   const log: BidKingGameSkillDataSnapshot = {
-    skillCid: stableNumericId(entry.skillName) % 1_000_000,
+    skillCid: entry.skillCid ?? stableNumericId(entry.skillName) % 1_000_000,
     heroCid: hero?.id ?? 0,
     mapCid: entry.source === 'map' ? bidMapIdForState(state, round) : 0,
     itemCid: entry.source === 'item' ? stableNumericId(entry.sourceName) % 1_000_000 : 0,
@@ -196,13 +197,11 @@ function skillFeedToGameSkillLog(
     hitBoxList,
     allHitItemAvgPrice: hitSlots.length > 0 ? hitItemTotalPrice / hitSlots.length : 0,
     allHitBoxAvgPrice: boxCellCount > 0 ? hitItemTotalPrice / boxCellCount : 0,
-    allHitItemAvgBoxIndex: hitSlots.length > 0
-      ? hitSlots.reduce((sum, slot) => sum + round.container.warehouseSlots.indexOf(slot) + 1, 0) / hitSlots.length
-      : 0,
+    allHitItemAvgBoxIndex: hitSlots.length > 0 ? boxCellCount / hitSlots.length : 0,
     hitItemTotalPrice,
     uid: stableNumericId(`${entry.id}:${uidSalt}`),
     totalHitBoxIndex: boxCellCount,
-    hitItemTypeList: [...new Set(hitSlots.map((slot) => itemCidFromRevealedItem(slot.item)))],
+    hitItemTypeList: uniqueItemTypes(hitSlots),
     hitItemQuilityList: itemQualities,
     sourceFeedId: entry.id
   };
@@ -216,16 +215,19 @@ function battleItemEventSkillLogs(state: MatchRuntimeState, round: RuntimeRound)
       const payload = event.payload as {
         itemId?: unknown;
         effectPlan?: { skillId?: unknown; targetCount?: unknown };
-        entry?: { id?: unknown };
+        entry?: { id?: unknown; targetItemIds?: unknown };
       } | undefined;
       const itemId = typeof payload?.itemId === 'number' ? payload.itemId : 0;
       if (itemId <= 0) {
         return undefined;
       }
       const player = event.actorId ? state.players.find((candidate) => candidate.id === event.actorId) : undefined;
-      const hero = player ? Hero.find((candidate) => candidate.id === player.heroCid) ?? Hero[player.seat % Hero.length] : undefined;
+      const hero = player ? heroForPlayer(state, player) : undefined;
       const targetCount = typeof payload?.effectPlan?.targetCount === 'number' ? payload.effectPlan.targetCount : 1;
-      const hitSlots = round.container.warehouseSlots.slice(0, Math.max(1, Math.min(targetCount, round.container.warehouseSlots.length)));
+      const targetItemIds = eventTargetItemIds(payload?.entry);
+      const hitSlots = targetItemIds.length > 0
+        ? slotsForTargetItemIds(round, targetItemIds)
+        : round.container.warehouseSlots.slice(0, Math.max(1, Math.min(targetCount, round.container.warehouseSlots.length)));
       const hitItemTotalPrice = hitSlots.reduce((sum, slot) => sum + slot.item.value, 0);
       const boxCellCount = hitSlots.reduce((sum, slot) => sum + Math.max(1, slot.w * slot.h), 0);
       return {
@@ -239,13 +241,11 @@ function battleItemEventSkillLogs(state: MatchRuntimeState, round: RuntimeRound)
         hitBoxList: hitSlots.map((slot, slotIndex) => boxInfoForSlot(slot, round, slotIndex)),
         allHitItemAvgPrice: hitSlots.length > 0 ? hitItemTotalPrice / hitSlots.length : 0,
         allHitBoxAvgPrice: boxCellCount > 0 ? hitItemTotalPrice / boxCellCount : 0,
-        allHitItemAvgBoxIndex: hitSlots.length > 0
-          ? hitSlots.reduce((sum, slot) => sum + round.container.warehouseSlots.indexOf(slot) + 1, 0) / hitSlots.length
-          : 0,
+        allHitItemAvgBoxIndex: hitSlots.length > 0 ? boxCellCount / hitSlots.length : 0,
         hitItemTotalPrice,
         uid: stableNumericId(`${event.id}:${index}`),
         totalHitBoxIndex: boxCellCount,
-        hitItemTypeList: [...new Set(hitSlots.map((slot) => itemCidFromRevealedItem(slot.item)))],
+        hitItemTypeList: uniqueItemTypes(hitSlots),
         hitItemQuilityList: [...new Set(hitSlots.map((slot) => qualityFromItem(slot.item)))],
         sourceFeedId: typeof payload?.entry?.id === 'string' ? payload.entry.id : undefined,
         sourceEventId: event.id
@@ -255,11 +255,26 @@ function battleItemEventSkillLogs(state: MatchRuntimeState, round: RuntimeRound)
 }
 
 function hitSlotsForEntry(round: RuntimeRound, entry: SkillFeedEntry): WarehouseSlot[] {
-  const targetIds = new Set(entry.targetItemIds ?? []);
+  return slotsForTargetItemIds(round, entry.targetItemIds ?? []);
+}
+
+function slotsForTargetItemIds(round: RuntimeRound, targetItemIds: readonly string[]): WarehouseSlot[] {
+  const targetIds = new Set(targetItemIds);
   if (targetIds.size === 0) {
     return [];
   }
   return round.container.warehouseSlots.filter((slot) => targetIds.has(slot.item.id));
+}
+
+function eventTargetItemIds(entry: { targetItemIds?: unknown } | undefined): string[] {
+  return Array.isArray(entry?.targetItemIds)
+    ? entry.targetItemIds.filter((id): id is string => typeof id === 'string')
+    : [];
+}
+
+function heroForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
+  const mappedHeroId = player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, state.config.roles);
+  return Hero.find((candidate) => candidate.id === mappedHeroId) ?? Hero[player.seat % Hero.length];
 }
 
 function boxInfoForSlot(slot: WarehouseSlot, round: RuntimeRound, index: number): BidKingBoxInfoDataSnapshot {
@@ -269,11 +284,21 @@ function boxInfoForSlot(slot: WarehouseSlot, round: RuntimeRound, index: number)
     itemUid: stableNumericId(`${round.id}:${slot.item.id}`),
     itemCid,
     itemSlotType: Math.max(1, slot.w * 10 + slot.h),
-    itemType: [itemCid],
+    itemType: itemTypeIdsFromItem(slot.item),
     itemQuility: qualityFromItem(slot.item),
     itemPrice: slot.item.value,
     itemBoxIndex: index + 1
   };
+}
+
+function uniqueItemTypes(slots: readonly WarehouseSlot[]): number[] {
+  return [...new Set(slots.flatMap((slot) => itemTypeIdsFromItem(slot.item)))];
+}
+
+function itemTypeIdsFromItem(item: RevealedItem): number[] {
+  const itemCid = itemCidFromRevealedItem(item);
+  const itemTypes = itemById(itemCid)?.item_type_ids;
+  return itemTypes ? [...itemTypes] : [itemCid];
 }
 
 function selectedItemCount(userLog: readonly BidKingGameUserDataSnapshot[]): number {

@@ -93,6 +93,9 @@ export function eventPayloadText(payload: unknown, detail: AdminMatchDetail): st
   if (typeof record.itemId === 'number' && effectPlan) {
     return battleItemEventText(record, effectPlan, detail);
   }
+  if (typeof record.skillCid === 'number' && effectPlan) {
+    return skillEffectEventText(record, effectPlan, detail);
+  }
   if (typeof record.amount === 'number') {
     return `出价 ${record.amount.toLocaleString()}`;
   }
@@ -114,6 +117,30 @@ export function eventPayloadText(payload: unknown, detail: AdminMatchDetail): st
     return record.roundId;
   }
   return trimText(JSON.stringify(record), 90);
+}
+
+function skillEffectEventText(
+  record: Record<string, unknown>,
+  effectPlan: Record<string, unknown>,
+  detail: AdminMatchDetail
+): string {
+  const clue = asRecord(record.clue);
+  const targetPlayerId = typeof record.targetPlayerId === 'string' ? record.targetPlayerId : undefined;
+  const targetPlayer = targetPlayerId ? `目标 ${playerNameFromAdmin(detail, targetPlayerId)}` : undefined;
+  const effect = typeof effectPlan.effectId === 'number' ? `效果 ${effectPlan.effectId}` : undefined;
+  const category = typeof effectPlan.effectCategory === 'number' ? `Category ${effectPlan.effectCategory}` : undefined;
+  const targetCount = typeof effectPlan.targetCount === 'number' ? `命中 ${effectPlan.targetCount} 个目标` : undefined;
+  const skillTarget = typeof effectPlan.skillTarget === 'number' ? `目标规则 ${effectPlan.skillTarget}` : undefined;
+  const clueText = typeof clue?.text === 'string' ? trimText(clue.text, 34) : undefined;
+  return [
+    `掌眼 ${record.skillCid}`,
+    effect,
+    category,
+    targetCount,
+    skillTarget,
+    targetPlayer,
+    clueText
+  ].filter(Boolean).join(' · ');
 }
 
 function battleItemEventText(
