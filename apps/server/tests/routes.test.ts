@@ -1,9 +1,10 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Activity } from '@bitkingdom/bidking-compat';
-import type { AccountSessionSnapshot, AdminReviewSnapshot } from '@bitkingdom/shared';
+import { Activity, Item } from '@bitkingdom/bidking-compat';
+import type { AccountSessionSnapshot, AdminReviewSnapshot, PlayerProfile } from '@bitkingdom/shared';
 import { describe, expect, it } from 'vitest';
+import { addInventory } from '../src/domain/profile/profileInventory';
 import { createBitKingdomServer, type BitKingdomServerRuntime } from '../src/serverApp';
 
 const equivalentTables = [
@@ -55,6 +56,7 @@ const equivalentTables = [
 
 const visualSubstituteTables = ['Emoji', 'Head', 'HeroSkin', 'LanguageListen', 'Sound'] as const;
 const serviceSimulatedTables = ['Dlc', 'Pay', 'PurchaseList'] as const;
+const SEND_AUCTION_ROUTE_ITEM_ID = 1015001;
 
 async function withRouteRuntime(testBody: (runtime: BitKingdomServerRuntime) => Promise<void>): Promise<void> {
   const previousDriver = process.env.BITKINGDOM_STORE_DRIVER;
@@ -78,6 +80,22 @@ function restoreEnv(name: string, value: string | undefined): void {
     return;
   }
   process.env[name] = value;
+}
+
+function resetRouteStockInventory(profile: PlayerProfile): void {
+  profile.inventory = [];
+  profile.stockContainers = [];
+  profile.stockState = { nextBoxId: 1, nextItemNo: 1 };
+  profile.settings.bidkingStockContainersV1 = true;
+}
+
+function selectRouteWarehouseStockBoxes(profile: PlayerProfile, itemCid: number, quantity: number): Array<{ stockId: number; boxId: number }> {
+  const warehouse = profile.stockContainers?.find((container) => container.kind === 'warehouse');
+  const boxes = warehouse?.boxes.filter((box) => box.item.cid === itemCid).slice(0, quantity) ?? [];
+  if (!warehouse || boxes.length < quantity) {
+    throw new Error(`仓库藏品不足：${itemCid}`);
+  }
+  return boxes.map((box) => ({ stockId: warehouse.stockId, boxId: box.boxId }));
 }
 
 async function createGuestAuth(
@@ -211,6 +229,67 @@ describe('server routes', () => {
         headers: { authorization: `Bearer ${upgradedPayload.sessionToken}` }
       });
       expect(expired.statusCode).toBe(401);
+    });
+  });
+
+  it('protects send auction routes and binds them to the account profile', async () => {
+    await withRouteRuntime(async ({ app, store }) => {
+      const unauthenticated = await app.inject({
+        method: 'POST',
+        url: '/api/send-auction',
+        payload: { mapCid: 101, itemSelections: [] }
+      });
+      expect(unauthenticated.statusCode).toBe(401);
+
+      const { profileId, headers } = await createGuestAuth(app, 'route_send_auction', '路由委托');
+      const profile = store.state.profiles[profileId]!;
+      resetRouteStockInventory(profile);
+      profile.coins = 10_000;
+      addInventory(profile, 'warehouse', String(SEND_AUCTION_ROUTE_ITEM_ID), 15, 'test:route:send_auction');
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/api/send-auction',
+        headers,
+        payload: {
+          mapCid: 101,
+          itemSelections: selectRouteWarehouseStockBoxes(profile, SEND_AUCTION_ROUTE_ITEM_ID, 15)
+        }
+      });
+      const createdPayload = JSON.parse(created.payload) as { profile: PlayerProfile };
+      const auction = createdPayload.profile.sendAuctions?.[0]!;
+      const unitValue = Item.find((item) => item.id === SEND_AUCTION_ROUTE_ITEM_ID)?.base_value ?? 0;
+
+      expect(created.statusCode).toBe(200);
+      expect(auction).toEqual(expect.objectContaining({
+        mapCid: 101,
+        slotId: 0,
+        status: 'listed',
+        totalValue: unitValue * 15
+      }));
+      expect(createdPayload.profile.coins).toBe(9_000);
+
+      const listed = await app.inject({
+        method: 'GET',
+        url: '/api/send-auctions?includeHistory=0',
+        headers
+      });
+      const listedPayload = JSON.parse(listed.payload) as { auctions: Array<{ id: string; status: string }> };
+      expect(listed.statusCode).toBe(200);
+      expect(listedPayload.auctions).toEqual([expect.objectContaining({ id: auction.id, status: 'listed' })]);
+
+      const recycled = await app.inject({
+        method: 'POST',
+        url: '/api/send-auction/action',
+        headers,
+        payload: { action: 'recycle', slotId: auction.slotId }
+      });
+      const recycledPayload = JSON.parse(recycled.payload) as { profile: PlayerProfile };
+      expect(recycled.statusCode).toBe(200);
+      expect(recycledPayload.profile.sendAuctions?.find((candidate) => candidate.id === auction.id)).toEqual(expect.objectContaining({
+        status: 'recycled',
+        finalPrice: unitValue * 15
+      }));
     });
   });
 

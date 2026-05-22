@@ -101,6 +101,9 @@ function isProtectedProfileRoute(method: string, rawUrl: string): boolean {
   if (path === '/api/market/order' || path === '/api/market/order/action') {
     return true;
   }
+  if (path === '/api/send-auction' || path === '/api/send-auction/action' || path === '/api/send-auctions') {
+    return true;
+  }
   if (verb === 'GET' && (
     path === '/api/profile/collection-bonus' ||
     path === '/api/profile/relief-fund'

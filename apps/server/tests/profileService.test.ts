@@ -1,4 +1,4 @@
-import type { FinalMatchSummary } from '@bitkingdom/shared';
+import type { FinalMatchSummary, PlayerProfile } from '@bitkingdom/shared';
 import { Activity, Cabinet, Dlc, Hero, Item, Mission, Pay, Shop, ShopItem, bidKingDlcRuntime, bidKingPayRuntime } from '@bitkingdom/bidking-compat';
 import {
   bidKingHeroItemIdForHero,
@@ -66,6 +66,8 @@ function firstCabinetIneligibleItem(): (typeof Item)[number] {
 function cabinetAcceptsItem(cabinet: (typeof Cabinet)[number], item: (typeof Item)[number]): boolean {
   return cabinet.quality_requirement.length === 0 || cabinet.quality_requirement.includes(item.item_quality);
 }
+
+const SEND_AUCTION_TEST_ITEM_ID = 1015001;
 
 describe('profile service', () => {
   it('creates a profile and consumes tickets idempotently per source', () => {
@@ -776,6 +778,73 @@ describe('profile service', () => {
     expect(() => profiles.createMarketOrder('p_market_mail_full', '100102', 1, 1000, 'trade')).toThrow('信箱已满');
   });
 
+  it('creates source-style send auctions from concrete warehouse boxes and recycles at system value', () => {
+    const profiles = createProfileService(createMemoryStore());
+    const profile = profiles.getOrCreateProfile('p_send_auction', '委托掌柜');
+    resetStockInventory(profile);
+    profile.coins = 10_000;
+    addInventory(profile, 'warehouse', String(SEND_AUCTION_TEST_ITEM_ID), 15, 'test:send_auction:create');
+
+    const unitValue = Item.find((item) => item.id === SEND_AUCTION_TEST_ITEM_ID)?.base_value ?? 0;
+    const created = profiles.createSendAuction('p_send_auction', 101, selectWarehouseStockBoxes(profile, SEND_AUCTION_TEST_ITEM_ID, 15)).profile;
+    const auction = created.sendAuctions?.[0]!;
+
+    expect(auction).toEqual(expect.objectContaining({
+      mapCid: 101,
+      bidMapId: 2101,
+      slotId: 0,
+      status: 'listed',
+      fee: 1000,
+      totalValue: unitValue * 15,
+      targetValue: 20_000
+    }));
+    expect(auction.items).toHaveLength(15);
+    expect(auction.stockContainer.kind).toBe('sendAuction');
+    expect(created.coins).toBe(9_000);
+    expect(inventoryQuantity(created, String(SEND_AUCTION_TEST_ITEM_ID))).toBe(0);
+    expect(created.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.item.cid === SEND_AUCTION_TEST_ITEM_ID)).toBe(false);
+
+    const recycled = profiles.recycleSendAuction('p_send_auction', auction.slotId).profile;
+
+    expect(recycled.sendAuctions?.find((candidate) => candidate.id === auction.id)).toEqual(expect.objectContaining({
+      status: 'recycled',
+      finalPrice: unitValue * 15,
+      profit: 0
+    }));
+    expect(recycled.coins).toBe(9_000 + unitValue * 15);
+    expect(inventoryQuantity(recycled, String(SEND_AUCTION_TEST_ITEM_ID))).toBe(0);
+    expect(profiles.getSnapshot('p_send_auction').transactions.map((transaction) => transaction.reason)).toEqual(expect.arrayContaining([
+      'send_auction_fee',
+      'send_auction_item_lock',
+      'send_auction_recycle_coins'
+    ]));
+  });
+
+  it('settles send auctions with the auction final price and enforces original count/slot gates', () => {
+    const profiles = createProfileService(createMemoryStore());
+    const profile = profiles.getOrCreateProfile('p_send_auction_rules', '委托规则');
+    resetStockInventory(profile);
+    profile.coins = 1_000_000;
+    addInventory(profile, 'warehouse', String(SEND_AUCTION_TEST_ITEM_ID), 75, 'test:send_auction:rules');
+
+    expect(() => profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profile, SEND_AUCTION_TEST_ITEM_ID, 14))).toThrow('委托件数需在 15-20 件之间');
+
+    const first = profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profile, SEND_AUCTION_TEST_ITEM_ID, 15)).profile.sendAuctions?.[0]!;
+    const settled = profiles.settleSendAuction('p_send_auction_rules', first.id, first.totalValue + 5_000).profile;
+    expect(settled.sendAuctions?.find((candidate) => candidate.id === first.id)).toEqual(expect.objectContaining({
+      status: 'settled',
+      finalPrice: first.totalValue + 5_000,
+      profit: 5_000
+    }));
+
+    const second = profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profiles.getOrCreateProfile('p_send_auction_rules'), SEND_AUCTION_TEST_ITEM_ID, 15)).profile.sendAuctions?.[0]!;
+    const third = profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profiles.getOrCreateProfile('p_send_auction_rules'), SEND_AUCTION_TEST_ITEM_ID, 15)).profile.sendAuctions?.[0]!;
+    const fourth = profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profiles.getOrCreateProfile('p_send_auction_rules'), SEND_AUCTION_TEST_ITEM_ID, 15)).profile.sendAuctions?.[0]!;
+
+    expect([second.slotId, third.slotId, fourth.slotId]).toEqual([0, 1, 2]);
+    expect(() => profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profiles.getOrCreateProfile('p_send_auction_rules'), SEND_AUCTION_TEST_ITEM_ID, 15))).toThrow('委托槽位已满');
+  });
+
   it('claims relief fund only when total assets are below the original limit', () => {
     const profiles = createProfileService(createMemoryStore());
     const profile = profiles.getOrCreateProfile('p_relief', '掌柜救济');
@@ -1471,4 +1540,20 @@ function grantInventory(profile: { inventory: Array<{ key: string; type: string;
     quantity,
     updatedAt: Date.now()
   });
+}
+
+function resetStockInventory(profile: PlayerProfile): void {
+  profile.inventory = [];
+  profile.stockContainers = [];
+  profile.stockState = { nextBoxId: 1, nextItemNo: 1 };
+  profile.settings.bidkingStockContainersV1 = true;
+}
+
+function selectWarehouseStockBoxes(profile: PlayerProfile, itemCid: number, quantity: number): Array<{ stockId: number; boxId: number }> {
+  const warehouse = profile.stockContainers?.find((container) => container.kind === 'warehouse');
+  const boxes = warehouse?.boxes.filter((box) => box.item.cid === itemCid).slice(0, quantity) ?? [];
+  if (!warehouse || boxes.length < quantity) {
+    throw new Error(`仓库藏品不足：${itemCid}`);
+  }
+  return boxes.map((box) => ({ stockId: warehouse.stockId, boxId: box.boxId }));
 }

@@ -736,7 +736,7 @@ export interface PlayerInventoryEntry {
   updatedAt: number;
 }
 
-export type ProfileStockContainerKind = 'cabinet' | 'market' | 'match' | 'warehouse';
+export type ProfileStockContainerKind = 'cabinet' | 'market' | 'match' | 'sendAuction' | 'warehouse';
 
 export interface ProfileStockItemState {
   uid: string;
@@ -858,6 +858,45 @@ export interface MarketOrderView extends MarketOrderState {
 export interface MarketOrdersSnapshot {
   generatedAt: number;
   orders: MarketOrderView[];
+}
+
+export type SendAuctionStatus = 'listed' | 'settled' | 'recycled' | 'failed';
+
+export interface SendAuctionItemState {
+  stockId: number;
+  boxId: number;
+  itemCid: number;
+  itemUid: string;
+  itemNo: number;
+  position: number;
+  value: number;
+  refId: string;
+}
+
+export interface SendAuctionState {
+  id: string;
+  playerId: string;
+  playerName: string;
+  mapCid: number;
+  mapName?: string;
+  bidMapId: number;
+  slotId: number;
+  status: SendAuctionStatus;
+  items: SendAuctionItemState[];
+  stockContainer: ProfileStockContainerState;
+  totalValue: number;
+  targetValue: number;
+  fee: number;
+  entrustProbability?: number;
+  itemCountRange: [number, number];
+  finalPrice?: number;
+  profit?: number;
+  failureReason?: string;
+  createdAt: number;
+  updatedAt: number;
+  settledAt?: number;
+  recycledAt?: number;
+  failedAt?: number;
 }
 
 export interface FriendState {
@@ -1039,6 +1078,7 @@ export interface PlayerProfile {
   claimedActivityRewards: string[];
   claimedGiftPackages?: string[];
   marketOrders: MarketOrderState[];
+  sendAuctions?: SendAuctionState[];
   purchaseOrders?: PurchaseOrderState[];
   dlcUnlocks?: string[];
   friends: FriendState[];

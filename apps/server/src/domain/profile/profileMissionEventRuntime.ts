@@ -25,6 +25,7 @@ const DOMAIN_REASON_PREFIXES: Array<[MissionEventDomain, readonly string[]]> = [
     'purchase_',
     'purchase_list_',
     'purchase_order_',
+    'send_auction_',
     'dlc_',
     'gift_package_',
     'rank_reward_'

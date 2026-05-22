@@ -73,6 +73,7 @@ export {
   bidKingDefaultBidGameCount,
   bidKingDefaultRoomPlayerCount,
   bidKingDefaultRoundTimeSeconds,
+  bidKingEntrustSlotBase,
   bidKingHeroChoiceIds,
   bidKingInitialWarehouseCapacity,
   bidKingMaxBotCount,

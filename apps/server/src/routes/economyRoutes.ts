@@ -197,6 +197,75 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
   });
 
   app.post<{
+    Body: { playerId?: string; mapCid?: number; itemSelections?: Array<{ stockId?: number; boxId?: number }> };
+  }>('/api/send-auction', async (request, reply) => {
+    const { playerId, mapCid, itemSelections } = request.body;
+    if (!playerId || typeof mapCid !== 'number' || !Array.isArray(itemSelections)) {
+      reply.code(400);
+      return { error: 'playerId, mapCid and itemSelections are required' };
+    }
+    const normalizedSelections = itemSelections.map((selection) => ({
+      stockId: Number(selection.stockId),
+      boxId: Number(selection.boxId)
+    }));
+    if (normalizedSelections.some((selection) => !Number.isFinite(selection.stockId) || !Number.isFinite(selection.boxId))) {
+      reply.code(400);
+      return { error: 'itemSelections must include stockId and boxId' };
+    }
+    try {
+      return profiles.createSendAuction(playerId, mapCid, normalizedSelections);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'send auction failed' };
+    }
+  });
+
+  app.get<{
+    Querystring: { playerId?: string; includeHistory?: string };
+  }>('/api/send-auctions', async (request, reply) => {
+    const { playerId, includeHistory } = request.query;
+    if (!playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    try {
+      return {
+        generatedAt: Date.now(),
+        auctions: profiles.listSendAuctions(playerId, includeHistory !== '0')
+      };
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'send auction list failed' };
+    }
+  });
+
+  app.post<{
+    Body: { playerId?: string; sendAuctionId?: string; slotId?: number; action?: 'settle' | 'recycle'; finalPrice?: number };
+  }>('/api/send-auction/action', async (request, reply) => {
+    const { playerId, sendAuctionId, slotId, action, finalPrice } = request.body;
+    if (!playerId || (action !== 'settle' && action !== 'recycle')) {
+      reply.code(400);
+      return { error: 'playerId and action are required' };
+    }
+    if (action === 'settle' && !sendAuctionId) {
+      reply.code(400);
+      return { error: 'sendAuctionId is required for settlement' };
+    }
+    if (action === 'recycle' && typeof slotId !== 'number') {
+      reply.code(400);
+      return { error: 'slotId is required for recycle' };
+    }
+    try {
+      return action === 'settle'
+        ? profiles.settleSendAuction(playerId, sendAuctionId!, finalPrice)
+        : profiles.recycleSendAuction(playerId, slotId!);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'send auction action failed' };
+    }
+  });
+
+  app.post<{
     Body: { playerId?: string; activityId?: string };
   }>('/api/activity/claim', async (request, reply) => {
     if (!request.body.playerId || !request.body.activityId) {

@@ -27,6 +27,13 @@ import {
   settleMarketOrderForProfile
 } from '../domain/economy/profileMarketRuntime';
 import {
+  createSendAuctionForProfile,
+  listSendAuctionsForProfile,
+  recycleSendAuctionForProfile,
+  settleSendAuctionForProfile,
+  type SendAuctionItemSelectionInput
+} from '../domain/economy/profileSendAuctionRuntime';
+import {
   cancelDemoPayOrderForProfile,
   completeDemoPayOrderForProfile,
   completePurchaseListOrderForProfile,
@@ -494,6 +501,33 @@ export function createProfileService(store: ServerStore): ProfileService {
     return buildMarketOrdersSnapshot(Object.values(store.state.profiles), orderType);
   }
 
+  function createSendAuction(playerId: string, mapCid: number, itemSelections: SendAuctionItemSelectionInput[]): ProfileSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    createSendAuctionForProfile(profile, mapCid, itemSelections, applyNumberChange, recordTransaction);
+    store.save();
+    return getSnapshot(playerId);
+  }
+
+  function settleSendAuction(playerId: string, sendAuctionId: string, finalPrice?: number): ProfileSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    if (settleSendAuctionForProfile(profile, sendAuctionId, finalPrice, applyNumberChange, recordTransaction)) {
+      store.save();
+    }
+    return getSnapshot(playerId);
+  }
+
+  function recycleSendAuction(playerId: string, slotId: number): ProfileSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    if (recycleSendAuctionForProfile(profile, slotId, applyNumberChange, recordTransaction)) {
+      store.save();
+    }
+    return getSnapshot(playerId);
+  }
+
+  function listSendAuctions(playerId: string, includeHistory = true) {
+    return listSendAuctionsForProfile(getOrCreateProfile(playerId), includeHistory);
+  }
+
   function addDemoFriend(playerId: string): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
     if (addDemoFriendToProfile(profile, recordTransaction)) {
@@ -757,6 +791,10 @@ export function createProfileService(store: ServerStore): ProfileService {
     settleMarketOrder,
     cancelMarketOrder,
     listMarketOrders,
+    createSendAuction,
+    settleSendAuction,
+    recycleSendAuction,
+    listSendAuctions,
     addDemoFriend,
     removeFriend,
     setFriendRemark,

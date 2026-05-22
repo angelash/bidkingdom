@@ -4,8 +4,12 @@ import type {
   PlayerProfile,
   ProfileSnapshot,
   ProfileTransaction,
-  RankSnapshot
+  RankSnapshot,
+  SendAuctionState
 } from '@bitkingdom/shared';
+import type {
+  SendAuctionItemSelectionInput
+} from '../domain/economy/profileSendAuctionRuntime';
 import type {
   ReliefFundSnapshot
 } from '../domain/profile/profileReliefFundRuntime';
@@ -58,6 +62,10 @@ export interface ProfileService {
   settleMarketOrder(playerId: string, orderId: string): ProfileSnapshot;
   cancelMarketOrder(playerId: string, orderId: string): ProfileSnapshot;
   listMarketOrders(orderType?: 'trade' | 'auction'): MarketOrdersSnapshot;
+  createSendAuction(playerId: string, mapCid: number, itemSelections: SendAuctionItemSelectionInput[]): ProfileSnapshot;
+  settleSendAuction(playerId: string, sendAuctionId: string, finalPrice?: number): ProfileSnapshot;
+  recycleSendAuction(playerId: string, slotId: number): ProfileSnapshot;
+  listSendAuctions(playerId: string, includeHistory?: boolean): SendAuctionState[];
   addDemoFriend(playerId: string): ProfileSnapshot;
   removeFriend(playerId: string, friendId: string): ProfileSnapshot;
   setFriendRemark(playerId: string, friendId: string, remark: string): ProfileSnapshot;

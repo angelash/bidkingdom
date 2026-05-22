@@ -27,6 +27,7 @@ import {
   bidKingDefaultAuctionDurationMs,
   bidKingDefaultBidGameCount,
   bidKingDefaultRoomPlayerCount,
+  bidKingEntrustSlotBase,
   bidKingInitialWarehouseCapacity,
   bidKingReliefFundRuntime,
   bidKingRoomPlayerCountChoices,
@@ -123,6 +124,7 @@ describe('BidKing initial cash runtime', () => {
     expect(bidKingDefaultAuctionDurationMs()).toBe(60_000);
     expect(bidKingBidRateChoices()).toEqual([2000, 1800, 1600, 1400, 1200, 1100, 0]);
     expect(bidKingInitialWarehouseCapacity()).toBe(50);
+    expect(bidKingEntrustSlotBase()).toBe(3);
     expect(bidKingReliefFundRuntime()).toEqual({
       times: 3,
       limit: 100_000,

@@ -63,6 +63,11 @@ export function bidKingInitialWarehouseCapacity(fallback = 50): number {
   return capacity > 0 ? capacity : fallback;
 }
 
+export function bidKingEntrustSlotBase(fallback = 3): number {
+  const slotBase = constantNumber('entrust_slot_base', fallback);
+  return slotBase > 0 ? slotBase : fallback;
+}
+
 export function bidKingReliefFundRuntime(): BidKingReliefFundRuntime {
   return {
     times: constantNumber('relief_fund_times', 0),
