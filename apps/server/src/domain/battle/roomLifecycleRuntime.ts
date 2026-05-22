@@ -1,3 +1,4 @@
+import { bidKingBidMapPlayerCount } from '@bitkingdom/match-core';
 import type { MatchRuntimeState } from '@bitkingdom/match-core';
 import type {
   CoreAuctionMode,
@@ -46,11 +47,12 @@ interface CreateHumanPlayerArgs {
 }
 
 export function createRoomState(args: CreateRoomStateArgs): Room {
+  const maxPlayers = roomPlayerCapacity(args);
   return {
     id: args.id,
     code: args.code,
     hostId: args.hostId,
-    botCount: Math.max(0, Math.min(3, args.botCount)),
+    botCount: Math.max(0, Math.min(Math.max(0, maxPlayers - 1), args.botCount)),
     totalRounds: args.totalRounds,
     initialCash: args.initialCash,
     coreAuctionMode: args.coreAuctionMode,
@@ -84,7 +86,7 @@ export function addHumanPlayerToRoom(room: Room, player: RoomPlayer): boolean {
     room.players[botIndex] = player;
     return true;
   }
-  if (room.players.length >= 4) {
+  if (room.players.length >= roomPlayerCapacity(room)) {
     return false;
   }
   room.players.push(player);
@@ -92,9 +94,9 @@ export function addHumanPlayerToRoom(room: Room, player: RoomPlayer): boolean {
 }
 
 export function fillRoomBots(room: Room, createBotId: (seat: number) => string): void {
-  while (room.players.length < 4) {
+  while (room.players.length < roomPlayerCapacity(room)) {
     const seat = room.players.length;
-    const bot = createBotRoomPlayer(seat, createBotId(seat));
+    const bot = createBotForRoomSeat(room, seat, createBotId(seat));
     room.botProfiles.set(bot.player.id, bot.profileId);
     room.players.push(bot.player);
   }
@@ -105,9 +107,46 @@ export function replaceLobbyPlayerWithBot(room: Room, playerId: string, createBo
   if (seat < 0) {
     return;
   }
-  const bot = createBotRoomPlayer(seat, createBotId(seat));
+  const bot = createBotForRoomSeat(room, seat, createBotId(seat));
   room.players[seat] = bot.player;
   room.botProfiles.set(bot.player.id, bot.profileId);
+}
+
+export function roomPlayerCapacity(room: Pick<Room, 'selectedBidMapId' | 'players'> | Pick<CreateRoomStateArgs, 'selectedBidMapId'>): number {
+  return bidKingBidMapPlayerCount(room.selectedBidMapId, 4);
+}
+
+export function syncRoomBotsForBidMap(room: Room, createBotId: (seat: number) => string): void {
+  const target = roomPlayerCapacity(room);
+  while (room.players.length > target) {
+    const botIndex = lastBotIndex(room.players);
+    if (botIndex < 0) {
+      break;
+    }
+    const removed = room.players.splice(botIndex, 1)[0];
+    if (removed) {
+      room.botProfiles.delete(removed.id);
+    }
+  }
+  room.botCount = Math.max(0, Math.min(Math.max(0, target - 1), room.botCount));
+  fillRoomBots(room, createBotId);
+}
+
+function createBotForRoomSeat(room: Room, seat: number, id: string): ReturnType<typeof createBotRoomPlayer> {
+  return createBotRoomPlayer(seat, id, {
+    selectedBidMapId: room.selectedBidMapId,
+    occupiedHeroIds: room.players.map((player) => player.heroCid).filter((heroCid): heroCid is number => typeof heroCid === 'number'),
+    seed: `${room.id}:${room.code}:${seat}:${id}`
+  });
+}
+
+function lastBotIndex(players: readonly RoomPlayer[]): number {
+  for (let index = players.length - 1; index >= 0; index -= 1) {
+    if (players[index]?.kind === 'bot') {
+      return index;
+    }
+  }
+  return -1;
 }
 
 export function markSocketDisconnected(room: Room, playerId: string, socketId: string): void {

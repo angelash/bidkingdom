@@ -1,5 +1,6 @@
 import { BidMap, Map as BidKingMap, RankMap } from '@bitkingdom/bidking-compat';
 import type { BidKingBidMapRow, BidKingMapRow } from '@bitkingdom/bidking-compat';
+import { bidKingPlayableBidMaps } from './bidMapRuntime';
 import { constantNumberArray } from './constant/constantEngine';
 
 const FALLBACK_INITIAL_CASH = 100_000;
@@ -179,8 +180,7 @@ export function bidKingBestAvailableBidMapId(
   if (preferredBidMapId && bidKingBidMapAccess(profile, preferredBidMapId).canEnter) {
     return preferredBidMapId;
   }
-  return BidMap
-    .filter((row) => row.is_visiable === 1 && row.bidder_number === 4 && row.auction_rounds_rate.some((rate) => rate > 0))
+  return bidKingPlayableBidMaps()
     .map((row) => ({ row, access: bidKingBidMapAccess(profile, row.id) }))
     .filter((entry) => entry.access.canEnter)
     .sort((left, right) => (

@@ -67,6 +67,7 @@ describe('BidKing initial cash runtime', () => {
     }, 2101, now).reasons).toContain('今日次数 100/100');
     expect(bidKingBestAvailableBidMapId({ coins: 2_090_000 }, 2201)).toBe(2201);
     expect(bidKingBestAvailableBidMapId({ coins: 2_090_000 })).toBe(2401);
+    expect(bidKingBestAvailableBidMapId({ coins: 20_000, inventory: [{ refId: 101, quantity: 1 }] })).toBe(2101);
     expect(bidKingInitialCashForProfileCoins(2_090_000, 2201)).toBe(500_000);
     expect(bidKingInitialCashForProfileCoins(2_090_000, 2601)).toBe(3_000_000);
   });

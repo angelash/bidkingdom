@@ -10,8 +10,6 @@ import type { BidKingBattleMapGroup } from './BattlePrevPanelView';
 
 export const SELECTED_BID_MAP_KEY = 'bk_selected_bid_map';
 
-const BIDKING_CORE_PLAYER_COUNT = 4;
-
 export function loadSelectedBidMapId(defaultBidMapId?: number): number | undefined {
   const raw = localStorage.getItem(SELECTED_BID_MAP_KEY);
   const id = raw ? Number(raw) : undefined;
@@ -21,7 +19,6 @@ export function loadSelectedBidMapId(defaultBidMapId?: number): number | undefin
 export function buildBidKingBattleMapGroups(): BidKingBattleMapGroup[] {
   const visibleBidMaps = bidKingBidMaps.filter((map) => (
     map.is_visiable === 1
-    && map.bidder_number === BIDKING_CORE_PLAYER_COUNT
     && map.auction_rounds_rate.some((rate) => rate > 0)
   ));
   const fallbackBidMaps = visibleBidMaps.length > 0

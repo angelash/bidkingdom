@@ -21,6 +21,15 @@ export {
 } from './bidking/heroRuntime';
 export { constantNumber, constantNumberArray, constantNumberRows, constantRawValue, constantValue } from './bidking/constant/constantEngine';
 export {
+  bidKingBidMapPlayerCount,
+  bidKingBotHeroIdForBidMap,
+  bidKingBotHeroIdsForBidMap,
+  bidKingPlayableBidMaps
+} from './bidking/bidMapRuntime';
+export type {
+  BidKingBotHeroSpawnOptions
+} from './bidking/bidMapRuntime';
+export {
   bidKingDefaultInitialCash,
   bidKingBestAvailableBidMapId,
   bidKingBidMapAccess,

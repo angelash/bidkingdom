@@ -1,5 +1,6 @@
 import { gameConfig } from '@bitkingdom/config';
 import { createMatch, startNextRound } from '@bitkingdom/match-core';
+import { RankMap } from '@bitkingdom/bidking-compat';
 import { describe, expect, it } from 'vitest';
 import {
   createHumanRoomPlayer,
@@ -7,7 +8,9 @@ import {
   fillRoomBots,
   markSocketDisconnected,
   markSocketRejoined,
-  replaceLobbyPlayerWithBot
+  replaceLobbyPlayerWithBot,
+  roomPlayerCapacity,
+  syncRoomBotsForBidMap
 } from '../src/domain/battle/roomLifecycleRuntime';
 import { snapshotRoom } from '../src/domain/battle/roomLobbyRuntime';
 import { languageNameFromSeed } from '../src/domain/profile/languageNameRuntime';
@@ -109,5 +112,44 @@ describe('BidKing room lifecycle runtime', () => {
 
     expect(snapshot.initialCash).toBe(3_000_000);
     expect(snapshot.players[0]?.cash).toBe(3_000_000);
+  });
+
+  it('sizes rooms and bot heroes from selected BidMap and RankMap rows', () => {
+    const sourceHeroIds = new Set(RankMap.find((row) => row.id === 2101)?.role_spawn.map(([heroId]) => heroId));
+    const room = createRoomState({
+      id: 'room_rankmap_bots',
+      code: 'RMAP',
+      hostId: 'p1',
+      botCount: 3,
+      totalRounds: 3,
+      initialCash: gameConfig.rules.initialCash,
+      coreAuctionMode: 'sealed',
+      selectedBidMapId: 2101
+    });
+    room.players.push(createHumanRoomPlayer({
+      id: 'p1',
+      name: '甲',
+      roleId: gameConfig.roles[0]!.id,
+      heroCid: 101,
+      socketId: 'socket_rankmap'
+    }));
+
+    fillRoomBots(room, (seat) => `bot_${seat}`);
+
+    expect(roomPlayerCapacity(room)).toBe(2);
+    expect(room.players).toHaveLength(2);
+    expect(room.players[1]).toEqual(expect.objectContaining({ kind: 'bot' }));
+    expect(room.players[1]?.heroCid).not.toBe(101);
+    expect(sourceHeroIds.has(room.players[1]?.heroCid ?? 0)).toBe(true);
+    expect(snapshotRoom(room).maxPlayers).toBe(2);
+
+    room.selectedBidMapId = 2601;
+    syncRoomBotsForBidMap(room, (seat) => `bot_grow_${seat}`);
+    expect(room.players).toHaveLength(4);
+
+    room.selectedBidMapId = 2101;
+    syncRoomBotsForBidMap(room, (seat) => `bot_trim_${seat}`);
+    expect(room.players.map((player) => player.id)).toContain('p1');
+    expect(room.players).toHaveLength(2);
   });
 });

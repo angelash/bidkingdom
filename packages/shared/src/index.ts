@@ -533,6 +533,7 @@ export interface RoomSnapshot {
   players: PublicPlayer[];
   hostId: string;
   botCount: number;
+  maxPlayers: number;
   totalRounds: number;
   initialCash: number;
   coreAuctionMode: CoreAuctionMode;

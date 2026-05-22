@@ -25,6 +25,7 @@ import {
   buildBidKingRoundStartSkillFeed,
   createBidKingCoreWarehouseInstance
 } from './bidking/compatRuntime';
+import { bidKingBidMapPlayerCount } from './bidking/bidMapRuntime';
 import { buildBidKingGameDataSnapshot } from './bidking/gameDataRuntime';
 import { bidKingInitialCashForBidMap } from './bidking/initialCashRuntime';
 import { buildPrivateClues, buildPublicClues } from './clues';
@@ -281,6 +282,7 @@ export function toRoomSnapshot(params: {
     code: params.code,
     hostId: params.hostId,
     botCount: params.botCount,
+    maxPlayers: bidKingBidMapPlayerCount(params.selectedBidMapId, params.players.length),
     totalRounds: params.totalRounds,
     initialCash: params.initialCash ?? config.rules.initialCash,
     coreAuctionMode: params.coreAuctionMode ?? 'sealed',

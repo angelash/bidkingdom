@@ -2,7 +2,6 @@ import React from 'react';
 import { Gavel, Home, Info, ListChecks, Play, Shield, Users } from 'lucide-react';
 import { gameConfig } from '@bitkingdom/config';
 import type { BidKingBidMapRow } from '@bitkingdom/bidking-compat';
-import { bidKingDefaultRoomPlayerCount } from '@bitkingdom/match-core';
 import type { CoreAuctionMode, PlayerProfile, RoomSnapshot } from '@bitkingdom/shared';
 import { roleAvatarForRoleId, rolePortraitForRoleId } from '../../artAssets';
 import { auctionModeName, PlayerGrid } from '../battle/BattlePanels';
@@ -49,7 +48,7 @@ export function RoomLobbyView({
   const lobbyBidMapChoices = mapGroups.flatMap((group) => group.children);
   const lobbyBidMap = lobbyBidMapChoices.find((map) => map.id === (room.selectedBidMapId ?? selectedBidMapId))
     ?? lobbyBidMapChoices[0];
-  const roomPlayerCount = bidKingDefaultRoomPlayerCount(4);
+  const roomPlayerCount = room.maxPlayers ?? lobbyBidMap?.bidder_number ?? 4;
   const nextBidMap = lobbyBidMapChoices[(Math.max(0, lobbyBidMapChoices.findIndex((map) => map.id === lobbyBidMap?.id)) + 1) % Math.max(1, lobbyBidMapChoices.length)];
   return (
     <section className="room-ready-hall">

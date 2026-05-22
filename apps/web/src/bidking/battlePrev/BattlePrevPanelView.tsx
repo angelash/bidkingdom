@@ -85,6 +85,8 @@ export function BattlePrevPanelView({
   const selectedInitialCash = bidKingInitialCashForBidMap(selectedBidMap.id, gameConfig.rules.initialCash);
   const sceneMode = modeForBidKingMap(selectedParentMap);
   const selectedRoleSkill = roleSkillDetails[selectedRole.skillId];
+  const selectedMaxBotCount = Math.max(0, selectedBidMap.bidder_number - 1);
+  const selectedBotCount = Math.min(botCount, selectedMaxBotCount);
   const tabs = [
     { id: 'map', label: '场地', icon: <Gavel size={16} /> },
     { id: 'hero', label: '竞买人', icon: <Users size={16} /> },
@@ -217,8 +219,8 @@ export function BattlePrevPanelView({
                 </button>
                 <label>
                   随从
-                  <input type="range" min="0" max="3" value={botCount} onChange={(event) => onSetBotCount(Number(event.target.value))} />
-                  <span>{botCount}</span>
+                  <input type="range" min="0" max={selectedMaxBotCount} value={selectedBotCount} onChange={(event) => onSetBotCount(Number(event.target.value))} />
+                  <span>{selectedBotCount}/{selectedMaxBotCount}</span>
                 </label>
                 <p>
                   {selectedRole.name} · {selectedRoleSkill.short} · 场地写入 {auctionModeName(sceneMode)}

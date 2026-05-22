@@ -1,7 +1,10 @@
 import { gameConfig } from '@bitkingdom/config';
 import {
+  bidKingBotHeroIdForBidMap,
+  bidKingBidMapPlayerCount,
   bidKingInitialCashForBidMap,
   bidKingHeroIdForRoleId,
+  bidKingRoleIdForHeroId,
   type CreateMatchPlayer,
   type MatchRuntimeState
 } from '@bitkingdom/match-core';
@@ -32,9 +35,27 @@ export interface RoomSnapshotSource {
   match?: MatchRuntimeState;
 }
 
-export function createBotRoomPlayer(index: number, id: string): { player: RoomPlayer; profileId: string } {
-  const roleId = BOT_ROLE_SEQUENCE[index - 1] ?? BOT_ROLE_SEQUENCE[index % BOT_ROLE_SEQUENCE.length]!;
-  const role = gameConfig.roles.find((candidate) => candidate.id === roleId) ?? gameConfig.roles[index % gameConfig.roles.length]!;
+export interface CreateBotRoomPlayerOptions {
+  selectedBidMapId?: number;
+  heroCid?: number;
+  occupiedHeroIds?: readonly number[];
+  seed?: string | number;
+}
+
+export function createBotRoomPlayer(
+  index: number,
+  id: string,
+  options: CreateBotRoomPlayerOptions = {}
+): { player: RoomPlayer; profileId: string } {
+  const fallbackRoleId = BOT_ROLE_SEQUENCE[index - 1] ?? BOT_ROLE_SEQUENCE[index % BOT_ROLE_SEQUENCE.length]!;
+  const sourceHeroCid = options.heroCid ?? bidKingBotHeroIdForBidMap({
+    bidMapId: options.selectedBidMapId,
+    seed: options.seed ?? `${id}:${index}`,
+    excludeHeroIds: options.occupiedHeroIds
+  });
+  const sourceRoleId = bidKingRoleIdForHeroId(sourceHeroCid, gameConfig.roles);
+  const role = gameConfig.roles.find((candidate) => candidate.id === (sourceRoleId ?? fallbackRoleId))
+    ?? gameConfig.roles[index % gameConfig.roles.length]!;
   const profile = gameConfig.botProfiles[index % gameConfig.botProfiles.length]!;
   return {
     player: {
@@ -42,7 +63,7 @@ export function createBotRoomPlayer(index: number, id: string): { player: RoomPl
       name: languageNameFromSeed(10_000 + index),
       kind: 'bot',
       roleId: role.id,
-      heroCid: bidKingHeroIdForRoleId(role.id, gameConfig.roles),
+      heroCid: sourceHeroCid ?? bidKingHeroIdForRoleId(role.id, gameConfig.roles),
       ready: true,
       status: 'ready'
     },
@@ -53,11 +74,13 @@ export function createBotRoomPlayer(index: number, id: string): { player: RoomPl
 export function snapshotRoom(room: RoomSnapshotSource): RoomSnapshot {
   const matchPlayers = room.match?.players;
   const lobbyInitialCash = bidKingInitialCashForBidMap(room.selectedBidMapId, room.initialCash);
+  const maxPlayers = bidKingBidMapPlayerCount(room.selectedBidMapId, 4);
   return {
     id: room.id,
     code: room.code,
     hostId: room.hostId,
     botCount: room.players.filter((player) => player.kind === 'bot').length,
+    maxPlayers,
     totalRounds: room.totalRounds,
     initialCash: room.match?.config.rules.initialCash ?? lobbyInitialCash,
     coreAuctionMode: room.coreAuctionMode,

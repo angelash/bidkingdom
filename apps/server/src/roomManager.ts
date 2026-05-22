@@ -55,11 +55,12 @@ import {
   createHumanRoomPlayer,
   createRoomState,
   createUniqueRoomCode,
-  fillRoomBots,
   markSocketDisconnected,
   markSocketLeftRoom,
   markSocketRejoined,
-  replaceLobbyPlayerWithBot
+  replaceLobbyPlayerWithBot,
+  roomPlayerCapacity,
+  syncRoomBotsForBidMap
 } from './domain/battle/roomLifecycleRuntime';
 import type { Room } from './domain/battle/roomLifecycleRuntime';
 import { appendServerLog } from './services/serverLogSink';
@@ -233,8 +234,15 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
         emitError(socket, error);
         return;
       }
+      const nextCapacity = roomPlayerCapacity({ selectedBidMapId: nextBidMapId, players: context.room.players });
+      const humanCount = context.room.players.filter((player) => player.kind === 'human').length;
+      if (humanCount > nextCapacity) {
+        emitError(socket, new Error(`当前已有 ${humanCount} 名玩家，不能切换到 ${nextCapacity} 人拍场`));
+        return;
+      }
       context.room.selectedBidMapId = nextBidMapId;
       context.room.initialCash = bidKingInitialCashForBidMap(nextBidMapId, gameConfig.rules.initialCash);
+      syncRoomBotsForBidMap(context.room, () => `bot_${randomUUID()}`);
       broadcasts.broadcastRoom(context.room);
     });
 
@@ -508,11 +516,15 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
   }
 
   function fillBots(room: Room): void {
-    fillRoomBots(room, () => `bot_${randomUUID()}`);
+    syncRoomBotsForBidMap(room, () => `bot_${randomUUID()}`);
   }
 
   function startMatch(room: Room): void {
     fillBots(room);
+    const maxPlayers = roomPlayerCapacity(room);
+    if (room.players.length > maxPlayers) {
+      throw new Error(`当前拍场仅支持 ${maxPlayers} 人同局`);
+    }
     room.initialCash = bidKingInitialCashForBidMap(room.selectedBidMapId, room.initialCash);
     const humanPlayers = room.players.filter((candidate) => candidate.kind === 'human');
     for (const player of humanPlayers) {
@@ -534,7 +546,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     }
     const match = createMatch({
       id: `match_${randomUUID()}`,
-      players: room.players.slice(0, 4).map((player) => ({
+      players: room.players.slice(0, maxPlayers).map((player) => ({
         id: player.id,
         name: player.name,
         kind: player.kind,
