@@ -852,6 +852,7 @@ export const gameConfig: GameConfig = {
   botProfiles: [
     { id: 'conservative', name: '稳健掌柜', riskAppetite: 0.25, bluffChance: 0.05, overpayTolerance: 0.05 },
     { id: 'aggressive', name: '上头行商', riskAppetite: 0.82, bluffChance: 0.2, overpayTolerance: 0.25 },
+    { id: 'risk_taker', name: '冒险竞买人', riskAppetite: 0.9, bluffChance: 0.18, overpayTolerance: 0.35 },
     { id: 'clue_reader', name: '线索派', riskAppetite: 0.58, bluffChance: 0.08, overpayTolerance: 0.12 },
     { id: 'trickster', name: '试探客', riskAppetite: 0.55, bluffChance: 0.35, overpayTolerance: 0.16 },
     { id: 'mentor', name: '陪练掌柜', riskAppetite: 0.38, bluffChance: 0.04, overpayTolerance: 0.08 }

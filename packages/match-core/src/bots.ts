@@ -2,6 +2,7 @@ import type { GameConfig } from '@bitkingdom/config';
 import { BattleItem, Drop, Emoji, Hero, RankAi, bidKingBattleItemDisplayName, bidKingRawTableDisplayName } from '@bitkingdom/bidking-compat';
 import type { AuctionMode, Clue, Rarity, SkillId, WarehouseSlotView } from '@bitkingdom/shared';
 import { getBidKingCloseThreshold } from './bidking/compatRuntime';
+import { bidKingHeroIdForRoleId } from './bidking/heroRuntime';
 import { battleItemCooldownRemaining, battleItemEffectPlanForItem } from './items';
 import { createRandom, hashSeed } from './random';
 import { calculateNetWorth, sumItemValue } from './scoring';
@@ -19,6 +20,8 @@ export interface BotActionAudit {
   rankAiRoundCount?: number;
   rankAiMinBidRatio?: number;
   rankAiPkRatio?: number;
+  rankAiBidTimeSeconds?: number;
+  rankAiTargetRatio?: number;
   rankAiItemUseProbability?: number;
   rankAiItemUsageGroupId?: number;
   battleItemId?: number;
@@ -99,6 +102,7 @@ interface BotTuning {
   bidAggression: number;
   minBidRatio: number;
   pkRatio: number;
+  bidTimeSeconds: number;
   itemUseProbability: number;
   itemUsageGroup: readonly (readonly number[])[];
   rankAiRowId?: number;
@@ -502,7 +506,7 @@ function maxBidForAssessment(
   const styleBase = coreMode ? 0.92 : 0.72;
   const styleFactor = styleBase + tuning.bidAggression * 0.2 + tuning.overpayTolerance * 0.24 + corePressure + finalPressure;
   const riskScale = coreMode
-    ? (confidence < 0.48 ? 0.45 : 0.25)
+    ? (confidence < 0.48 ? 0.32 : 0.18) + (1 - tuning.riskAppetite) * 0.1
     : confidence < 0.48 ? 0.9 : 0.55;
   const riskFactor = 1 - riskPenalty * riskScale;
   const behaviorTreeLimit = estimate * confidenceFactor * styleFactor * riskFactor;
@@ -542,8 +546,11 @@ function targetBidForAssessment(params: {
   );
   const tableRatio = rankAiMinBidRatio(tuning, state.coreMode);
   const tableAnchor = estimate * tableRatio;
+  const tableTarget = state.coreMode
+    ? estimate * coreRankAiRoundTargetRatio(round, tuning, confidence, riskPenalty, previous)
+    : tableAnchor;
   const rawTarget = state.coreMode
-    ? Math.max(estimate * commitment, tableAnchor * (0.92 + confidence * 0.08))
+    ? Math.max(estimate * commitment, tableTarget)
     : estimate * commitment * 0.78 + tableAnchor * 0.22;
   const competitiveFloor = state.coreMode
     ? estimate * coreCompetitiveBidFloorRatio(round, tuning, confidence, riskPenalty)
@@ -586,6 +593,39 @@ function coreCompetitiveBidFloorRatio(
   const riskAdjustment = riskPenalty * 0.1;
   const roundCeiling = round.index >= 4 ? 1.08 : 1;
   return clamp(base + confidenceAdjustment + aggressionAdjustment - riskAdjustment, 0.48, roundCeiling);
+}
+
+function coreRankAiRoundTargetRatio(
+  round: RuntimeRound,
+  tuning: BotTuning,
+  confidence: number,
+  riskPenalty: number,
+  previous?: PreviousRoundSignal
+): number {
+  const minRatio = rankAiMinBidRatio(tuning, true);
+  const pkRatio = rankAiPkRatio(tuning, true);
+  const low = Math.min(minRatio, pkRatio);
+  const high = Math.max(minRatio, pkRatio);
+  const progress = clamp(round.index / 4, 0, 1);
+  const historyPressure = previous?.rank === 2
+    ? 0.22
+    : previous?.rank === 1 && previous.decision === 'continue'
+      ? 0.12
+      : (previous?.rank ?? 0) >= 3
+        ? confidence > 0.62 ? 0.04 : -0.12
+        : 0;
+  const confidencePressure = clamp((confidence - 0.45) * 0.4, -0.08, 0.16);
+  const modePressure = round.auctionMode === 'second_price'
+    ? 0.08
+    : round.auctionMode === 'flash'
+      ? -0.06
+      : 0;
+  const pressure = clamp(
+    0.36 + progress * 0.34 + historyPressure + confidencePressure + modePressure - riskPenalty * 0.18,
+    0.15,
+    round.index >= 4 ? 0.96 : 0.82
+  );
+  return clamp(low + (high - low) * pressure, 0.3, round.index >= 4 ? 2 : 1.75);
 }
 
 function previousRankAdjustment(previous: PreviousRoundSignal | undefined, confidence: number): number {
@@ -956,28 +996,43 @@ function botTuningForPlayer(
       bidAggression: profile.riskAppetite,
       minBidRatio: 740 + profile.riskAppetite * 320,
       pkRatio: 820 + profile.riskAppetite * 420,
+      bidTimeSeconds: 0,
       itemUseProbability: Math.round(220 + profile.riskAppetite * 420),
       itemUsageGroup: []
     };
   }
   const row = rankAiRowForPlayer(state, player);
+  const minBidRatio = weightedRangeValue(row.min_bid_ratio, state, 850, `${player.id}:${row.id}:min_bid_ratio`);
+  const pkRatio = weightedRangeValue(row.bid_pk, state, 1000, `${player.id}:${row.id}:bid_pk`);
+  const bidTimeSeconds = weightedRangeValue(row.bid_time, state, 15, `${player.id}:${row.id}:bid_time`);
+  const minIntensity = rankAiRatioIntensity(minBidRatio);
+  const pkIntensity = rankAiRatioIntensity(pkRatio);
+  const sourceRisk = clamp(0.18 + minIntensity * 0.24 + pkIntensity * 0.52, 0.16, 0.96);
+  const sourceAggression = clamp(
+    0.26 + minIntensity * 0.22 + pkIntensity * 0.5 + (row.round_count >= 4 ? 0.06 : 0),
+    0.2,
+    0.98
+  );
+  const sourceOverpay = clamp(Math.max(0, pkRatio - 1000) / 1000, 0.02, 0.9);
   return {
     rankAiRowId: row.id,
     rankAiRoleId: row.role_id,
     rankAiRoundCount: row.round_count,
-    riskAppetite: row.risk_appetite,
-    bluffChance: row.bluff_chance,
-    overpayTolerance: row.overpay_tolerance,
-    bidAggression: row.bid_aggression,
-    minBidRatio: weightedRangeValue(row.min_bid_ratio, state, 850, `${player.id}:${row.id}:min_bid_ratio`),
-    pkRatio: weightedRangeValue(row.bid_pk, state, 1000, `${player.id}:${row.id}:bid_pk`),
+    riskAppetite: clamp(sourceRisk * 0.82 + profile.riskAppetite * 0.18, 0.1, 0.98),
+    bluffChance: clamp(row.bluff_chance * 0.82 + profile.bluffChance * 0.18, 0, 0.7),
+    overpayTolerance: clamp(sourceOverpay * 0.82 + profile.overpayTolerance * 0.18, 0.02, 0.9),
+    bidAggression: clamp(sourceAggression * 0.82 + profile.riskAppetite * 0.18, 0.18, 0.98),
+    minBidRatio,
+    pkRatio,
+    bidTimeSeconds,
     itemUseProbability: row.item_use_probability,
     itemUsageGroup: row.item_usage_group
   };
 }
 
 function rankAiRowForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
-  const hero = Hero.find((candidate) => candidate.id === player.heroCid) ?? Hero[player.seat % Math.max(1, Hero.length)];
+  const mappedHeroId = player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, state.config.roles);
+  const hero = Hero.find((candidate) => candidate.id === mappedHeroId) ?? Hero[player.seat % Math.max(1, Hero.length)];
   const roundCount = Math.max(1, state.roundIndex + 1);
   const heroRows = hero ? RankAi.filter((row) => row.role_id === hero.id) : [];
   return heroRows.find((row) => row.round_count === roundCount) ??
@@ -986,6 +1041,10 @@ function rankAiRowForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
     RankAi.find((row) => row.round_count === roundCount) ??
     RankAi[(Math.max(0, state.roundIndex) * state.players.length + player.seat) % RankAi.length] ??
     RankAi[0]!;
+}
+
+function rankAiRatioIntensity(ratio: number): number {
+  return clamp((ratio - 100) / 1900, 0, 1);
 }
 
 function rankAiMinBidRatio(tuning: BotTuning, coreMode: boolean): number {
@@ -1003,10 +1062,10 @@ function coreRankAiBidLimit(
   tuning: BotTuning,
   round: RuntimeRound
 ): number {
-  const sourceRatio = Math.max(rankAiMinBidRatio(tuning, true), rankAiPkRatio(tuning, true));
-  const confidenceScale = 0.9 + confidence * 0.18;
+  const sourceRatio = Math.max(rankAiMinBidRatio(tuning, true) * 1.04, rankAiPkRatio(tuning, true));
+  const confidenceScale = 0.94 + confidence * 0.18;
   const roundPressure = 0.98 + Math.min(round.index, 4) * 0.015 + (round.index >= 4 ? 0.04 : 0);
-  const riskScale = 1 - riskPenalty * 0.22;
+  const riskScale = 1 - riskPenalty * (0.14 + (1 - tuning.riskAppetite) * 0.12);
   const auctionModeScale = round.auctionMode === 'flash' ? 0.94 : round.auctionMode === 'second_price' ? 1.04 : 1;
   return Math.max(0, estimate * sourceRatio * confidenceScale * roundPressure * riskScale * auctionModeScale);
 }
@@ -1171,6 +1230,10 @@ function buildBotActionAudit(context: BotContext, trace: string[], action: BotAc
     rankAiRoundCount: tuning.rankAiRoundCount,
     rankAiMinBidRatio: tuning.rankAiRowId !== undefined ? tuning.minBidRatio : undefined,
     rankAiPkRatio: tuning.rankAiRowId !== undefined ? tuning.pkRatio : undefined,
+    rankAiBidTimeSeconds: tuning.rankAiRowId !== undefined ? tuning.bidTimeSeconds : undefined,
+    rankAiTargetRatio: tuning.rankAiRowId !== undefined
+      ? roundNumber(coreRankAiRoundTargetRatio(round, tuning, assessment.confidence, assessment.riskPenalty, assessment.previous), 3)
+      : undefined,
     rankAiItemUseProbability: tuning.rankAiRowId !== undefined ? tuning.itemUseProbability : undefined,
     rankAiItemUsageGroupId: action.itemUsageGroupId,
     battleItemId: action.itemId,

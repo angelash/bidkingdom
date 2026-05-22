@@ -38,6 +38,7 @@ import { buildSnapshot, createMatch, setRoundPhase, startNextRound } from '../ma
 import { useSkill } from '../skills';
 import { battleItemCooldownRemaining, battleItemEffectPlanForItem, skillGroupForBattleItem, useBattleItem } from '../items';
 import type { BattleItemEffectPlan } from '../items';
+import { bidKingHeroIdForRoleId } from './heroRuntime';
 
 const players = [
   { id: 'p1', name: '玩家一', kind: 'human' as const, roleId: 'appraiser' },
@@ -312,12 +313,16 @@ describe('BidKing compatible core runtime', () => {
     expect(RankAi.length).toBeGreaterThan(0);
     expect(RankAi.every((row) => row.risk_appetite >= 0 && row.risk_appetite <= 1)).toBe(true);
     expect(action.type).toBe('emote');
+    const expectedHeroId = bidKingHeroIdForRoleId(bot.roleId, match.config.roles);
     const expectedRankAi = RankAi.find((row) =>
-      row.role_id === Hero[bot.seat % Hero.length]!.id &&
+      row.role_id === expectedHeroId &&
       row.round_count === match.roundIndex + 1
     )!;
     expect(action.audit?.rankAiRowId).toBe(expectedRankAi.id);
-    expect(action.audit?.riskAppetite).toBe(expectedRankAi.risk_appetite);
+    expect(action.audit?.riskAppetite).toBeGreaterThan(0);
+    expect(action.audit?.rankAiMinBidRatio).toEqual(expect.any(Number));
+    expect(action.audit?.rankAiPkRatio).toEqual(expect.any(Number));
+    expect(action.audit?.rankAiBidTimeSeconds).toEqual(expect.any(Number));
     expect(Emoji.map((row) => bidKingRawTableDisplayName(row))).toContain(action.emote);
   });
 

@@ -363,6 +363,62 @@ describe('match core', () => {
     }));
   });
 
+  it('uses RankAi min and pk pools to chase final-round core bids', () => {
+    const match = createMatch({
+      id: 'rank-ai-pk-pool',
+      seed: 51515,
+      players: [
+        { id: 'p1', name: '甲', kind: 'human', roleId: gameConfig.roles[0]!.id, heroCid: 101 },
+        { id: 'p2', name: '乙', kind: 'human', roleId: gameConfig.roles[1]!.id, heroCid: 102 },
+        { id: 'b1', name: '丙', kind: 'bot', roleId: gameConfig.roles[2]!.id, heroCid: 103 },
+        { id: 'b2', name: '丁', kind: 'bot', roleId: gameConfig.roles[3]!.id, heroCid: 104 }
+      ],
+      totalRounds: 5,
+      coreMode: true,
+      coreAuctionMode: 'sealed',
+      coreBidMapId: 2401,
+      config: gameConfig,
+      now: 1000
+    });
+    startNextRound(match, 2000);
+    const round = match.currentRound!;
+    match.roundIndex = 4;
+    round.index = 4;
+    round.container.publicInfo.estimateMin = 900_000;
+    round.container.publicInfo.estimateMax = 1_100_000;
+    round.container.publicInfo.risk = 'medium';
+    round.container.minimumBid = 100_000;
+    round.container.publicClues = [];
+    round.warehouseSlots = [];
+    for (const player of match.players) {
+      player.cash = 2_000_000;
+      player.privateClues = [];
+      player.skillCooldown = 99;
+      player.skillUsesRemaining = 0;
+      for (const item of BattleItem) {
+        player.battleItemCooldowns[String(item.id)] = 99;
+      }
+    }
+    setRoundPhase(match, 'auction', 30000, 3000);
+
+    const action = chooseBotAction(match, 'b1', 'risk_taker');
+
+    expect(action.type).toBe('bid');
+    expect(action.amount ?? 0).toBeGreaterThanOrEqual(1_050_000);
+    expect(action.amount ?? 0).toBeLessThanOrEqual(2_000_000);
+    expect(action.audit).toEqual(expect.objectContaining({
+      profileId: 'risk_taker',
+      rankAiRoleId: 103,
+      rankAiRoundCount: 5,
+      rankAiMinBidRatio: expect.any(Number),
+      rankAiPkRatio: expect.any(Number),
+      rankAiBidTimeSeconds: expect.any(Number),
+      rankAiTargetRatio: expect.any(Number)
+    }));
+    expect(action.audit?.rankAiPkRatio ?? 0).toBeGreaterThan(action.audit?.rankAiMinBidRatio ?? 0);
+    expect(action.audit?.rankAiTargetRatio ?? 0).toBeGreaterThan((action.audit?.rankAiMinBidRatio ?? 0) / 1000);
+  });
+
   it('lets core open bots submit target-sized bids instead of minimum increments', () => {
     const match = createMatch({
       id: 'core_open_match',
