@@ -152,10 +152,30 @@ export function settleCurrentRound(state: MatchRuntimeState, now = Date.now()): 
   const setBonus = winner ? calculateSetBonus(ownedWithWonItems, state.config) - calculateSetBonus(winner.holdings, state.config) : 0;
   const rawProfit = winner ? trueValue + setBonus - payment - repairCost - winnerDepositCost : 0;
   const refund = winner ? calculateInsuranceRefund(winner, rawProfit, state) : 0;
-  const lossRebateRefund = winner ? bidKingBidLossRebateAmount(Math.max(0, -rawProfit)) : 0;
-  const profit = rawProfit + refund + lossRebateRefund;
 
   const depositRefunds = refundDepositsForNonWinners(state, winner?.id, now);
+  const participantRows = state.players.map((player) => {
+    const depositPaid = round.depositPaidByPlayerId[player.id] ? depositValue : 0;
+    const depositRefund = depositRefunds[player.id] ?? 0;
+    const isWinner = player.id === winner?.id;
+    const profitBeforeLossRecovery = isWinner ? rawProfit + refund : depositRefund - depositPaid;
+    const participated = isWinner || round.bids.some((bid) => bid.playerId === player.id && bid.amount > 0);
+    const lossRebateRefund = participated
+      ? bidKingBidLossRebateAmount(Math.max(0, -profitBeforeLossRecovery))
+      : 0;
+    return {
+      player,
+      depositPaid,
+      depositRefund,
+      isWinner,
+      insuranceRefund: isWinner ? refund : 0,
+      lossRebateRefund,
+      profit: profitBeforeLossRecovery + lossRebateRefund
+    };
+  });
+  const winnerLossRebateRefund = participantRows.find((row) => row.isWinner)?.lossRebateRefund ?? 0;
+  const totalLossRebateRefund = participantRows.reduce((sum, row) => sum + row.lossRebateRefund, 0);
+  const profit = rawProfit + refund + winnerLossRebateRefund;
 
   if (winner) {
     transact(state, winner, -payment, 'auction_payment', now);
@@ -165,10 +185,12 @@ export function settleCurrentRound(state: MatchRuntimeState, now = Date.now()): 
     if (refund > 0) {
       transact(state, winner, refund, 'insurance_refund', now);
     }
-    if (lossRebateRefund > 0) {
-      transact(state, winner, lossRebateRefund, 'bid_loss_rebate', now);
-    }
     winner.holdings.push(...round.container.hiddenItems);
+  }
+  for (const row of participantRows) {
+    if (row.lossRebateRefund > 0) {
+      transact(state, row.player, row.lossRebateRefund, 'bid_loss_rebate', now);
+    }
   }
 
   const clueReview = reviewClues(
@@ -188,31 +210,25 @@ export function settleCurrentRound(state: MatchRuntimeState, now = Date.now()): 
     payment,
     depositCost: winnerDepositCost,
     insuranceRefund: refund,
-    lossRebateRefund,
+    lossRebateRefund: totalLossRebateRefund,
     trueValue,
     repairCost,
     setBonus,
     profit,
     title: buildSettlementTitle(profit, payment, trueValue),
-    participants: state.players.map((player) => {
-      const depositPaid = round.depositPaidByPlayerId[player.id] ? depositValue : 0;
-      const depositRefund = depositRefunds[player.id] ?? 0;
-      const isWinner = player.id === winner?.id;
-      const participantProfit = isWinner ? profit : depositRefund - depositPaid;
-      return {
-        playerId: player.id,
-        payment: isWinner ? payment : 0,
-        depositPaid,
-        depositRefund,
-        insuranceRefund: isWinner ? refund : 0,
-        lossRebateRefund: isWinner ? lossRebateRefund : 0,
-        trueValue: isWinner ? trueValue : 0,
-        repairCost: isWinner ? repairCost : 0,
-        setBonus: isWinner ? setBonus : 0,
-        profit: participantProfit,
-        title: buildParticipantTitle(isWinner, participantProfit, depositPaid, depositRefund)
-      };
-    }),
+    participants: participantRows.map((row) => ({
+      playerId: row.player.id,
+      payment: row.isWinner ? payment : 0,
+      depositPaid: row.depositPaid,
+      depositRefund: row.depositRefund,
+      insuranceRefund: row.insuranceRefund,
+      lossRebateRefund: row.lossRebateRefund,
+      trueValue: row.isWinner ? trueValue : 0,
+      repairCost: row.isWinner ? repairCost : 0,
+      setBonus: row.isWinner ? setBonus : 0,
+      profit: row.profit,
+      title: buildParticipantTitle(row.isWinner, row.profit, row.depositPaid, row.depositRefund)
+    })),
     clueReview,
     bidFeedback
   };

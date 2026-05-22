@@ -1237,7 +1237,16 @@ describe('profile service', () => {
     const profile = profiles.getSnapshot('p_match').profile;
     expect(profile.completedMatches).toEqual(['match_profile_test']);
     expect(profile.coins).toBe(DEFAULT_PROFILE_COINS);
+    expect(profile.xp).toBe(Item.find((item) => item.id === 100102)?.base_value ?? 0);
+    expect(profile.level).toBeGreaterThan(1);
     expect(profile.rankPoints).toBe(8);
+    expect(profile.lastRewards).toEqual(expect.objectContaining({
+      collectionExpBefore: 0,
+      collectionExpAfter: Item.find((item) => item.id === 100102)?.base_value ?? 0,
+      collectionLevelBefore: 1,
+      collectionLevelAfter: profile.level,
+      lossRecovery: 0
+    }));
     expect(inventoryQuantity(profile, 'compat_100102')).toBe(1);
     expect(profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.item.cid === 100102)).toBe(true);
     expect(profile.completedTasks).toEqual(expect.arrayContaining(['daily_complete_match', 'daily_light_codex', 'ach_rare_collector']));
@@ -1286,6 +1295,81 @@ describe('profile service', () => {
       'cabinet_sell_item',
       'cabinet_sell_coins'
     ]));
+  });
+
+  it('applies match loss recovery and duplicate collection experience once', () => {
+    const profiles = createProfileService(createMemoryStore());
+    profiles.getOrCreateProfile('p_loss_recovery', '掌柜返利');
+    const itemBaseValue = Item.find((item) => item.id === 100102)?.base_value ?? 0;
+    const summary: FinalMatchSummary = {
+      matchId: 'match_loss_recovery',
+      seed: 4,
+      rankings: [
+        {
+          playerId: 'p_loss_recovery',
+          name: '掌柜返利',
+          rank: 2,
+          cash: 0,
+          holdingsValue: 0,
+          setBonus: 0,
+          netWorth: 0
+        }
+      ],
+      netWorthCurve: [],
+      bestMove: { title: '测试', detail: '测试' },
+      biggestMistake: { title: '测试', detail: '测试' },
+      revealedItems: [],
+      awardedItemsByPlayerId: {
+        p_loss_recovery: [
+          {
+            id: 'compat_100102_1',
+            name: '测试藏品',
+            category: '测试',
+            rarity: 'rare',
+            value: itemBaseValue,
+            displayValue: itemBaseValue,
+            isFake: false,
+            repairCost: 0,
+            iconKey: 'bidking_item_100102',
+            footprint: { w: 1, h: 1 }
+          },
+          {
+            id: 'compat_100102_2',
+            name: '测试藏品',
+            category: '测试',
+            rarity: 'rare',
+            value: itemBaseValue,
+            displayValue: itemBaseValue,
+            isFake: false,
+            repairCost: 0,
+            iconKey: 'bidking_item_100102',
+            footprint: { w: 1, h: 1 }
+          }
+        ]
+      },
+      lossRecoveryByPlayerId: { p_loss_recovery: 12_000 },
+      rewards: [{ playerId: 'p_loss_recovery', xp: 999_999, coins: 0, rankPoints: -5 }],
+      eventCount: 0,
+      transactionCount: 0
+    };
+
+    profiles.applyMatchSummary('p_loss_recovery', summary);
+    profiles.applyMatchSummary('p_loss_recovery', summary);
+
+    const snapshot = profiles.getSnapshot('p_loss_recovery');
+    const profile = snapshot.profile;
+    expect(profile.coins).toBe(DEFAULT_PROFILE_COINS + 12_000);
+    expect(profile.xp).toBe(itemBaseValue + Math.floor(itemBaseValue * 0.5));
+    expect(profile.rankPoints).toBe(0);
+    expect(inventoryQuantity(profile, 'compat_100102')).toBe(2);
+    expect(profile.lastRewards).toEqual(expect.objectContaining({
+      xp: itemBaseValue + Math.floor(itemBaseValue * 0.5),
+      lossRecovery: 12_000,
+      collectionExpBefore: 0,
+      collectionExpAfter: itemBaseValue + Math.floor(itemBaseValue * 0.5)
+    }));
+    expect(snapshot.transactions.filter((transaction) => transaction.reason === 'match_loss_recovery')).toHaveLength(1);
+    expect(snapshot.transactions.filter((transaction) => transaction.reason === 'match_award_item')).toHaveLength(1);
   });
 
   it('adds GuildPoints from completed match profit tiers', () => {

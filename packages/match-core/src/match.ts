@@ -1,5 +1,5 @@
 import { gameConfig as defaultConfig } from '@bitkingdom/config';
-import { BidMap } from '@bitkingdom/bidking-compat';
+import { BidMap, Item } from '@bitkingdom/bidking-compat';
 import type {
   AuctionMode,
   BidKingGameDataSnapshot,
@@ -1305,6 +1305,13 @@ function buildFinalSummary(state: MatchRuntimeState): FinalMatchSummary {
     }
   }
   const auctionStats = buildAuctionStats(state);
+  const lossRecoveryByPlayerId = buildLossRecoveryByPlayerId(state);
+  const collectionXpByPlayerId = Object.fromEntries(
+    state.players.map((player) => [
+      player.id,
+      (awardedItemsByPlayerId[player.id] ?? []).reduce((sum, item) => sum + collectionExperienceValue(item), 0)
+    ])
+  );
 
   return {
     matchId: state.id,
@@ -1315,6 +1322,7 @@ function buildFinalSummary(state: MatchRuntimeState): FinalMatchSummary {
     biggestMistake,
     revealedItems: [...uniqueItems.values()],
     awardedItemsByPlayerId,
+    lossRecoveryByPlayerId,
     auctionStats,
     bidKingReplay: state.coreMode
       ? state.roundHistory
@@ -1323,13 +1331,32 @@ function buildFinalSummary(state: MatchRuntimeState): FinalMatchSummary {
       : undefined,
     rewards: rankings.map((player) => ({
       playerId: player.playerId,
-      xp: 110 + (4 - player.rank) * 25,
+      xp: collectionXpByPlayerId[player.playerId] ?? 0,
       coins: 0,
       rankPoints: [35, 15, -5, -15][player.rank - 1] ?? 0
     })),
     eventCount: state.events.length + 1,
     transactionCount: state.transactions.length
   };
+}
+
+function buildLossRecoveryByPlayerId(state: MatchRuntimeState): Record<string, number> {
+  const lossRecoveryByPlayerId: Record<string, number> = Object.fromEntries(
+    state.players.map((player) => [player.id, 0])
+  );
+  for (const transaction of state.transactions) {
+    if (transaction.reason === 'bid_loss_rebate' && transaction.amountChange > 0) {
+      lossRecoveryByPlayerId[transaction.playerId] = (lossRecoveryByPlayerId[transaction.playerId] ?? 0) + transaction.amountChange;
+    }
+  }
+  return lossRecoveryByPlayerId;
+}
+
+function collectionExperienceValue(item: RevealedItem): number {
+  const sourceId = Number(/^compat_(\d+)/.exec(item.id)?.[1]);
+  const sourceItem = Number.isFinite(sourceId) ? Item.find((candidate) => candidate.id === sourceId) : undefined;
+  const fallbackValue = item.displayValue > 0 ? item.displayValue : item.value;
+  return Math.max(0, Math.floor(sourceItem?.base_value ?? fallbackValue));
 }
 
 function buildAuctionStats(state: MatchRuntimeState): FinalPlayerAuctionStats[] {

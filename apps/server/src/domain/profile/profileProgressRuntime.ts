@@ -1,6 +1,6 @@
-import { Achievement, Condition, LevelUp, Mission } from '@bitkingdom/bidking-compat';
+import { Achievement, Condition, Item, LevelUp, Mission } from '@bitkingdom/bidking-compat';
 import type { BidKingConditionRow, BidKingMissionRow } from '@bitkingdom/bidking-compat';
-import { evaluateBidKingCondition, parseBidKingNumberRows } from '@bitkingdom/match-core';
+import { bidKingCollectionRuleRuntime, evaluateBidKingCondition, parseBidKingNumberRows } from '@bitkingdom/match-core';
 import type { ConditionCheckResult, ConditionContext } from '@bitkingdom/match-core';
 import type {
   AchievementProgressState,
@@ -155,6 +155,12 @@ export function applyMatchSummaryForProfile(
   }
   const reward = summary.rewards.find((candidate) => candidate.playerId === profile.playerId) ?? { xp: 80, coins: 60, rankPoints: 0 };
   const awardedItems = awardedItemsForProfile(profile, summary);
+  const collectionExpBefore = profile.xp;
+  const collectionLevelBefore = levelFromXp(collectionExpBefore);
+  const collectionExpGain = awardedItems.length > 0
+    ? collectionExperienceGainForProfile(profile, awardedItems)
+    : Math.max(0, Math.floor(reward.xp));
+  const lossRecovery = Math.max(0, Math.floor(summary.lossRecoveryByPlayerId?.[profile.playerId] ?? 0));
   const existingCodex = new Set(profile.codex);
   const newCodex = awardedItems
     .map((item) => canonicalCodexItemId(item.id))
@@ -183,21 +189,37 @@ export function applyMatchSummaryForProfile(
   recordAuctionAcquiredItems(profile, awardedItems);
   awardMatchItemsToInventory(profile, summary.matchId, awardedItems, recordTransaction);
 
-  applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:xp`, 'match_reward_xp', 'xp', reward.xp);
+  applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:xp`, 'match_reward_xp', 'xp', collectionExpGain);
   if (totalCoins > 0) {
     applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:coins`, 'match_reward_coins', 'coins', totalCoins);
   }
+  if (lossRecovery > 0) {
+    applyNumberChange(
+      profile,
+      `match:${summary.matchId}:${profile.playerId}:loss_recovery`,
+      'match_loss_recovery',
+      'coins',
+      lossRecovery
+    );
+  }
   applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:rank`, 'match_reward_rank', 'rankPoints', reward.rankPoints);
   profile.level = levelFromXp(profile.xp);
+  const collectionExpAfter = profile.xp;
+  const collectionLevelAfter = profile.level;
   profile.codex = [...existingCodex];
   profile.completedMatches.push(summary.matchId);
   profile.completedTasks = [...matchTaskIds];
   profile.lastRewards = {
     matchId: summary.matchId,
-    xp: reward.xp,
+    xp: collectionExpGain,
     coins: totalCoins,
     rankPoints: reward.rankPoints,
-    newCodex
+    newCodex,
+    lossRecovery,
+    collectionExpBefore,
+    collectionExpAfter,
+    collectionLevelBefore,
+    collectionLevelAfter
   };
   profile.updatedAt = Date.now();
   refreshMissionProgress(profile);
@@ -208,6 +230,49 @@ function awardedItemsForProfile(profile: PlayerProfile, summary: FinalMatchSumma
   return summary.awardedItemsByPlayerId
     ? summary.awardedItemsByPlayerId[profile.playerId] ?? []
     : summary.revealedItems;
+}
+
+function collectionExperienceGainForProfile(
+  profile: PlayerProfile,
+  awardedItems: ReturnType<typeof awardedItemsForProfile>
+): number {
+  const rule = bidKingCollectionRuleRuntime();
+  const acquisitionCounts = new Map<number, number>();
+  let total = 0;
+  for (const awardedItem of awardedItems) {
+    const itemId = sourceItemIdFromRef(awardedItem.id);
+    if (!itemId) {
+      total += Math.max(0, Math.floor(awardedItem.displayValue || awardedItem.value));
+      continue;
+    }
+    const beforeCount = acquisitionCounts.get(itemId) ?? collectionAcquisitionCount(profile, itemId);
+    if (beforeCount >= rule.collectionCountMax) {
+      acquisitionCounts.set(itemId, beforeCount + 1);
+      continue;
+    }
+    const ratePerMille = rule.duplicateRatesPerMille[Math.min(beforeCount, rule.duplicateRatesPerMille.length - 1)] ?? 1000;
+    const item = Item.find((candidate) => candidate.id === itemId);
+    const fallbackValue = awardedItem.displayValue > 0 ? awardedItem.displayValue : awardedItem.value;
+    const baseValue = item?.base_value ?? fallbackValue;
+    total += Math.floor(Math.max(0, baseValue) * Math.max(0, ratePerMille) / 1000);
+    acquisitionCounts.set(itemId, beforeCount + 1);
+  }
+  return total;
+}
+
+function collectionAcquisitionCount(profile: PlayerProfile, itemId: number): number {
+  const loggedCount = (profile.conditionStats?.auctionAcquiredItemIds ?? [])
+    .filter((candidate) => candidate === itemId)
+    .length;
+  if (loggedCount > 0) {
+    return loggedCount;
+  }
+  return profile.codex.some((entry) => sourceItemIdFromRef(entry) === itemId) ? 1 : 0;
+}
+
+function sourceItemIdFromRef(refId: string): number | undefined {
+  const sourceId = Number(/^compat_(\d+)/.exec(canonicalCodexItemId(refId))?.[1] ?? refId);
+  return Number.isFinite(sourceId) && sourceId > 0 ? sourceId : undefined;
 }
 
 function awardMatchItemsToInventory(
@@ -775,11 +840,16 @@ function missionProgressReason(
 }
 
 export function levelFromXp(xp: number): number {
-  let level = 1;
-  while (xp >= xpForLevel(level + 1)) {
-    level += 1;
+  const safeXp = Math.max(0, Math.floor(xp));
+  const rows = LevelUp
+    .filter((entry) => entry.collection_value > 0)
+    .sort((left, right) => left.id - right.id);
+  for (const row of rows) {
+    if (safeXp < row.collection_value) {
+      return row.id;
+    }
   }
-  return level;
+  return rows[rows.length - 1]?.id ?? 1;
 }
 
 export function xpForLevel(level: number): number {

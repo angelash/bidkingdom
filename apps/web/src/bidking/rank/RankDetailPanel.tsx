@@ -35,7 +35,8 @@ export function RankDetailPanel({
 }: RankDetailPanelProps): JSX.Element {
   const currentTier = currentRankTier(profile.rankPoints);
   const nextTier = nextRankTier(profile.rankPoints);
-  const nextLevelXp = xpForLevel(profile.level + 1);
+  const currentLevelXp = previousXpForLevel(profile.level);
+  const nextLevelXp = xpForLevel(profile.level);
   const rankProgress = nextTier ? Math.round(((profile.rankPoints - currentTier.points) / (nextTier.points - currentTier.points)) * 100) : 100;
   const [rankSnapshot, setRankSnapshot] = useState<RankSnapshot>();
   const [selectedRankId, setSelectedRankId] = useState(bidKingRanks[0]?.id ?? '101');
@@ -74,7 +75,10 @@ export function RankDetailPanel({
       </div>
       <p className="rank-next">{nextTier ? `距离 ${nextTier.name} 还需要 ${Math.max(0, nextTier.points - profile.rankPoints)} 名望` : '已达到当前名士榜最高称号'}</p>
       <div className="detail-stat-grid">
-        <RankDetailStat label="经验" value={`${profile.xp}/${nextLevelXp}`} />
+        <RankDetailStat
+          label="经验"
+          value={`${Math.max(0, profile.xp - currentLevelXp)}/${Math.max(1, nextLevelXp - currentLevelXp)}`}
+        />
         <RankDetailStat label="铜钱" value={profile.coins.toLocaleString()} />
         <RankDetailStat label="完成对局" value={`${profile.completedMatches.length}`} />
         <RankDetailStat label="珍宝谱加成" value={`${profile.codex.length * 20} 铜钱`} />
@@ -180,6 +184,13 @@ function nextRankTier(points: number): (typeof rankTiers)[number] | undefined {
 
 function xpForLevel(level: number): number {
   return bidKingLevelUps.find((entry) => entry.id === level)?.collection_value ?? Math.max(120, level * level * 120);
+}
+
+function previousXpForLevel(level: number): number {
+  if (level <= 1) {
+    return 0;
+  }
+  return xpForLevel(level - 1);
 }
 
 function rankRewardRange(row: BidKingRawTableRow): [number, number] {

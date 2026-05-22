@@ -461,6 +461,7 @@ export interface FinalMatchSummary {
   biggestMistake: FinalMatchInsight;
   revealedItems: RevealedItem[];
   awardedItemsByPlayerId?: Record<string, RevealedItem[]>;
+  lossRecoveryByPlayerId?: Record<string, number>;
   auctionStats?: FinalPlayerAuctionStats[];
   bidKingReplay?: BidKingGameDataSnapshot[];
   rewards: MatchReward[];
@@ -703,6 +704,11 @@ export interface PlayerProfileLastRewards {
   coins: number;
   rankPoints: number;
   newCodex: string[];
+  lossRecovery?: number;
+  collectionExpBefore?: number;
+  collectionExpAfter?: number;
+  collectionLevelBefore?: number;
+  collectionLevelAfter?: number;
 }
 
 export interface TicketState {

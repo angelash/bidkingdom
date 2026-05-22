@@ -287,10 +287,14 @@ export function FinalSummaryPanel({
         {selfReward && (
           <div className="reward-strip">
             <Award size={18} />
-            <span>经验 +{selfReward.xp}</span>
+            <span>收藏经验 +{selfReward.xp}</span>
             <span>铜钱 +{selfReward.coins}</span>
+            {(selfReward.lossRecovery ?? 0) > 0 && <span>本场返利 +{selfReward.lossRecovery}</span>}
             <span>名望 {selfReward.rankPoints >= 0 ? '+' : ''}{selfReward.rankPoints}</span>
             <span>新珍宝谱 {selfReward.newCodex.length}</span>
+            {selfReward.collectionLevelAfter !== undefined && selfReward.collectionLevelBefore !== undefined && (
+              <span>掌柜 Lv.{selfReward.collectionLevelBefore} -&gt; Lv.{selfReward.collectionLevelAfter}</span>
+            )}
           </div>
         )}
         <div className="final-actions">
