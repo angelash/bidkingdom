@@ -113,6 +113,36 @@ export function registerProfileRoutes(app: FastifyInstance, profiles: ProfileSer
   });
 
   app.post<{
+    Body: { playerId?: string; heroId?: number };
+  }>('/api/hero/select', async (request, reply) => {
+    if (!request.body.playerId || typeof request.body.heroId !== 'number') {
+      reply.code(400);
+      return { error: 'playerId and heroId are required' };
+    }
+    try {
+      return profiles.selectHero(request.body.playerId, request.body.heroId);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'hero select failed' };
+    }
+  });
+
+  app.post<{
+    Body: { playerId?: string; heroId?: number };
+  }>('/api/hero/unlock', async (request, reply) => {
+    if (!request.body.playerId || typeof request.body.heroId !== 'number') {
+      reply.code(400);
+      return { error: 'playerId and heroId are required' };
+    }
+    try {
+      return profiles.unlockHero(request.body.playerId, request.body.heroId);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'hero unlock failed' };
+    }
+  });
+
+  app.post<{
     Body: { playerId?: string; seed?: number };
   }>('/api/profile/language-name', async (request, reply) => {
     if (!request.body.playerId) {

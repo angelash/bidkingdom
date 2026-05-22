@@ -1,6 +1,9 @@
 import { Head } from '@bitkingdom/bidking-compat';
+import { bidKingDefaultHeroId, bidKingStarterOwnedHeroIds } from '@bitkingdom/match-core';
 import type { PlayerProfile } from '@bitkingdom/shared';
 import { sanitizeText } from '../system/textGuard';
+import { ensureProfileHeroState } from './profileHeroRuntime';
+import { ensureProfileStockState } from './profileStockRuntime';
 
 export function ensureProfileShape(profile: PlayerProfile): void {
   profile.createdAt ??= profile.updatedAt ?? Date.now();
@@ -71,6 +74,12 @@ export function ensureProfileShape(profile: PlayerProfile): void {
   profile.conditionStats.updatedAt ??= profile.updatedAt ?? Date.now();
   profile.claimedLevelRewards ??= [];
   profile.headId ??= Head[0]?.id;
+  profile.goldCoins ??= 0;
+  profile.boundGoldCoins ??= 0;
+  profile.ownedHeroIds ??= bidKingStarterOwnedHeroIds();
+  profile.freeHeroIds ??= [];
+  profile.selectedHeroId ??= profile.ownedHeroIds[0] ?? bidKingDefaultHeroId();
+  profile.dailyMapEntries ??= {};
   profile.cabinetItemIds ??= [];
   profile.lastCollectionIncomeAt ??= profile.createdAt;
   profile.selectedHeroSkins ??= {};
@@ -85,6 +94,8 @@ export function ensureProfileShape(profile: PlayerProfile): void {
   profile.readNotices ??= [];
   profile.completedGuides ??= [];
   profile.settings ??= {};
+  ensureProfileStockState(profile);
+  ensureProfileHeroState(profile);
 }
 
 export function sanitizeSettings(settings: Record<string, string | number | boolean>): Record<string, string | number | boolean> {

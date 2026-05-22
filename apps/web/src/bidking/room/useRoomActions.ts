@@ -1,12 +1,17 @@
 import { useCallback, useMemo, type MutableRefObject } from 'react';
 import type {
   CoreAuctionMode,
+  PlayerProfile,
   PlayerSnapshot,
   RoomAck,
   RoomSnapshot
 } from '@bitkingdom/shared';
 import { gameConfig } from '@bitkingdom/config';
-import { bidKingInitialCashForProfileCoins } from '@bitkingdom/match-core';
+import {
+  bidKingBestAvailableBidMapId,
+  bidKingBidMapAccess,
+  bidKingInitialCashForBidMap
+} from '@bitkingdom/match-core';
 import {
   SELECTED_BID_MAP_KEY,
   modeForBidMapId
@@ -24,7 +29,7 @@ interface UseRoomActionsArgs {
   defaultBidMapId?: number;
   isHost: boolean;
   playerName: string;
-  profileCoins: number;
+  profile: PlayerProfile;
   profileId: string;
   room?: RoomSnapshot;
   selectedBidMapId?: number;
@@ -51,10 +56,9 @@ export function useRoomActions({
   activeRoomCodeRef,
   botCount,
   coreAuctionMode,
-  defaultBidMapId,
   isHost,
   playerName,
-  profileCoins,
+  profile,
   profileId,
   room,
   selectedBidMapId,
@@ -73,7 +77,20 @@ export function useRoomActions({
       setToast('正在连接拍场，请稍候');
       return false;
     }
-    const bidMapId = nextBidMapId ?? selectedBidMapId ?? defaultBidMapId;
+    const requestedBidMapId = nextBidMapId ?? selectedBidMapId;
+    const bidMapId = bidKingBestAvailableBidMapId(profile, requestedBidMapId);
+    if (!bidMapId) {
+      setToast('当前余额未满足任何拍场入场条件');
+      return false;
+    }
+    const access = bidKingBidMapAccess(profile, bidMapId);
+    if (!access.canEnter) {
+      setToast(`未满足入场条件：${access.reasons.join('、')}`);
+      return false;
+    }
+    if (bidMapId !== selectedBidMapId) {
+      setSelectedBidMapId(bidMapId);
+    }
     const sceneMode = modeForBidMapId(bidMapId) ?? coreAuctionMode;
     localStorage.setItem('bk_player_name', playerName);
     saveCoreAuctionMode(sceneMode);
@@ -88,7 +105,7 @@ export function useRoomActions({
       botCount,
       coreAuctionMode: sceneMode,
       selectedBidMapId: bidMapId,
-      initialCash: bidKingInitialCashForProfileCoins(profileCoins, bidMapId, gameConfig.rules.initialCash)
+      initialCash: bidKingInitialCashForBidMap(bidMapId, gameConfig.rules.initialCash)
     }, (ack: RoomAck) => {
       activeRoomCodeRef.current = ack.room.code;
       setSelfPlayerId(ack.selfPlayerId);
@@ -101,13 +118,13 @@ export function useRoomActions({
     activeRoomCodeRef,
     botCount,
     coreAuctionMode,
-    defaultBidMapId,
     playerName,
-    profileCoins,
+    profile,
     profileId,
     selectedBidMapId,
     selectedRoleId,
     setCoreAuctionMode,
+    setSelectedBidMapId,
     setRoom,
     setSelfPlayerId,
     setToast,
@@ -128,6 +145,11 @@ export function useRoomActions({
   }, [isHost, room, setCoreAuctionMode, snapshot, socket]);
 
   const selectBidMap = useCallback((bidMapId: number): void => {
+    const access = bidKingBidMapAccess(profile, bidMapId);
+    if (!access.canEnter) {
+      setToast(`未满足入场条件：${access.reasons.join('、')}`);
+      return;
+    }
     setSelectedBidMapId(bidMapId);
     localStorage.setItem(SELECTED_BID_MAP_KEY, String(bidMapId));
     const sceneMode = modeForBidMapId(bidMapId);
@@ -141,7 +163,7 @@ export function useRoomActions({
     if (room && !snapshot && isHost) {
       socket?.emit('setSelectedBidMap', { bidMapId });
     }
-  }, [isHost, room, setCoreAuctionMode, setSelectedBidMapId, snapshot, socket]);
+  }, [isHost, profile, room, setCoreAuctionMode, setSelectedBidMapId, setToast, snapshot, socket]);
 
   const startMatch = useCallback((): void => {
     socket?.emit('startMatch');

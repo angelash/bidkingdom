@@ -17,7 +17,10 @@ describe('profileInventorySaleRuntime', () => {
     }
     const profile = createDefaultProfile('sale_all_test', 'sale_all_test', 1_700_000_000_000);
     profile.inventory = [];
-    profile.cabinetItemIds = [`compat_${saleable.id}`, `compat_${retained.id}`];
+    profile.stockContainers = [];
+    profile.stockState = { nextBoxId: 1, nextItemNo: 1 };
+    profile.settings.bidkingStockContainersV1 = true;
+    profile.cabinetItemIds = [];
     profile.coins = 100;
     addInventory(profile, 'item', `compat_${saleable.id}`, 2, 'test:saleable');
     addInventory(profile, 'item', `compat_${retained.id}`, 3, 'test:retained');
@@ -37,7 +40,7 @@ describe('profileInventorySaleRuntime', () => {
     expect(profile.coins).toBe(100 + saleable.base_value * 2);
     expect(inventoryQuantity(profile, `compat_${saleable.id}`)).toBe(0);
     expect(inventoryQuantity(profile, `compat_${retained.id}`)).toBe(3);
-    expect(profile.cabinetItemIds).toEqual([`compat_${retained.id}`]);
+    expect(profile.cabinetItemIds).not.toContain(`compat_${saleable.id}`);
     expect(transactions.some((transaction) => transaction.reason.includes('cabinet_sell_item'))).toBe(true);
     expect(transactions.some((transaction) => transaction.reason.includes('cabinet_sell_coins'))).toBe(true);
   });

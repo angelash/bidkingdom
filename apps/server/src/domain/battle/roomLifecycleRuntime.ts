@@ -40,6 +40,8 @@ interface CreateHumanPlayerArgs {
   id: string;
   name: string;
   roleId?: string;
+  heroCid?: number;
+  heroSkinCid?: number;
   socketId: string;
 }
 
@@ -66,6 +68,8 @@ export function createHumanRoomPlayer(args: CreateHumanPlayerArgs): RoomPlayer {
     name: args.name,
     kind: 'human',
     roleId: validRole(args.roleId),
+    heroCid: args.heroCid,
+    heroSkinCid: args.heroSkinCid,
     socketId: args.socketId,
     ready: false,
     status: 'connected'

@@ -64,6 +64,8 @@ export interface PublicPlayer {
   name: string;
   kind: PlayerKind;
   roleId: string;
+  heroCid?: number;
+  heroSkinCid?: number;
   cash: number;
   netWorth: number;
   status: PlayerStatus;
@@ -162,6 +164,125 @@ export interface RevealedItem {
   setId?: string;
   iconKey: string;
   footprint: ItemFootprint;
+}
+
+export interface BidKingBoxPositionDataSnapshot {
+  x: number;
+  y: number;
+}
+
+export interface BidKingBoxInfoDataSnapshot {
+  boxId: number;
+  itemUid: number;
+  itemCid: number;
+  itemSlotType: number;
+  itemType: number[];
+  itemQuility: number;
+  itemPrice: number;
+  itemBoxIndex: number;
+}
+
+export interface BidKingItemDataSnapshot {
+  uid: number;
+  cid: number;
+  count: number;
+  boxPositionData: BidKingBoxPositionDataSnapshot[];
+  rotate: boolean;
+  canTrade: boolean;
+  no: number;
+  isLock: boolean;
+  quality: number;
+  sourceItemId?: string;
+}
+
+export interface BidKingStockBoxDataSnapshot {
+  boxId: number;
+  position: BidKingBoxPositionDataSnapshot;
+  item: BidKingItemDataSnapshot;
+}
+
+export interface BidKingStockContainerDataSnapshot {
+  stockId: number;
+  stockCid: number;
+  stockBoxes: BidKingStockBoxDataSnapshot[];
+  cabinetLastGetRewardTime: number;
+  cabinetCumulativeReward: number;
+  cabinetBasicReward: number;
+  cabinetReward: number;
+}
+
+export interface BidKingGameUseItemOrPriceDataSnapshot {
+  round: number;
+  itemCidOrPrice: number;
+  createdAt?: number;
+  sourceEventId?: string;
+}
+
+export interface BidKingUserSelectItemDataSnapshot {
+  stockId: number;
+  boxId: number;
+  itemCid?: number;
+}
+
+export interface BidKingGameUserDataSnapshot {
+  userUid: number;
+  playerId: string;
+  name: string;
+  heroCid: number;
+  useItemLog: BidKingGameUseItemOrPriceDataSnapshot[];
+  priceLog: BidKingGameUseItemOrPriceDataSnapshot[];
+  isStandDown: boolean;
+  isQuit: boolean;
+  headCid: number;
+  heroSkinCid: number;
+  selectItemList: BidKingUserSelectItemDataSnapshot[];
+  headBoxCid: number;
+  titleCid: number;
+  remark: string;
+}
+
+export interface BidKingGameSkillDataSnapshot {
+  skillCid: number;
+  heroCid: number;
+  mapCid: number;
+  itemCid: number;
+  castTime: number;
+  castRound: number;
+  hitItemIndex: number;
+  hitBoxList: BidKingBoxInfoDataSnapshot[];
+  allHitItemAvgPrice: number;
+  allHitBoxAvgPrice: number;
+  allHitItemAvgBoxIndex: number;
+  hitItemTotalPrice: number;
+  uid: number;
+  totalHitBoxIndex: number;
+  hitItemTypeList: number[];
+  hitItemQuilityList: number[];
+  sourceFeedId?: string;
+  sourceEventId?: string;
+}
+
+export interface BidKingGameDataSnapshot {
+  uid: string;
+  mapId: number;
+  round: number;
+  stockContainer: BidKingStockContainerDataSnapshot;
+  userLog: BidKingGameUserDataSnapshot[];
+  heroSkillLog: BidKingGameSkillDataSnapshot[];
+  mapSkillLog: BidKingGameSkillDataSnapshot[];
+  itemSkillLog: BidKingGameSkillDataSnapshot[];
+  nextRoundTime: number;
+  selectItemCount: number;
+  roundCanUseItemCount: number;
+  gameCarryItemMax: number;
+  gameGoldRateMax: number;
+  gameType: number;
+  sendAuctionUserUid: number;
+  sendAuctionUserName: string;
+  sendAuctionUserHead: number;
+  sendAuctionHeadBox: number;
+  sendAuctionUserTitle: number;
+  serverTime: number;
 }
 
 export interface BidRecord {
@@ -278,6 +399,7 @@ export interface RoundHistoryEntry {
   revealedItems: RevealedItem[];
   settlement: RoundSettlement;
   netWorthAfter: Record<string, number>;
+  bidKingGameData?: BidKingGameDataSnapshot;
 }
 
 export interface NetWorthPoint {
@@ -340,6 +462,7 @@ export interface FinalMatchSummary {
   revealedItems: RevealedItem[];
   awardedItemsByPlayerId?: Record<string, RevealedItem[]>;
   auctionStats?: FinalPlayerAuctionStats[];
+  bidKingReplay?: BidKingGameDataSnapshot[];
   rewards: MatchReward[];
   eventCount: number;
   transactionCount: number;
@@ -461,6 +584,7 @@ export interface AdminRoundReplay {
   title?: string;
   revealedItems: RevealedItem[];
   settlement?: RoundSettlement;
+  bidKingGameData?: BidKingGameDataSnapshot;
   events: MatchEventLog[];
   transactions: TransactionLog[];
 }
@@ -598,6 +722,53 @@ export interface PlayerInventoryEntry {
   updatedAt: number;
 }
 
+export type ProfileStockContainerKind = 'cabinet' | 'market' | 'match' | 'warehouse';
+
+export interface ProfileStockItemState {
+  uid: string;
+  cid: number;
+  count: number;
+  rotate: boolean;
+  canTrade: boolean;
+  no: number;
+  isLock: boolean;
+  quality: number;
+  sourceId?: string;
+  createdAt: number;
+}
+
+export interface ProfileStockBoxState {
+  boxId: number;
+  position: number;
+  item: ProfileStockItemState;
+}
+
+export interface ProfileCabinetStockState {
+  cabinetId: number;
+  lastRewardAt: number;
+  cumulativeReward: number;
+  basicRewardPerHour: number;
+  pendingReward: number;
+}
+
+export interface ProfileStockContainerState {
+  stockId: number;
+  cid: number;
+  kind: ProfileStockContainerKind;
+  name?: string;
+  width: number;
+  height: number;
+  boxes: ProfileStockBoxState[];
+  cabinet?: ProfileCabinetStockState;
+  updatedAt: number;
+}
+
+export interface ProfileStockRuntimeState {
+  nextBoxId: number;
+  nextItemNo: number;
+  migratedInventoryAt?: number;
+}
+
 export interface MailInboxItem {
   id: string;
   templateId: string;
@@ -629,6 +800,8 @@ export interface ShopRestockState {
 export interface EquippedBattleItem {
   itemId: number;
   quantity: number;
+  stockId?: number;
+  boxId?: number;
   updatedAt: number;
 }
 
@@ -785,6 +958,29 @@ export interface AchievementProgressState {
   reason?: string;
 }
 
+export type ProfileHeroOwnershipState = 'locked' | 'trial' | 'free' | 'owned';
+
+export type ProfileHeroAccessResource = 'coins' | 'goldCoins' | 'boundGoldCoins' | 'item' | 'external';
+
+export interface ProfileHeroAccessCost {
+  accessType: number;
+  resource: ProfileHeroAccessResource;
+  quantity: number;
+  refId?: number;
+  label: string;
+}
+
+export interface ProfileHeroState {
+  heroId: number;
+  state: ProfileHeroOwnershipState;
+  skinId?: number;
+  heroItemId?: number;
+  trialItemId?: number;
+  quantity?: number;
+  expiresAt?: number;
+  accessCost?: ProfileHeroAccessCost;
+}
+
 export interface PlayerProfile {
   playerId: string;
   name: string;
@@ -792,12 +988,19 @@ export interface PlayerProfile {
   level: number;
   xp: number;
   coins: number;
+  goldCoins?: number;
+  boundGoldCoins?: number;
   rankPoints: number;
   headId?: string;
+  selectedHeroId?: number;
+  ownedHeroIds?: number[];
+  freeHeroIds?: number[];
+  heroStates?: ProfileHeroState[];
   codex: string[];
   cabinetItemIds?: string[];
   lastCollectionIncomeAt?: number;
   selectedHeroSkins?: Record<string, number>;
+  dailyMapEntries?: Record<string, number>;
   completedMatches: string[];
   completedTasks: string[];
   claimedMissionRewards: string[];
@@ -810,6 +1013,8 @@ export interface PlayerProfile {
   claimedLevelRewards?: number[];
   tickets: TicketState;
   inventory: PlayerInventoryEntry[];
+  stockContainers?: ProfileStockContainerState[];
+  stockState?: ProfileStockRuntimeState;
   mail: MailInboxItem[];
   deletedMailTemplateIds?: string[];
   shopPurchases: ShopPurchaseState[];
@@ -836,7 +1041,7 @@ export interface ProfileTransaction {
   playerId: string;
   sourceId: string;
   reason: string;
-  resource: 'coins' | 'rankPoints' | 'xp' | 'ticket' | 'item' | 'mail' | 'task';
+  resource: 'coins' | 'goldCoins' | 'boundGoldCoins' | 'rankPoints' | 'xp' | 'ticket' | 'item' | 'mail' | 'task';
   amountBefore: number;
   amountChange: number;
   amountAfter: number;

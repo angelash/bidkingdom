@@ -19,6 +19,7 @@ import {
   X
 } from 'lucide-react';
 import { gameConfig } from '@bitkingdom/config';
+import { bidKingBestAvailableBidMapId } from '@bitkingdom/match-core';
 import type { CoreAuctionMode, PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
 import { containerArtForKey } from '../../artAssets';
 import { sourcePathForOutgameHub, titleForOutgameHub, type BidKingOutgameHubWindowKey } from '../app/windowRegistry';
@@ -78,6 +79,7 @@ export function MainHallView({
   onSellAllCabinetItems,
   onClaimCollectionIncome,
   onClaimReliefFund,
+  onUnlockHero,
   onSelectHeroSkin,
   onBuyItem,
   onRefreshShop,
@@ -144,6 +146,7 @@ export function MainHallView({
   onSellAllCabinetItems: () => void;
   onClaimCollectionIncome: () => void;
   onClaimReliefFund: () => void;
+  onUnlockHero: (heroId: number) => void;
   onSelectHeroSkin: (skinId: number) => void;
   onBuyItem: (shopItemId: number) => void;
   onRefreshShop: (shopId?: number) => void;
@@ -193,7 +196,9 @@ export function MainHallView({
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const [battlePrevOpen, setBattlePrevOpen] = useState(false);
   const [battlePrevTab, setBattlePrevTab] = useState<BattlePrevTab>('map');
-  const [selectedBattleBidMapId, setSelectedBattleBidMapId] = useState(selectedBidMapId ?? defaultBidMapId);
+  const [selectedBattleBidMapId, setSelectedBattleBidMapId] = useState(
+    bidKingBestAvailableBidMapId(profile, selectedBidMapId) ?? selectedBidMapId ?? defaultBidMapId
+  );
   const [dismissedStartupNoticeIds, setDismissedStartupNoticeIds] = useState<string[]>([]);
   const selectedRole = gameConfig.roles.find((role) => role.id === selectedRoleId) ?? gameConfig.roles[0]!;
   const startupNotice = bidKingStartupNoticeQueue([...(profile.readNotices ?? []), ...dismissedStartupNoticeIds], 1)[0];
@@ -230,7 +235,12 @@ export function MainHallView({
 
   function openBattlePrev(): void {
     setBattlePrevTab('map');
-    setSelectedBattleBidMapId(selectedBidMapId ?? selectedBattleBidMapId ?? defaultBidMapId);
+    setSelectedBattleBidMapId(
+      bidKingBestAvailableBidMapId(profile, selectedBidMapId ?? selectedBattleBidMapId)
+        ?? selectedBidMapId
+        ?? selectedBattleBidMapId
+        ?? defaultBidMapId
+    );
     setBattlePrevOpen(true);
   }
 
@@ -269,7 +279,12 @@ export function MainHallView({
 
   function applySimPlan(plan: SimPlanView): void {
     onSetBotCount(plan.roomBotCount);
-    setSelectedBattleBidMapId(selectedBidMapId ?? selectedBattleBidMapId ?? defaultBidMapId);
+    setSelectedBattleBidMapId(
+      bidKingBestAvailableBidMapId(profile, selectedBidMapId ?? selectedBattleBidMapId)
+        ?? selectedBidMapId
+        ?? selectedBattleBidMapId
+        ?? defaultBidMapId
+    );
     setBattlePrevTab('settings');
     setBattlePrevOpen(true);
   }
@@ -443,6 +458,7 @@ export function MainHallView({
           roles={gameConfig.roles}
           selectedRoleId={selectedRoleId}
           onClose={() => setActiveHub(undefined)}
+          onUnlockHero={onUnlockHero}
           onSelectHeroSkin={onSelectHeroSkin}
           onSelectRole={onSelectRole}
         />

@@ -16,7 +16,7 @@ export interface EconomyLedger {
     profile: PlayerProfile,
     sourceId: string,
     reason: string,
-    resource: Extract<ProfileTransaction['resource'], 'coins' | 'rankPoints' | 'xp'>,
+    resource: Extract<ProfileTransaction['resource'], 'coins' | 'goldCoins' | 'boundGoldCoins' | 'rankPoints' | 'xp'>,
     amountChange: number
   ): void;
   transactionsFor(playerId: string, limit: number): ProfileTransaction[];
@@ -57,13 +57,13 @@ export function createEconomyLedger(store: ServerStore): EconomyLedger {
     profile: PlayerProfile,
     sourceId: string,
     reason: string,
-    resource: Extract<ProfileTransaction['resource'], 'coins' | 'rankPoints' | 'xp'>,
+    resource: Extract<ProfileTransaction['resource'], 'coins' | 'goldCoins' | 'boundGoldCoins' | 'rankPoints' | 'xp'>,
     amountChange: number
   ): void {
     if (hasSource(sourceId) || amountChange === 0) {
       return;
     }
-    const before = profile[resource];
+    const before = profile[resource] ?? 0;
     profile[resource] = Math.max(0, before + amountChange);
     record(profile, sourceId, reason, resource, before, profile[resource] - before);
   }

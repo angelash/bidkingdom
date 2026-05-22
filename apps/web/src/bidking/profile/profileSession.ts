@@ -1,10 +1,14 @@
 import {
+  Hero as bidKingHeroes,
   Head as bidKingHeads,
   Ticket as bidKingTickets,
   bidKingTicketDisplayName
 } from '@bitkingdom/bidking-compat';
 import {
+  bidKingDefaultHeroId,
+  bidKingHeroStateFromProfile,
   bidKingStarterCoins,
+  bidKingStarterOwnedHeroIds,
   bidKingStarterHeadId,
   bidKingStarterInventoryRewards
 } from '@bitkingdom/match-core';
@@ -119,8 +123,15 @@ function createDefaultProfile(): PlayerProfile {
     level: 1,
     xp: 0,
     coins: DEFAULT_PROFILE_COINS,
+    goldCoins: 0,
+    boundGoldCoins: 0,
     rankPoints: 0,
     headId: bidKingStarterHeadId(bidKingHeads[0]?.id),
+    selectedHeroId: bidKingDefaultHeroId(),
+    ownedHeroIds: bidKingStarterOwnedHeroIds(),
+    freeHeroIds: [],
+    heroStates: [],
+    dailyMapEntries: {},
     codex: [],
     cabinetItemIds: [],
     selectedHeroSkins: {},
@@ -192,11 +203,18 @@ export function normalizeProfileForReview(profile: PlayerProfile): PlayerProfile
   const retainedCodex = profile.codex
     .map(canonicalCodexItemId)
     .filter((itemId) => catalogIds.has(itemId));
-  const normalized = {
+  const normalized: PlayerProfile = {
     ...profile,
     coins: profileCoins,
+    goldCoins: profile.goldCoins ?? 0,
+    boundGoldCoins: profile.boundGoldCoins ?? 0,
     claimedGiftPackages: profile.claimedGiftPackages ?? [],
     deletedMailTemplateIds: profile.deletedMailTemplateIds ?? [],
+    ownedHeroIds: normalizeOwnedHeroIds(profile),
+    freeHeroIds: profile.freeHeroIds ?? [],
+    heroStates: [],
+    dailyMapEntries: profile.dailyMapEntries ?? {},
+    selectedHeroId: profile.selectedHeroId ?? profile.ownedHeroIds?.[0] ?? bidKingDefaultHeroId(),
     tickets: {
       ...profile.tickets,
       name: ticket ? bidKingTicketDisplayName(ticket) : '竞拍入场券',
@@ -246,7 +264,11 @@ export function normalizeProfileForReview(profile: PlayerProfile): PlayerProfile
     },
     createdAt: profile.createdAt ?? profile.updatedAt ?? now
   };
-  if (profile.coins === LEGACY_DEFAULT_PROFILE_COINS && normalized.auctionStats.currentTotalAssets === LEGACY_DEFAULT_PROFILE_COINS) {
+  normalized.heroStates = bidKingHeroes.map((hero) => bidKingHeroStateFromProfile(normalized, hero.id));
+  if (!normalized.selectedHeroId || normalized.heroStates.find((state) => state.heroId === normalized.selectedHeroId)?.state === 'locked') {
+    normalized.selectedHeroId = normalized.heroStates.find((state) => state.state !== 'locked')?.heroId ?? bidKingDefaultHeroId();
+  }
+  if (profile.coins === LEGACY_DEFAULT_PROFILE_COINS && normalized.auctionStats?.currentTotalAssets === LEGACY_DEFAULT_PROFILE_COINS) {
     normalized.auctionStats.currentTotalAssets = DEFAULT_PROFILE_COINS;
   }
   ensureStarterRewards(normalized, now);
@@ -259,6 +281,20 @@ export function normalizeProfileForReview(profile: PlayerProfile): PlayerProfile
     ...normalized,
     codex: mergedCodex
   };
+}
+
+function normalizeOwnedHeroIds(profile: PlayerProfile): number[] {
+  const legacyDefault = bidKingHeroes.slice(0, 8).map((hero) => hero.id);
+  const ownedHeroIds = profile.ownedHeroIds ?? bidKingStarterOwnedHeroIds();
+  const shouldReplaceLegacyDefault = profile.settings?.bidkingHeroSourceStateV1 !== true
+    && ownedHeroIds.length === legacyDefault.length
+    && ownedHeroIds.every((heroId) => legacyDefault.includes(heroId));
+  const owned = new Set(shouldReplaceLegacyDefault ? bidKingStarterOwnedHeroIds() : ownedHeroIds);
+  profile.settings ??= {};
+  profile.settings.bidkingHeroSourceStateV1 = true;
+  return [...owned].sort((left, right) => (
+    bidKingHeroes.findIndex((hero) => hero.id === left) - bidKingHeroes.findIndex((hero) => hero.id === right)
+  ));
 }
 
 function starterInventoryEntries(now: number): PlayerInventoryEntry[] {

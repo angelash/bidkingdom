@@ -7,6 +7,11 @@ import type {
   RankSnapshot
 } from '@bitkingdom/shared';
 import {
+  bidKingBidMapAccess,
+  bidKingBidMapEntryCosts,
+  bidKingDailyMapEntryKey
+} from '@bitkingdom/match-core';
+import {
   MAX_RECENT_PROFILE_TRANSACTIONS
 } from '../domain/profile/profileRuntimeConfig';
 import {
@@ -57,9 +62,11 @@ import {
 } from '../domain/profile/profileQueryRuntime';
 import {
   clearCabinetItemForProfile,
+  selectHeroForProfile,
   selectHeadForProfile,
   selectHeroSkinForProfile,
   setCabinetItemForProfile,
+  unlockHeroForProfile,
   updateProfileSettings
 } from '../domain/profile/profilePreferenceRuntime';
 import { getOrCreateProfileInState } from '../domain/profile/profileLifecycle';
@@ -74,6 +81,7 @@ import {
   sellInventoryItemForProfile
 } from '../domain/profile/profileInventorySaleRuntime';
 import { addCustomMailToProfile } from '../domain/profile/profileMailRuntime';
+import { consumeInventory, inventoryQuantity } from '../domain/profile/profileInventory';
 import { consumeTicketForMatchProfile, refreshTicketState } from '../domain/profile/profileTicketRuntime';
 import { createEconomyLedger } from '../domain/economy/economyLedger';
 import {
@@ -158,6 +166,21 @@ export function createProfileService(store: ServerStore): ProfileService {
     return getSnapshot(playerId);
   }
 
+  function selectHero(playerId: string, heroId: number): ProfileSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    selectHeroForProfile(profile, heroId, recordTransaction);
+    store.save();
+    return getSnapshot(playerId);
+  }
+
+  function unlockHero(playerId: string, heroId: number): ProfileSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    if (unlockHeroForProfile(profile, heroId, applyNumberChange, recordTransaction)) {
+      store.save();
+    }
+    return getSnapshot(playerId);
+  }
+
   function setCabinetItem(playerId: string, itemId: string): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
     setCabinetItemForProfile(profile, itemId, recordTransaction);
@@ -192,6 +215,42 @@ export function createProfileService(store: ServerStore): ProfileService {
     if (consumeTicketForMatchProfile(profile, sourceId, hasTransactionSource, recordTransaction)) {
       store.save();
     }
+    return getSnapshot(playerId);
+  }
+
+  function consumeBidMapEntryCost(playerId: string, bidMapId: number | undefined, sourceId: string): ProfileSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    const batchSourceId = `${sourceId}:entry_cost`;
+    if (hasTransactionSource(batchSourceId)) {
+      return getSnapshot(playerId);
+    }
+    const access = bidKingBidMapAccess(profile, bidMapId);
+    if (!access.canEnter) {
+      throw new Error(`未满足入场条件：${access.reasons.join('、')}`);
+    }
+
+    for (const cost of bidKingBidMapEntryCosts(bidMapId)) {
+      const costSourceId = `${batchSourceId}:${cost.refId}`;
+      if (cost.refId === 1) {
+        applyNumberChange(profile, costSourceId, 'bidmap_entry_cost_coins', 'coins', -cost.quantity);
+        continue;
+      }
+      const before = inventoryQuantity(profile, cost.refId);
+      if (before < cost.quantity) {
+        throw new Error(`缺少凭证 ${cost.refId} x${cost.quantity}`);
+      }
+      consumeInventory(profile, cost.refId, cost.quantity);
+      recordTransaction(profile, costSourceId, 'bidmap_entry_cost_item', 'item', before, -cost.quantity);
+    }
+    if (access.parentMap?.daily_counts && access.parentMap.daily_counts > 0) {
+      const dailyKey = bidKingDailyMapEntryKey(access.parentMap.id);
+      profile.dailyMapEntries ??= {};
+      const before = profile.dailyMapEntries[dailyKey] ?? 0;
+      profile.dailyMapEntries[dailyKey] = before + 1;
+      recordTransaction(profile, `${batchSourceId}:daily_map:${access.parentMap.id}`, 'bidmap_daily_entry', 'task', before, 1);
+    }
+    recordTransaction(profile, batchSourceId, 'bidmap_entry_cost', 'task', 0, 1);
+    store.save();
     return getSnapshot(playerId);
   }
 
@@ -624,7 +683,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     profile: PlayerProfile,
     sourceId: string,
     reason: string,
-    resource: Extract<ProfileTransaction['resource'], 'coins' | 'rankPoints' | 'xp'>,
+    resource: Extract<ProfileTransaction['resource'], 'coins' | 'goldCoins' | 'boundGoldCoins' | 'rankPoints' | 'xp'>,
     amountChange: number
   ): void {
     const shouldRecordMissionEvent = amountChange !== 0 && !economy.hasSource(sourceId);
@@ -662,11 +721,14 @@ export function createProfileService(store: ServerStore): ProfileService {
     getSnapshot,
     updateSettings,
     selectHead,
+    selectHero,
+    unlockHero,
     setCabinetItem,
     clearCabinetItem,
     selectHeroSkin,
     refreshTickets,
     consumeTicketForMatch,
+    consumeBidMapEntryCost,
     completeTask,
     claimMissionReward,
     claimAchievementReward,

@@ -81,6 +81,7 @@ export function buildRoundReplay(match: MatchRuntimeState): AdminRoundReplay[] {
     title: round.title,
     revealedItems: round.revealedItems,
     settlement: round.settlement,
+    bidKingGameData: round.bidKingGameData,
     events: eventsByRound.get(round.roundId) ?? [],
     transactions: transactionsByRound.get(round.roundId) ?? []
   }));

@@ -7,6 +7,8 @@ export interface PreferenceProfileActions {
   completeGuide: (guideId: string) => void;
   markNoticeRead: (noticeId: string) => void;
   selectHead: (headId: string) => void;
+  selectHero: (heroId: number) => void;
+  unlockHero: (heroId: number) => void;
   selectHeroSkin: (skinId: number) => void;
   clearCabinetItem: (itemId: string) => void;
   setCabinetItem: (itemId: string) => void;
@@ -34,6 +36,12 @@ export function createPreferenceProfileActions(postProfileAction: PostProfileAct
     },
     selectHead: (headId) => {
       postProfileAction('/api/profile/head/select', { headId });
+    },
+    selectHero: (heroId) => {
+      postProfileAction('/api/hero/select', { heroId });
+    },
+    unlockHero: (heroId) => {
+      postProfileAction('/api/hero/unlock', { heroId });
     },
     selectHeroSkin: (skinId) => {
       postProfileAction('/api/hero-skin/select', { skinId });

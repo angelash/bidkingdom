@@ -191,7 +191,7 @@ export function BidKingApp(): JSX.Element {
     defaultBidMapId,
     isHost: matchState.isHost,
     playerName,
-    profileCoins: profile.coins,
+    profile,
     profileId,
     room,
     selectedBidMapId,

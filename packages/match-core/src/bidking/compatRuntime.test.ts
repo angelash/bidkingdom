@@ -339,6 +339,55 @@ describe('BidKing compatible core runtime', () => {
     expect((buildSnapshot(match, 'p2').public.currentRound?.skillFeed ?? []).some((entry) => entry.source === 'item')).toBe(false);
   });
 
+  it('archives source-shaped GameData logs for BidKing replay and settlement evidence', () => {
+    const match = createMatch({
+      id: 'compat-game-data',
+      players: players.map((player, index) => index === 0
+        ? {
+            ...player,
+            heroCid: Hero[1]!.id,
+            heroSkinCid: 1410201,
+            selectedItemList: [{ stockId: 5001, boxId: 7, itemCid: BattleItem[0]!.id }]
+          }
+        : player),
+      seed: 3340,
+      totalRounds: 5,
+      coreMode: true,
+      coreAuctionMode: 'sealed'
+    });
+    startNextRound(match, 1000);
+    match.players.forEach((player) => {
+      player.cash = 1_000_000;
+    });
+    match.currentRound!.index = 4;
+    match.roundIndex = 4;
+    setRoundPhase(match, 'intel', 3200, 1200);
+    useBattleItem(match, 'p1', BattleItem[0]!, 1300);
+    setRoundPhase(match, 'auction', 60000, 1400);
+    submitBid(match, 'p1', Math.max(match.currentRound?.container.minimumBid ?? 0, 500_000), 1500);
+    submitBid(match, 'p2', Math.max(match.currentRound?.container.minimumBid ?? 0, 100_000), 1600);
+    settleCurrentRound(match, 1700);
+    finishRound(match, 1800);
+    startNextRound(match, 1900);
+
+    const gameData = match.roundHistory[0]?.bidKingGameData;
+    const p1Log = gameData?.userLog.find((entry) => entry.playerId === 'p1');
+
+    expect(gameData?.uid).toBe('compat-game-data:compat-game-data_round_1');
+    expect(gameData?.round).toBe(5);
+    expect(gameData?.mapId).toBeGreaterThan(0);
+    expect(gameData?.stockContainer.stockBoxes.length).toBe(match.roundHistory[0]?.revealedItems.length);
+    expect(gameData?.userLog).toHaveLength(4);
+    expect(p1Log?.heroCid).toBe(Hero[1]!.id);
+    expect(p1Log?.heroSkinCid).toBe(1410201);
+    expect(p1Log?.selectItemList).toEqual([{ stockId: 5001, boxId: 7, itemCid: BattleItem[0]!.id }]);
+    expect(gameData?.selectItemCount).toBe(1);
+    expect(p1Log?.priceLog.at(-1)?.itemCidOrPrice).toBeGreaterThanOrEqual(500_000);
+    expect(p1Log?.useItemLog.at(-1)?.itemCidOrPrice).toBe(BattleItem[0]!.id);
+    expect(gameData?.itemSkillLog.some((entry) => entry.itemCid === BattleItem[0]!.id)).toBe(true);
+    expect(buildSnapshot(match, 'p1').public.finalSummary?.bidKingReplay).toHaveLength(1);
+  });
+
   it('tracks BattleItem cooldowns in private snapshots', () => {
     const match = createMatch({
       id: 'compat-battle-item-cooldown',

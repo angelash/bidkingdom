@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { gameConfig } from '@bitkingdom/config';
+import { bidKingBestAvailableBidMapId, bidKingRoleIdForHeroId } from '@bitkingdom/match-core';
 import type { AccountSessionSnapshot, CoreAuctionMode, PlayerProfile, ProfileSnapshot, PublicPlayerAccount } from '@bitkingdom/shared';
 import {
   createGuestAccountSession,
@@ -14,7 +15,8 @@ import {
 } from '../api/bidkingApiClient';
 import {
   buildBidKingBattleMapGroups,
-  loadSelectedBidMapId
+  loadSelectedBidMapId,
+  SELECTED_BID_MAP_KEY
 } from '../battlePrev/bidMapRuntime';
 import {
   loadCoreAuctionMode,
@@ -47,7 +49,7 @@ export function useBidKingAppState() {
   const [skillTargetId, setSkillTargetId] = useState<string>();
   const [botCount, setBotCount] = useState(3);
   const [coreAuctionMode, setCoreAuctionMode] = useState<CoreAuctionMode>(() => loadCoreAuctionMode());
-  const [selectedBidMapId, setSelectedBidMapId] = useState<number | undefined>(() => loadSelectedBidMapId(defaultBidMapId));
+  const [selectedBidMapId, setSelectedBidMapId] = useState<number | undefined>(() => loadSelectedBidMapId());
   const [profile, setProfile] = useState<PlayerProfile>(() => loadProfile());
   const [tutorialDismissed, setTutorialDismissed] = useState(localStorage.getItem('bk_tutorial_dismissed') === '1');
 
@@ -213,6 +215,21 @@ export function useBidKingAppState() {
     }
     void fetchProfileSnapshot(SERVER_URL, profileId, playerName, sessionToken).then(applyProfileSnapshot).catch(() => undefined);
   }, [authStatus, playerName, profileId, sessionToken]);
+
+  useEffect(() => {
+    const nextBidMapId = bidKingBestAvailableBidMapId(profile, selectedBidMapId);
+    if (nextBidMapId && nextBidMapId !== selectedBidMapId) {
+      localStorage.setItem(SELECTED_BID_MAP_KEY, String(nextBidMapId));
+      setSelectedBidMapId(nextBidMapId);
+    }
+  }, [profile, selectedBidMapId]);
+
+  useEffect(() => {
+    const profileRoleId = bidKingRoleIdForHeroId(profile.selectedHeroId, gameConfig.roles);
+    if (profileRoleId && profileRoleId !== selectedRoleId) {
+      setSelectedRoleId(profileRoleId);
+    }
+  }, [profile.selectedHeroId, selectedRoleId]);
 
   return {
     account,

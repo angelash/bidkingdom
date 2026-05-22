@@ -1,5 +1,7 @@
 import { Head } from '@bitkingdom/bidking-compat';
 import {
+  bidKingDefaultHeroId,
+  bidKingStarterOwnedHeroIds,
   bidKingStarterHeadId,
   bidKingStarterInventoryRewards
 } from '@bitkingdom/match-core';
@@ -13,9 +15,11 @@ import {
   LEGACY_DEFAULT_PROFILE_COINS
 } from './profileRuntimeConfig';
 import { addInventory } from './profileInventory';
+import { ensureProfileHeroState } from './profileHeroRuntime';
 import { ensureStarterMail } from './profileMailRuntime';
 import { refreshMissionProgress } from './profileProgressRuntime';
 import { ensureProfileShape } from './profileShape';
+import { ensureProfileStockState } from './profileStockRuntime';
 import { refreshTicketState, ticketRow } from './profileTicketRuntime';
 
 export function getOrCreateProfileInState(
@@ -38,6 +42,7 @@ export function hydrateExistingProfile(profile: PlayerProfile, name?: string): P
   const refreshed = refreshTicketState(profile);
   migrateLegacyStarterCoins(refreshed);
   ensureStarterRewards(refreshed);
+  ensureProfileHeroState(refreshed);
   const nextName = sanitizeDisplayName(name, profile.name);
   if (name?.trim() && profile.name !== nextName) {
     refreshed.name = nextName;
@@ -81,8 +86,15 @@ export function createDefaultProfile(playerId: string, name: string | undefined,
     level: 1,
     xp: 0,
     coins: DEFAULT_PROFILE_COINS,
+    goldCoins: 0,
+    boundGoldCoins: 0,
     rankPoints: DEFAULT_PROFILE_RANK_POINTS,
     headId: bidKingStarterHeadId(Head[0]?.id),
+    selectedHeroId: bidKingDefaultHeroId(),
+    ownedHeroIds: bidKingStarterOwnedHeroIds(),
+    freeHeroIds: [],
+    heroStates: [],
+    dailyMapEntries: {},
     codex: [],
     cabinetItemIds: [],
     lastCollectionIncomeAt: now,
@@ -133,6 +145,11 @@ export function createDefaultProfile(playerId: string, name: string | undefined,
       updatedAt: now
     },
     inventory: [],
+    stockContainers: [],
+    stockState: {
+      nextBoxId: 1,
+      nextItemNo: 1
+    },
     mail: [],
     deletedMailTemplateIds: [],
     shopPurchases: [],
@@ -151,7 +168,9 @@ export function createDefaultProfile(playerId: string, name: string | undefined,
     settings: {},
     updatedAt: now
   };
+  ensureProfileStockState(profile, now);
   ensureStarterRewards(profile);
+  ensureProfileHeroState(profile, now);
   refreshMissionProgress(profile);
   ensureStarterMail(profile);
   return profile;

@@ -2,6 +2,7 @@ import { gameConfig as defaultConfig } from '@bitkingdom/config';
 import { BidMap } from '@bitkingdom/bidking-compat';
 import type {
   AuctionMode,
+  BidKingGameDataSnapshot,
   Clue,
   CoreAuctionMode,
   FinalMatchInsight,
@@ -24,6 +25,7 @@ import {
   buildBidKingRoundStartSkillFeed,
   createBidKingCoreWarehouseInstance
 } from './bidking/compatRuntime';
+import { buildBidKingGameDataSnapshot } from './bidking/gameDataRuntime';
 import { bidKingInitialCashForBidMap } from './bidking/initialCashRuntime';
 import { buildPrivateClues, buildPublicClues } from './clues';
 import { createRandom, hashSeed } from './random';
@@ -71,6 +73,9 @@ export function createMatch(params: {
     name: player.name,
     kind: player.kind,
     roleId: player.roleId,
+    heroCid: player.heroCid,
+    heroSkinCid: player.heroSkinCid,
+    selectedItemList: player.selectedItemList?.map((entry) => ({ ...entry })),
     cash: runtimeConfig.rules.initialCash,
     status: 'playing',
     passed: false,
@@ -353,7 +358,8 @@ export function recordRoundHistory(state: MatchRuntimeState): void {
     },
     netWorthAfter: Object.fromEntries(
       state.players.map((player) => [player.id, calculateNetWorth(player, state.config)])
-    )
+    ),
+    bidKingGameData: state.coreMode ? buildBidKingGameDataSnapshot(state, round) : undefined
   };
 
   state.roundHistory.push(entry);
@@ -958,6 +964,8 @@ function publicPlayer(
     name: player.name,
     kind: player.kind,
     roleId: player.roleId,
+    heroCid: player.heroCid,
+    heroSkinCid: player.heroSkinCid,
     cash: player.cash,
     netWorth: calculateNetWorth(player, config),
     status: player.status,
@@ -1303,6 +1311,11 @@ function buildFinalSummary(state: MatchRuntimeState): FinalMatchSummary {
     revealedItems: [...uniqueItems.values()],
     awardedItemsByPlayerId,
     auctionStats,
+    bidKingReplay: state.coreMode
+      ? state.roundHistory
+          .map((round) => round.bidKingGameData)
+          .filter((entry): entry is BidKingGameDataSnapshot => Boolean(entry))
+      : undefined,
     rewards: rankings.map((player) => ({
       playerId: player.playerId,
       xp: 110 + (4 - player.rank) * 25,

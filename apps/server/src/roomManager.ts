@@ -1,8 +1,11 @@
 import { gameConfig } from '@bitkingdom/config';
 import {
-  bidKingInitialCashChoices,
+  bidKingBestAvailableBidMapId,
+  bidKingBidMapAccess,
+  bidKingHeroIdForRoleId,
+  bidKingHeroSkinForHero,
   bidKingInitialCashForBidMap,
-  bidKingInitialCashForProfileCoins,
+  bidKingRoleIdForHeroId,
   bidKingDefaultBidGameCount,
   bidKingMaxBotCount,
   createMatch,
@@ -101,20 +104,23 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
 
   function bindSocket(socket: AppSocket): void {
     socket.on('createRoom', (payload, ack) => {
-      const room = createRoom(
-        socket,
-        payload.playerName,
-        payload.roleId,
-        payload.botCount ?? maxBotCount,
-        payload.coreAuctionMode,
-        payload.selectedBidMapId,
-        payload.initialCash,
-        payload.profileId
-      );
-      const selfPlayerId = socketToPlayer.get(socket.id);
-      ack({ room: snapshotRoom(room), selfPlayerId: selfPlayerId ?? room.hostId });
-      broadcasts.emitProfileSnapshot(socket, selfPlayerId ?? room.hostId);
-      broadcasts.broadcastRoom(room);
+      try {
+        const room = createRoom(
+          socket,
+          payload.playerName,
+          payload.roleId,
+          payload.botCount ?? maxBotCount,
+          payload.coreAuctionMode,
+          payload.selectedBidMapId,
+          payload.profileId
+        );
+        const selfPlayerId = socketToPlayer.get(socket.id);
+        ack({ room: snapshotRoom(room), selfPlayerId: selfPlayerId ?? room.hostId });
+        broadcasts.emitProfileSnapshot(socket, selfPlayerId ?? room.hostId);
+        broadcasts.broadcastRoom(room);
+      } catch (error) {
+        emitError(socket, error);
+      }
     });
 
     socket.on('joinRoom', (payload, ack) => {
@@ -191,7 +197,17 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       if (!player || !roleExists || context.room.status !== 'lobby') {
         return;
       }
-      player.roleId = payload.roleId;
+      try {
+        const heroCid = bidKingHeroIdForRoleId(payload.roleId, gameConfig.roles);
+        const profile = services.profiles.selectHero(context.playerId, heroCid).profile;
+        player.roleId = payload.roleId;
+        player.heroCid = heroCid;
+        player.heroSkinCid = bidKingHeroSkinForHero(heroCid, profile.selectedHeroSkins);
+        broadcasts.emitProfileSnapshot(socket, context.playerId);
+      } catch (error) {
+        emitError(socket, error);
+        return;
+      }
       broadcasts.broadcastRoom(context.room);
     });
 
@@ -209,12 +225,16 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       if (!context || context.room.hostId !== context.playerId || context.room.status !== 'lobby') {
         return;
       }
-      context.room.selectedBidMapId = validBidMapId(payload.bidMapId);
-      context.room.initialCash = bidKingInitialCashForProfileCoins(
-        services.profiles.getSnapshot(context.playerId).profile.coins,
-        context.room.selectedBidMapId,
-        gameConfig.rules.initialCash
-      );
+      const profile = services.profiles.getSnapshot(context.playerId).profile;
+      let nextBidMapId: number;
+      try {
+        nextBidMapId = requireAccessibleBidMap(profile, payload.bidMapId);
+      } catch (error) {
+        emitError(socket, error);
+        return;
+      }
+      context.room.selectedBidMapId = nextBidMapId;
+      context.room.initialCash = bidKingInitialCashForBidMap(nextBidMapId, gameConfig.rules.initialCash);
       broadcasts.broadcastRoom(context.room);
     });
 
@@ -314,7 +334,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
             playerId: context.playerId,
             cooldowns: emojiCooldowns,
             roleId: player.roleId,
-            heroId: emojiHeroIdForSeat(player.seat),
+            heroId: player.heroCid ?? emojiHeroIdForSeat(player.seat),
             inventory: inventoryRecord(profile)
           });
           player.emote = runtime.label;
@@ -422,7 +442,6 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     requestedBotCount = 3,
     requestedCoreAuctionMode?: CoreAuctionMode,
     requestedBidMapId?: number,
-    requestedInitialCash?: number,
     requestedProfileId?: string
   ): Room {
     const code = createUniqueRoomCode((candidate) => rooms.has(candidate));
@@ -433,18 +452,16 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     const requestedPlayerId = requestedProfileId?.trim();
     const playerId = sessionProfileId ?? (requestedPlayerId || `p_${randomUUID()}`);
     const hostProfile = services.profiles.getOrCreateProfile(playerId, playerName);
+    const selectedBidMapId = resolveAccessibleBidMap(hostProfile, requestedBidMapId);
     const room = createRoomState({
       id: `room_${randomUUID()}`,
       code,
       hostId: playerId,
       botCount: Math.max(0, Math.min(maxBotCount, requestedBotCount)),
       totalRounds: bidKingDefaultBidGameCount(gameConfig.rules.totalRounds),
-      initialCash: validInitialCashForBidMap(
-        requestedInitialCash ?? bidKingInitialCashForProfileCoins(hostProfile.coins, validBidMapId(requestedBidMapId), gameConfig.rules.initialCash),
-        validBidMapId(requestedBidMapId)
-      ),
+      initialCash: bidKingInitialCashForBidMap(selectedBidMapId, gameConfig.rules.initialCash),
       coreAuctionMode: validCoreAuctionMode(requestedCoreAuctionMode),
-      selectedBidMapId: validBidMapId(requestedBidMapId),
+      selectedBidMapId,
     });
     rooms.set(code, room);
     addHumanToRoom(room, socket, playerName, roleId, playerId);
@@ -459,10 +476,25 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       emitError(socket, new Error('账号会话与玩家档案不匹配'));
     }
     const playerId = sessionProfileId ?? fixedPlayerId ?? `p_${randomUUID()}`;
+    let profile = services.profiles.getOrCreateProfile(playerId, playerName);
+    const profileRoleId = bidKingRoleIdForHeroId(profile.selectedHeroId, gameConfig.roles);
+    const resolvedRoleId = roleId ?? profileRoleId;
+    const heroCid = bidKingHeroIdForRoleId(resolvedRoleId, gameConfig.roles);
+    if (profile.selectedHeroId !== heroCid) {
+      try {
+        profile = services.profiles.selectHero(playerId, heroCid).profile;
+      } catch (error) {
+        emitError(socket, error);
+        return undefined;
+      }
+    }
+    const heroSkinCid = bidKingHeroSkinForHero(heroCid, profile.selectedHeroSkins);
     const player = createHumanRoomPlayer({
       id: playerId,
-      name: services.profiles.getOrCreateProfile(playerId, playerName).name,
-      roleId,
+      name: profile.name,
+      roleId: resolvedRoleId,
+      heroCid,
+      heroSkinCid,
       socketId: socket.id,
     });
     if (!addHumanPlayerToRoom(room, player)) {
@@ -479,20 +511,16 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     fillRoomBots(room, () => `bot_${randomUUID()}`);
   }
 
-  function validInitialCashForBidMap(requestedInitialCash: number | undefined, bidMapId?: number): number {
-    const requiredInitialCash = bidKingInitialCashForBidMap(bidMapId, gameConfig.rules.initialCash);
-    if (!requestedInitialCash || requestedInitialCash <= 0) {
-      return requiredInitialCash;
-    }
-    const choices = bidKingInitialCashChoices();
-    const snappedInitialCash = choices.find((choice) => choice >= requestedInitialCash) ?? choices[choices.length - 1] ?? requiredInitialCash;
-    return Math.max(requiredInitialCash, snappedInitialCash);
-  }
-
   function startMatch(room: Room): void {
     fillBots(room);
     room.initialCash = bidKingInitialCashForBidMap(room.selectedBidMapId, room.initialCash);
     const humanPlayers = room.players.filter((candidate) => candidate.kind === 'human');
+    for (const player of humanPlayers) {
+      const access = bidKingBidMapAccess(services.profiles.getSnapshot(player.id).profile, room.selectedBidMapId);
+      if (!access.canEnter) {
+        throw new Error(`${player.name}未满足入场条件：${access.reasons.join('、')}`);
+      }
+    }
     const blockedPlayer = humanPlayers.find((player) => services.profiles.getSnapshot(player.id).profile.tickets.current <= 0);
     if (blockedPlayer) {
       throw new Error(`${blockedPlayer.name}竞拍票不足`);
@@ -500,6 +528,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     clearRoomTimers(room);
     clearEmojiCooldowns(room);
     for (const player of humanPlayers) {
+      services.profiles.consumeBidMapEntryCost(player.id, room.selectedBidMapId, `match_start:${room.id}:${player.id}:bidmap:${room.selectedBidMapId ?? 'default'}`);
       services.profiles.consumeTicketForMatch(player.id, `match_start:${room.id}:${player.id}`);
       broadcasts.emitRoomPlayerProfile(room, player.id);
     }
@@ -509,7 +538,10 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
         id: player.id,
         name: player.name,
         kind: player.kind,
-        roleId: player.roleId
+        roleId: player.roleId,
+        heroCid: matchHeroCid(player),
+        heroSkinCid: matchHeroSkinCid(player),
+        selectedItemList: matchSelectedItemList(player)
       })),
       totalRounds: room.totalRounds,
       coreMode: true,
@@ -538,12 +570,51 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
 
   function assertProfileBattleItemReady(playerId: string, itemId: number): void {
     const profile = services.profiles.getSnapshot(playerId).profile;
-    if (!profile.equippedBattleItems.some((entry) => entry.itemId === itemId)) {
+    const equipped = profile.equippedBattleItems.find((entry) => entry.itemId === itemId);
+    if (!equipped) {
       throw new Error('战斗道具未携带');
     }
     if ((inventoryRecord(profile)[String(itemId)] ?? 0) <= 0) {
       throw new Error('战斗道具库存不足');
     }
+    if (equipped.stockId !== undefined && equipped.boxId !== undefined) {
+      const selectedBox = profile.stockContainers
+        ?.find((container) => container.stockId === equipped.stockId)
+        ?.boxes.find((box) => box.boxId === equipped.boxId && box.item.cid === itemId);
+      if (!selectedBox) {
+        throw new Error('战斗道具实体已不在仓库');
+      }
+    }
+  }
+
+  function matchHeroCid(player: Room['players'][number]): number {
+    if (player.kind === 'human') {
+      const profile = services.profiles.getSnapshot(player.id).profile;
+      return profile.selectedHeroId ?? player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, gameConfig.roles);
+    }
+    return player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, gameConfig.roles);
+  }
+
+  function matchHeroSkinCid(player: Room['players'][number]): number | undefined {
+    if (player.kind !== 'human') {
+      return player.heroSkinCid;
+    }
+    const profile = services.profiles.getSnapshot(player.id).profile;
+    return bidKingHeroSkinForHero(matchHeroCid(player), profile.selectedHeroSkins);
+  }
+
+  function matchSelectedItemList(player: Room['players'][number]) {
+    if (player.kind !== 'human') {
+      return [];
+    }
+    const profile = services.profiles.getSnapshot(player.id).profile;
+    return profile.equippedBattleItems
+      .filter((entry) => entry.stockId !== undefined && entry.boxId !== undefined)
+      .map((entry) => ({
+        stockId: entry.stockId!,
+        boxId: entry.boxId!,
+        itemCid: entry.itemId
+      }));
   }
 
   function clearEmojiCooldowns(room: Room): void {
@@ -552,6 +623,24 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
         emojiCooldowns.delete(key);
       }
     }
+  }
+
+  function resolveAccessibleBidMap(profile: ReturnType<ProfileService['getOrCreateProfile']>, requestedBidMapId?: number): number {
+    const preferredBidMapId = validBidMapId(requestedBidMapId);
+    const selectedBidMapId = bidKingBestAvailableBidMapId(profile, preferredBidMapId);
+    if (!selectedBidMapId) {
+      throw new Error('当前余额未满足任何拍场入场条件');
+    }
+    return selectedBidMapId;
+  }
+
+  function requireAccessibleBidMap(profile: ReturnType<ProfileService['getOrCreateProfile']>, requestedBidMapId?: number): number {
+    const bidMapId = validBidMapId(requestedBidMapId);
+    const access = bidKingBidMapAccess(profile, bidMapId);
+    if (!access.canEnter) {
+      throw new Error(`未满足入场条件：${access.reasons.join('、')}`);
+    }
+    return bidMapId!;
   }
 
   function getSocketContext(socketId: string): { room: Room; playerId: string } | undefined {

@@ -3,14 +3,44 @@ export { submitBid, passAuction, settleCurrentRound, revealNextItem, finishRound
 export { useSkill } from './skills';
 export { battleItemCooldownRemaining, battleItemEffectPlanForItem, skillGroupForBattleItem, useBattleItem } from './items';
 export { chooseBotAction } from './bots';
+export {
+  bidKingDefaultHeroId,
+  bidKingHeroAccessCost,
+  bidKingHeroExists,
+  bidKingHeroIdForRoleId,
+  bidKingHeroItemIdForHero,
+  bidKingHeroSelectableFromProfile,
+  bidKingHeroSkinForHero,
+  bidKingHeroStateFromProfile,
+  bidKingHeroTrialItemIdsForHero,
+  bidKingRoleIdForHeroId,
+  bidKingStarterHeroIds,
+  bidKingStarterOwnedHeroIds,
+  bidKingStarterSelectableHeroIds,
+  bidKingStarterTrialHeroIds
+} from './bidking/heroRuntime';
 export { constantNumber, constantNumberArray, constantNumberRows, constantRawValue, constantValue } from './bidking/constant/constantEngine';
 export {
   bidKingDefaultInitialCash,
+  bidKingBestAvailableBidMapId,
+  bidKingBidMapAccess,
+  bidKingBidMapEntryCostCoins,
+  bidKingBidMapEntryCosts,
+  bidKingBidMapRequiredCoins,
+  bidKingDailyMapEntryKey,
   bidKingHighestConfiguredMinimumBidForBidMap,
   bidKingInitialCashChoices,
   bidKingInitialCashForBidMap,
   bidKingInitialCashForProfileCoins,
-  bidKingItemBudgetChoices
+  bidKingItemBudgetChoices,
+  bidKingMapDailyEntryCount,
+  bidKingMapNextOpenAt
+} from './bidking/initialCashRuntime';
+export type {
+  BidKingBidMapAccessProfile,
+  BidKingBidMapAccessResult,
+  BidKingBidMapEntryCost,
+  BidKingEntryInventoryItem
 } from './bidking/initialCashRuntime';
 export {
   bidKingStarterCoins,

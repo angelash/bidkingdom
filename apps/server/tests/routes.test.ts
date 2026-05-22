@@ -80,6 +80,26 @@ function restoreEnv(name: string, value: string | undefined): void {
   process.env[name] = value;
 }
 
+async function createGuestAuth(
+  app: BitKingdomServerRuntime['app'],
+  legacyProfileId: string,
+  playerName = legacyProfileId
+): Promise<{ profileId: string; sessionToken: string; headers: { authorization: string } }> {
+  const guest = await app.inject({
+    method: 'POST',
+    url: '/api/account/guest',
+    payload: { deviceId: `device_${legacyProfileId}`, legacyProfileId, playerName }
+  });
+  const guestPayload = JSON.parse(guest.payload) as AccountSessionSnapshot;
+
+  expect(guest.statusCode).toBe(200);
+  return {
+    profileId: guestPayload.account.profileId,
+    sessionToken: guestPayload.sessionToken,
+    headers: { authorization: `Bearer ${guestPayload.sessionToken}` }
+  };
+}
+
 describe('server routes', () => {
   it('creates persisted account sessions bound to server profiles', async () => {
     await withRouteRuntime(async ({ app }) => {
@@ -106,6 +126,12 @@ describe('server routes', () => {
       expect(session.statusCode).toBe(200);
       expect(sessionPayload.account.profileId).toBe(registeredPayload.account.profileId);
       expect(sessionPayload.profile.profile.playerId).toBe(registeredPayload.account.profileId);
+
+      const unauthenticatedProfile = await app.inject({
+        method: 'GET',
+        url: '/api/profile?playerId=p_other_profile'
+      });
+      expect(unauthenticatedProfile.statusCode).toBe(401);
 
       const mismatch = await app.inject({
         method: 'GET',
@@ -197,6 +223,7 @@ describe('server routes', () => {
       });
       const registeredPayload = JSON.parse(registered.payload) as AccountSessionSnapshot;
       const playerId = registeredPayload.account.profileId;
+      const authHeaders = { authorization: `Bearer ${registeredPayload.sessionToken}` };
 
       const exported = await app.inject({ method: 'GET', url: '/api/admin/export?includeTransactions=1' });
       const exportedPayload = JSON.parse(exported.payload) as {
@@ -225,7 +252,11 @@ describe('server routes', () => {
       });
       expect(compensation.statusCode).toBe(200);
 
-      const profileBeforeClaim = await app.inject({ method: 'GET', url: `/api/profile?playerId=${playerId}` });
+      const profileBeforeClaim = await app.inject({
+        method: 'GET',
+        url: `/api/profile?playerId=${playerId}`,
+        headers: authHeaders
+      });
       const profileBeforeClaimPayload = JSON.parse(profileBeforeClaim.payload) as { profile: { coins: number; mail: Array<{ id: string; title: string }> } };
       const mail = profileBeforeClaimPayload.profile.mail.find((entry) => entry.title === '补偿测试');
       expect(mail).toBeDefined();
@@ -233,6 +264,7 @@ describe('server routes', () => {
       const claimed = await app.inject({
         method: 'POST',
         url: '/api/mail/claim',
+        headers: authHeaders,
         payload: { playerId, mailId: mail!.id }
       });
       const claimedPayload = JSON.parse(claimed.payload) as { profile: { coins: number } };
@@ -301,13 +333,18 @@ describe('server routes', () => {
 
       const missingProfile = await app.inject({ method: 'GET', url: '/api/profile' });
       const errorPayload = JSON.parse(missingProfile.payload) as { error: string; errorCode: string; messageKey: string };
-      expect(missingProfile.statusCode).toBe(400);
-      expect(errorPayload.error).toBe('playerId is required');
+      expect(missingProfile.statusCode).toBe(401);
+      expect(errorPayload.error).toBe('session token is required');
       expect(errorPayload.errorCode).toMatch(/^CODE_/);
       expect(errorPayload.messageKey).toMatch(/^text_ErrorCode_/);
 
       for (const playerId of ['p_admin_profile_1', 'p_admin_profile_2', 'p_admin_profile_3']) {
-        const profile = await app.inject({ method: 'GET', url: `/api/profile?playerId=${playerId}&playerName=${playerId}` });
+        const auth = await createGuestAuth(app, playerId, playerId);
+        const profile = await app.inject({
+          method: 'GET',
+          url: `/api/profile?playerId=${playerId}&playerName=${playerId}`,
+          headers: auth.headers
+        });
         expect(profile.statusCode).toBe(200);
       }
       const limitedProfiles = await app.inject({ method: 'GET', url: '/api/admin/profiles?limit=2' });
@@ -319,9 +356,12 @@ describe('server routes', () => {
 
   it('keeps profile and economy endpoints available after route extraction', async () => {
     await withRouteRuntime(async ({ app }) => {
+      const auth = await createGuestAuth(app, 'p_route', '掌柜路由');
+      const playerId = auth.profileId;
       const profile = await app.inject({
         method: 'GET',
-        url: '/api/profile?playerId=p_route&playerName=%E6%8E%8C%E6%9F%9C%E8%B7%AF%E7%94%B1'
+        url: `/api/profile?playerId=${playerId}&playerName=%E6%8E%8C%E6%9F%9C%E8%B7%AF%E7%94%B1`,
+        headers: auth.headers
       });
       const profilePayload = JSON.parse(profile.payload) as { profile: { name: string; coins: number } };
       expect(profile.statusCode).toBe(200);
@@ -340,13 +380,18 @@ describe('server routes', () => {
       const shop = await app.inject({
         method: 'POST',
         url: '/api/shop/refresh',
-        payload: { playerId: 'p_route' }
+        headers: auth.headers,
+        payload: { playerId }
       });
       const shopPayload = JSON.parse(shop.payload) as { profile: { shopRestocks: unknown[] } };
       expect(shop.statusCode).toBe(200);
       expect(shopPayload.profile.shopRestocks.length).toBeGreaterThan(0);
 
-      const activity = await app.inject({ method: 'GET', url: '/api/activity/progress?playerId=p_route' });
+      const activity = await app.inject({
+        method: 'GET',
+        url: `/api/activity/progress?playerId=${playerId}`,
+        headers: auth.headers
+      });
       const activityPayload = JSON.parse(activity.payload) as { activities: unknown[]; redPointCount: number };
       expect(activity.statusCode).toBe(200);
       expect(activityPayload.activities.length).toBeGreaterThan(0);
@@ -355,7 +400,8 @@ describe('server routes', () => {
       const friend = await app.inject({
         method: 'POST',
         url: '/api/social/friend/add',
-        payload: { playerId: 'p_route' }
+        headers: auth.headers,
+        payload: { playerId }
       });
       const friendPayload = JSON.parse(friend.payload) as { profile: { friends: Array<{ id: string; remark?: string }> } };
       expect(friend.statusCode).toBe(200);
@@ -364,7 +410,8 @@ describe('server routes', () => {
       const friendRemark = await app.inject({
         method: 'POST',
         url: '/api/social/friend/remark',
-        payload: { playerId: 'p_route', friendId, remark: 'friend dirtywords_2_1' }
+        headers: auth.headers,
+        payload: { playerId, friendId, remark: 'friend dirtywords_2_1' }
       });
       const friendRemarkPayload = JSON.parse(friendRemark.payload) as { profile: { friends: Array<{ remark?: string }> } };
       expect(friendRemark.statusCode).toBe(200);
@@ -373,7 +420,8 @@ describe('server routes', () => {
       const guild = await app.inject({
         method: 'POST',
         url: '/api/guild/join',
-        payload: { playerId: 'p_route' }
+        headers: auth.headers,
+        payload: { playerId }
       });
       const guildPayload = JSON.parse(guild.payload) as { profile: { guildMembership?: { areaId: string; resources?: Record<string, number> } } };
       expect(guild.statusCode).toBe(200);
@@ -382,7 +430,8 @@ describe('server routes', () => {
       const areaResource = await app.inject({
         method: 'POST',
         url: '/api/guild/area/resource/claim',
-        payload: { playerId: 'p_route', areaId }
+        headers: auth.headers,
+        payload: { playerId, areaId }
       });
       const areaResourcePayload = JSON.parse(areaResource.payload) as { profile: { guildMembership?: { resources?: Record<string, number> } } };
       expect(areaResource.statusCode).toBe(200);
@@ -391,7 +440,8 @@ describe('server routes', () => {
       const guildApplication = await app.inject({
         method: 'POST',
         url: '/api/guild/application/demo',
-        payload: { playerId: 'p_route' }
+        headers: auth.headers,
+        payload: { playerId }
       });
       const guildApplicationPayload = JSON.parse(guildApplication.payload) as { profile: { guildMembership?: { pendingApplications?: Array<{ playerId: string }> } } };
       expect(guildApplication.statusCode).toBe(200);
@@ -400,7 +450,8 @@ describe('server routes', () => {
       const guildApprove = await app.inject({
         method: 'POST',
         url: '/api/guild/member/approve',
-        payload: { playerId: 'p_route', applicantId }
+        headers: auth.headers,
+        payload: { playerId, applicantId }
       });
       const guildApprovePayload = JSON.parse(guildApprove.payload) as { profile: { guildMembership?: { members?: Array<{ playerId: string }> } } };
       expect(guildApprove.statusCode).toBe(200);
@@ -409,7 +460,8 @@ describe('server routes', () => {
       const guildKick = await app.inject({
         method: 'POST',
         url: '/api/guild/member/kick',
-        payload: { playerId: 'p_route', memberId: applicantId }
+        headers: auth.headers,
+        payload: { playerId, memberId: applicantId }
       });
       const guildKickPayload = JSON.parse(guildKick.payload) as { profile: { guildMembership?: { members?: Array<{ playerId: string }> } } };
       expect(guildKick.statusCode).toBe(200);
@@ -418,7 +470,8 @@ describe('server routes', () => {
       const guildNotice = await app.inject({
         method: 'POST',
         url: '/api/guild/notice',
-        payload: { playerId: 'p_route', notice: 'guild dirtywords_1_1' }
+        headers: auth.headers,
+        payload: { playerId, notice: 'guild dirtywords_1_1' }
       });
       const guildNoticePayload = JSON.parse(guildNotice.payload) as { profile: { guildMembership?: { notice?: string } } };
       expect(guildNotice.statusCode).toBe(200);

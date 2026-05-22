@@ -22,11 +22,14 @@ export interface ProfileService {
   getSnapshot(playerId: string, name?: string): ProfileSnapshot;
   updateSettings(playerId: string, settings: Record<string, string | number | boolean>): ProfileSnapshot;
   selectHead(playerId: string, headId: string): ProfileSnapshot;
+  selectHero(playerId: string, heroId: number): ProfileSnapshot;
+  unlockHero(playerId: string, heroId: number): ProfileSnapshot;
   setCabinetItem(playerId: string, itemId: string): ProfileSnapshot;
   clearCabinetItem(playerId: string, itemId: string): ProfileSnapshot;
   selectHeroSkin(playerId: string, skinId: number): ProfileSnapshot;
   refreshTickets(playerId: string): ProfileSnapshot;
   consumeTicketForMatch(playerId: string, sourceId: string): ProfileSnapshot;
+  consumeBidMapEntryCost(playerId: string, bidMapId: number | undefined, sourceId: string): ProfileSnapshot;
   completeTask(playerId: string, taskId: string): ProfileSnapshot;
   claimMissionReward(playerId: string, taskId: string): ProfileSnapshot;
   claimAchievementReward(playerId: string, achievementId: string): ProfileSnapshot;

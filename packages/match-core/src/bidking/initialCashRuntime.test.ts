@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch } from '../match';
 import {
+  bidKingBestAvailableBidMapId,
+  bidKingBidMapAccess,
+  bidKingBidMapEntryCostCoins,
+  bidKingBidMapEntryCosts,
+  bidKingBidMapRequiredCoins,
+  bidKingDailyMapEntryKey,
   bidKingDefaultInitialCash,
   bidKingHighestConfiguredMinimumBidForBidMap,
   bidKingInitialCashChoices,
@@ -33,18 +39,35 @@ describe('BidKing initial cash runtime', () => {
     expect(bidKingDefaultInitialCash()).toBe(1_000_000);
   });
 
-  it('raises selected high-stakes maps to an affordable original cash tier', () => {
+  it('uses original parent Map stakes to set room initial cash', () => {
     expect(bidKingHighestConfiguredMinimumBidForBidMap(2201)).toBe(20_000);
-    expect(bidKingInitialCashForBidMap(2201)).toBe(1_000_000);
-    expect(bidKingInitialCashForBidMap(2201, 2_000_000)).toBe(2_000_000);
+    expect(bidKingInitialCashForBidMap(2101)).toBe(100_000);
+    expect(bidKingInitialCashForBidMap(2201)).toBe(500_000);
+    expect(bidKingInitialCashForBidMap(2301)).toBe(1_000_000);
+    expect(bidKingInitialCashForBidMap(2401)).toBe(2_000_000);
+    expect(bidKingInitialCashForBidMap(2501)).toBe(3_000_000);
     expect(bidKingHighestConfiguredMinimumBidForBidMap(2601)).toBe(3_000_000);
     expect(bidKingInitialCashForBidMap(2601)).toBe(3_000_000);
   });
 
-  it('uses account coins to pick the highest affordable initial cash tier while honoring map minimums', () => {
-    expect(bidKingInitialCashForProfileCoins(2_090_000, 2201)).toBe(2_000_000);
-    expect(bidKingInitialCashForProfileCoins(2_000_000, 2201)).toBe(2_000_000);
-    expect(bidKingInitialCashForProfileCoins(1_999_999, 2201)).toBe(1_000_000);
+  it('uses account balance to gate maps while keeping cash fixed by the selected room', () => {
+    expect(bidKingBidMapRequiredCoins(2401)).toBe(2_000_000);
+    expect(bidKingBidMapEntryCostCoins(2401)).toBe(10_000);
+    expect(bidKingBidMapEntryCosts(2101)).toEqual([{ refId: 101, quantity: 1 }]);
+    expect(bidKingBidMapAccess({ coins: 2_090_000 }, 2401).canEnter).toBe(true);
+    expect(bidKingBidMapAccess({ coins: 20_000, inventory: [{ refId: 101, quantity: 1 }] }, 2101).canEnter).toBe(true);
+    expect(bidKingBidMapAccess({ coins: 20_000, inventory: [] }, 2101).canEnter).toBe(false);
+    expect(bidKingBidMapAccess({ coins: 1_999_999 }, 2401).canEnter).toBe(false);
+    expect(bidKingBidMapAccess({ coins: 2_090_000 }, 2501).canEnter).toBe(false);
+    const now = new Date(2026, 4, 22, 12, 0, 0).getTime();
+    expect(bidKingBidMapAccess({
+      coins: 20_000,
+      inventory: [{ refId: 101, quantity: 1 }],
+      dailyMapEntries: { [bidKingDailyMapEntryKey(101, now)]: 100 }
+    }, 2101, now).reasons).toContain('今日次数 100/100');
+    expect(bidKingBestAvailableBidMapId({ coins: 2_090_000 }, 2201)).toBe(2201);
+    expect(bidKingBestAvailableBidMapId({ coins: 2_090_000 })).toBe(2401);
+    expect(bidKingInitialCashForProfileCoins(2_090_000, 2201)).toBe(500_000);
     expect(bidKingInitialCashForProfileCoins(2_090_000, 2601)).toBe(3_000_000);
   });
 

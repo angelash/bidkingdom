@@ -25,7 +25,10 @@ import type { Clue, PublicContainerInfo, RevealedItem, Rarity, SkillFeedEntry } 
 import { buildPrivateClues, buildPublicClues } from '../clues';
 import { sumItemValue } from '../scoring';
 import type { ContainerInstance, MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } from '../types';
-import { bidKingHighestConfiguredMinimumBidForBidMap } from './initialCashRuntime';
+import {
+  bidKingHighestConfiguredMinimumBidForBidMap,
+  bidKingInitialCashForBidMap
+} from './initialCashRuntime';
 
 export { getBidKingCloseThreshold };
 
@@ -330,14 +333,20 @@ function eligibleBidMapsForPlayerCount(playerCount: number, maxMinimumBid?: numb
   if (exact.length > 0) {
     const affordable = maxMinimumBid === undefined
       ? exact
-      : exact.filter((row) => bidKingHighestConfiguredMinimumBidForBidMap(row.id) <= maxMinimumBid);
+      : exact.filter((row) => (
+        bidKingHighestConfiguredMinimumBidForBidMap(row.id) <= maxMinimumBid
+        && bidKingInitialCashForBidMap(row.id) <= maxMinimumBid
+      ));
     return affordable.length > 0 ? affordable : exact;
   }
   const multiplayer = visible.filter((row) => row.bidder_number > 1);
   if (multiplayer.length > 0) {
     const affordable = maxMinimumBid === undefined
       ? multiplayer
-      : multiplayer.filter((row) => bidKingHighestConfiguredMinimumBidForBidMap(row.id) <= maxMinimumBid);
+      : multiplayer.filter((row) => (
+        bidKingHighestConfiguredMinimumBidForBidMap(row.id) <= maxMinimumBid
+        && bidKingInitialCashForBidMap(row.id) <= maxMinimumBid
+      ));
     return affordable.length > 0 ? affordable : multiplayer;
   }
   return BidMap;
@@ -548,7 +557,7 @@ function buildBidKingSkillClue(
 }
 
 function heroForPlayer(player: RuntimePlayer) {
-  return Hero[player.seat % Hero.length]!;
+  return Hero.find((hero) => hero.id === player.heroCid) ?? Hero[player.seat % Hero.length]!;
 }
 
 function skillForHero(hero: ReturnType<typeof heroForPlayer>, roundIndex: number) {

@@ -68,7 +68,12 @@ export async function createBitKingdomServer(options: BitKingdomServerOptions = 
 function registerAccountSessionGuard(app: FastifyInstance, accounts: AccountService): void {
   app.addHook('preHandler', async (request, reply) => {
     const token = bearerToken(request.headers.authorization);
+    const protectedRoute = isProtectedProfileRoute(request.method, request.url);
+    if (!token && !protectedRoute) {
+      return;
+    }
     if (!token) {
+      await reply.code(401).send({ error: 'session token is required' });
       return;
     }
     const sessionProfileId = accounts.resolveProfileIdForSession(token);
@@ -79,8 +84,60 @@ function registerAccountSessionGuard(app: FastifyInstance, accounts: AccountServ
     const requestedPlayerId = requestPlayerId(request.body) ?? requestPlayerId(request.query);
     if (requestedPlayerId && requestedPlayerId !== sessionProfileId) {
       await reply.code(403).send({ error: 'profile session mismatch' });
+      return;
+    }
+    if (protectedRoute) {
+      bindSessionProfileId(request, sessionProfileId);
     }
   });
+}
+
+function isProtectedProfileRoute(method: string, rawUrl: string): boolean {
+  const path = rawUrl.split('?')[0] ?? rawUrl;
+  const verb = method.toUpperCase();
+  if (path === '/api/profile' || path === '/api/activity/progress') {
+    return true;
+  }
+  if (path === '/api/market/order' || path === '/api/market/order/action') {
+    return true;
+  }
+  if (verb === 'GET' && (
+    path === '/api/profile/collection-bonus' ||
+    path === '/api/profile/relief-fund'
+  )) {
+    return true;
+  }
+  return [
+    '/api/profile/',
+    '/api/cabinet/',
+    '/api/hero/',
+    '/api/hero-skin/',
+    '/api/ticket/',
+    '/api/mail/',
+    '/api/mission/',
+    '/api/achievement/',
+    '/api/level/',
+    '/api/battle/items/',
+    '/api/shop/',
+    '/api/gift-package/',
+    '/api/pay/',
+    '/api/purchase-list/',
+    '/api/dlc/',
+    '/api/activity/claim',
+    '/api/rank/claim',
+    '/api/social/',
+    '/api/guild/'
+  ].some((prefix) => path.startsWith(prefix));
+}
+
+function bindSessionProfileId(request: { body?: unknown; query?: unknown; method: string }, profileId: string): void {
+  const targetName = request.method.toUpperCase() === 'GET' ? 'query' : 'body';
+  const target = request[targetName];
+  if (target && typeof target === 'object' && !Array.isArray(target)) {
+    (target as { playerId?: string }).playerId = profileId;
+    return;
+  }
+  request[targetName] = { playerId: profileId };
 }
 
 function requestPlayerId(source: unknown): string | undefined {

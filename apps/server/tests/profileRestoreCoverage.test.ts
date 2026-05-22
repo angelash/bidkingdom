@@ -38,6 +38,7 @@ import { parseBidKingNumberRows } from '@bitkingdom/match-core';
 import { describe, expect, it } from 'vitest';
 import { languageNamesFromSeed } from '../src/domain/profile/languageNameRuntime';
 import { addMailFromTemplate } from '../src/domain/profile/profileMailRuntime';
+import { addInventory } from '../src/domain/profile/profileInventory';
 import { createProfileService } from '../src/services/profileService';
 import type { ServerStore } from '../src/services/store';
 
@@ -67,9 +68,7 @@ function cabinetAcceptsItem(cabinet: (typeof Cabinet)[number], item: (typeof Ite
 }
 
 function cabinetPlaceLimit(cabinet: (typeof Cabinet)[number]): number {
-  const placeMax = cabinet.place_max > 0 ? cabinet.place_max : 15;
-  const maxSlotLimit = cabinet.max_slot_limit > 0 ? cabinet.max_slot_limit : placeMax;
-  return Math.min(placeMax, maxSlotLimit);
+  return cabinet.place_max > 0 ? cabinet.place_max : 15;
 }
 
 describe('BidKing profile restore coverage', () => {
@@ -97,11 +96,14 @@ describe('BidKing profile restore coverage', () => {
     const head = Head.at(-1)!;
     const skin = HeroSkin[0]!;
 
-    expect(() => profiles.setCabinetItem(profile.playerId, canonicalItemId)).toThrow('藏品尚未解锁');
-    profile.codex = [...new Set(compatibleItemIds.filter((itemId) => itemId !== canonicalItemId)), canonicalItemId];
+    expect(() => profiles.setCabinetItem(profile.playerId, canonicalItemId)).toThrow('仓库中没有该实体藏品');
+    profile.codex = [canonicalItemId, ...new Set(compatibleItemIds.filter((itemId) => itemId !== canonicalItemId))];
+    for (const itemId of profile.codex) {
+      addInventory(profile, 'warehouse', itemId, 1, `test:growth:${itemId}`);
+    }
     profiles.selectHead(profile.playerId, head.id);
     profiles.selectHeroSkin(profile.playerId, skin.id);
-    for (const itemId of profile.codex) {
+    for (const itemId of profile.codex.slice(0, cabinetPlaceLimit(matchingCabinet))) {
       profiles.setCabinetItem(profile.playerId, itemId);
     }
 
@@ -167,11 +169,17 @@ describe('BidKing profile restore coverage', () => {
     profile.coins = 600_000;
     profile.codex = [`compat_${collectionItem.id}`];
     profile.lastCollectionIncomeAt = Date.now() - 2 * 3600_000;
+    addInventory(profile, 'warehouse', `compat_${collectionItem.id}`, 1, 'test:event:collection');
 
     profiles.buyShopItem(profile.playerId, battleShopItemId);
     profiles.equipBattleItems(profile.playerId, [battleItemId]);
     profiles.useBattleItem(profile.playerId, battleItemId);
     profiles.setCabinetItem(profile.playerId, `compat_${collectionItem.id}`);
+    for (const container of profile.stockContainers ?? []) {
+      if (container.kind === 'cabinet' && container.cabinet) {
+        container.cabinet.lastRewardAt = Date.now() - 2 * 3600_000;
+      }
+    }
     profiles.claimCollectionIncome(profile.playerId);
     profiles.addDemoFriend(profile.playerId);
     profiles.joinGuild(profile.playerId, GuildArea[0]!.id);

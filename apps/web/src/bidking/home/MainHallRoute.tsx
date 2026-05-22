@@ -1,4 +1,6 @@
 import type { CoreAuctionMode, PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
+import { bidKingHeroIdForRoleId } from '@bitkingdom/match-core';
+import { gameConfig } from '@bitkingdom/config';
 import { modeForBidMapId } from '../battlePrev/bidMapRuntime';
 import type { BidKingBattleMapGroup } from '../battlePrev/BattlePrevPanelView';
 import { codexCatalogItems } from '../catalog/codexRuntime';
@@ -67,11 +69,15 @@ export function MainHallRoute({
       onCreateRoom={roomActions.createRoom}
       onSelectBidMap={roomActions.selectBidMap}
       onSelectCoreAuctionMode={roomActions.selectCoreAuctionMode}
-      onSelectRole={roomActions.selectRole}
+      onSelectRole={(roleId) => {
+        roomActions.selectRole(roleId);
+        profileActions.selectHero(bidKingHeroIdForRoleId(roleId, gameConfig.roles));
+      }}
       onSelectHead={profileActions.selectHead}
       onSellAllCabinetItems={profileActions.sellAllCabinetItems}
       onClaimCollectionIncome={profileActions.claimCollectionIncome}
       onClaimReliefFund={profileActions.claimReliefFund}
+      onUnlockHero={profileActions.unlockHero}
       onSelectHeroSkin={profileActions.selectHeroSkin}
       onBuyItem={profileActions.buyShopItem}
       onRefreshShop={profileActions.refreshShop}

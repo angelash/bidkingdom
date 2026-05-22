@@ -1,6 +1,7 @@
 import { gameConfig } from '@bitkingdom/config';
 import {
   bidKingInitialCashForBidMap,
+  bidKingHeroIdForRoleId,
   type CreateMatchPlayer,
   type MatchRuntimeState
 } from '@bitkingdom/match-core';
@@ -41,6 +42,7 @@ export function createBotRoomPlayer(index: number, id: string): { player: RoomPl
       name: languageNameFromSeed(10_000 + index),
       kind: 'bot',
       roleId: role.id,
+      heroCid: bidKingHeroIdForRoleId(role.id, gameConfig.roles),
       ready: true,
       status: 'ready'
     },
@@ -69,6 +71,8 @@ export function snapshotRoom(room: RoomSnapshotSource): RoomSnapshot {
         name: player.name,
         kind: player.kind,
         roleId: runtime?.roleId ?? player.roleId,
+        heroCid: runtime?.heroCid ?? player.heroCid,
+        heroSkinCid: runtime?.heroSkinCid ?? player.heroSkinCid,
         cash: runtime?.cash ?? lobbyInitialCash,
         netWorth: runtime?.cash ?? lobbyInitialCash,
         status: runtime?.status ?? player.status,

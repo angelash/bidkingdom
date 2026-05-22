@@ -1,8 +1,12 @@
 import type { FinalMatchSummary } from '@bitkingdom/shared';
-import { Activity, Cabinet, Dlc, Item, Mission, Pay, Shop, ShopItem, bidKingDlcRuntime, bidKingPayRuntime } from '@bitkingdom/bidking-compat';
+import { Activity, Cabinet, Dlc, Hero, Item, Mission, Pay, Shop, ShopItem, bidKingDlcRuntime, bidKingPayRuntime } from '@bitkingdom/bidking-compat';
 import {
+  bidKingHeroItemIdForHero,
+  bidKingHeroTrialItemIdsForHero,
+  bidKingDailyMapEntryKey,
   bidKingStarterHeadId,
-  bidKingStarterInventoryRewards
+  bidKingStarterInventoryRewards,
+  bidKingStarterOwnedHeroIds
 } from '@bitkingdom/match-core';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,6 +21,7 @@ import {
 import { createAccountService } from '../src/services/accountService';
 import { createProfileService } from '../src/services/profileService';
 import { createSQLiteStore, type ServerStore } from '../src/services/store';
+import { addInventory } from '../src/domain/profile/profileInventory';
 
 function createMemoryStore(): ServerStore {
   return {
@@ -81,6 +86,38 @@ describe('profile service', () => {
 
     const next = profiles.getSnapshot('p_test').profile;
     expect(next.tickets.current).toBe(19);
+  });
+
+  it('deducts original BidMap entry costs once when a match starts', () => {
+    const profiles = createProfileService(createMemoryStore());
+    const itemCostProfile = profiles.getOrCreateProfile('p_bidmap_item_cost', '入场凭证');
+    itemCostProfile.coins = 20_000;
+    itemCostProfile.inventory = [];
+    itemCostProfile.stockContainers = [];
+    itemCostProfile.stockState = { nextBoxId: 1, nextItemNo: 1 };
+    itemCostProfile.settings.bidkingStockContainersV1 = true;
+    addInventory(itemCostProfile, 'warehouse', '101', 1, 'test:bidmap:item_cost');
+
+    profiles.consumeBidMapEntryCost(itemCostProfile.playerId, 2101, 'match_start:entry_item');
+    profiles.consumeBidMapEntryCost(itemCostProfile.playerId, 2101, 'match_start:entry_item');
+    const afterItemCost = profiles.getSnapshot(itemCostProfile.playerId);
+
+    expect(inventoryQuantity(afterItemCost.profile, '101')).toBe(0);
+    expect(afterItemCost.profile.dailyMapEntries?.[bidKingDailyMapEntryKey(101)]).toBe(1);
+    expect(afterItemCost.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.item.cid === 101)).toBe(false);
+    expect(afterItemCost.transactions.map((transaction) => transaction.reason)).toEqual(expect.arrayContaining([
+      'bidmap_entry_cost_item',
+      'bidmap_entry_cost'
+    ]));
+
+    const coinCostProfile = profiles.getOrCreateProfile('p_bidmap_coin_cost', '入场扣费');
+    coinCostProfile.coins = 2_010_000;
+    profiles.consumeBidMapEntryCost(coinCostProfile.playerId, 2401, 'match_start:entry_coin');
+    profiles.consumeBidMapEntryCost(coinCostProfile.playerId, 2401, 'match_start:entry_coin');
+    const afterCoinCost = profiles.getSnapshot(coinCostProfile.playerId);
+
+    expect(afterCoinCost.profile.coins).toBe(2_000_000);
+    expect(afterCoinCost.transactions.filter((transaction) => transaction.reason === 'bidmap_entry_cost_coins')).toHaveLength(1);
   });
 
   it('migrates legacy starter coin defaults to original init_items coins', () => {
@@ -156,21 +193,56 @@ describe('profile service', () => {
     expect(renamed.name).not.toMatch(/^languagename_/);
   });
 
-  it('persists Head, Cabinet, and HeroSkin profile selections', () => {
+  it('persists Head, Cabinet, Hero, and HeroSkin profile selections', () => {
     const profiles = createProfileService(createMemoryStore());
     const profile = profiles.getOrCreateProfile('p_cosmetic', '掌柜装扮');
     const cabinetItem = firstCabinetEligibleItem();
     const cabinetItemId = `compat_${cabinetItem.id}`;
     profile.codex = [cabinetItemId];
+    addInventory(profile, 'warehouse', cabinetItemId, 1, 'test:cabinet:eligible');
 
     profiles.selectHead('p_cosmetic', '120000');
+    profiles.selectHero('p_cosmetic', Hero[1]!.id);
     profiles.setCabinetItem('p_cosmetic', cabinetItemId);
-    profiles.selectHeroSkin('p_cosmetic', 1410101);
+    const heroSkin = 1410201;
+    profiles.selectHeroSkin('p_cosmetic', heroSkin);
 
     const next = profiles.getSnapshot('p_cosmetic').profile;
     expect(next.headId).toBe('120000');
+    expect(next.ownedHeroIds).toEqual(bidKingStarterOwnedHeroIds());
+    expect(next.heroStates?.find((state) => state.heroId === Hero[1]!.id)?.state).toBe('trial');
+    expect(next.selectedHeroId).toBe(Hero[1]!.id);
     expect(next.cabinetItemIds).toEqual([cabinetItemId]);
-    expect(next.selectedHeroSkins?.['101']).toBe(1410101);
+    expect(next.stockContainers?.find((container) => container.kind === 'cabinet')?.boxes).toEqual([
+      expect.objectContaining({
+        item: expect.objectContaining({ cid: cabinetItem.id })
+      })
+    ]);
+    expect(next.selectedHeroSkins?.[String(Hero[1]!.id)]).toBe(heroSkin);
+  });
+
+  it('unlocks locked heroes using original Hero.access currency and hero item state', () => {
+    const profiles = createProfileService(createMemoryStore());
+    const profile = profiles.getOrCreateProfile('p_hero_unlock', '掌柜名士');
+    const lockedHero = Hero[0]!;
+    const trialItemIds = new Set(bidKingHeroTrialItemIdsForHero(lockedHero.id).map(String));
+    profile.inventory = profile.inventory.filter((entry) => !trialItemIds.has(entry.refId));
+    profile.ownedHeroIds = profile.ownedHeroIds?.filter((heroId) => heroId !== lockedHero.id) ?? [];
+    profile.heroStates = [];
+    profile.goldCoins = 380;
+
+    profiles.unlockHero(profile.playerId, lockedHero.id);
+    profiles.selectHero(profile.playerId, lockedHero.id);
+
+    const next = profiles.getSnapshot(profile.playerId).profile;
+    const heroItemId = bidKingHeroItemIdForHero(lockedHero.id);
+    expect(next.goldCoins).toBe(0);
+    expect(next.ownedHeroIds).toContain(lockedHero.id);
+    expect(next.heroStates?.find((state) => state.heroId === lockedHero.id)?.state).toBe('owned');
+    expect(next.selectedHeroId).toBe(lockedHero.id);
+    expect(next.inventory).toEqual(expect.arrayContaining([
+      expect.objectContaining({ refId: String(heroItemId), quantity: 1 })
+    ]));
   });
 
   it('rejects and clears Cabinet placement through original quality requirements', () => {
@@ -181,6 +253,8 @@ describe('profile service', () => {
     const validItemId = `compat_${validItem.id}`;
     const invalidItemId = `compat_${invalidItem.id}`;
     profile.codex = [validItemId, invalidItemId];
+    addInventory(profile, 'warehouse', validItemId, 1, 'test:cabinet:valid');
+    addInventory(profile, 'warehouse', invalidItemId, 1, 'test:cabinet:invalid');
 
     expect(() => profiles.setCabinetItem(profile.playerId, invalidItemId)).toThrow('藏品品质不符合收藏柜要求');
 
@@ -189,6 +263,8 @@ describe('profile service', () => {
     const snapshot = profiles.getSnapshot(profile.playerId);
 
     expect(snapshot.profile.cabinetItemIds).toEqual([]);
+    expect(snapshot.profile.stockContainers?.find((container) => container.kind === 'cabinet')?.boxes).toHaveLength(0);
+    expect(snapshot.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.item.cid === validItem.id)).toBe(true);
     expect(snapshot.transactions.map((transaction) => transaction.reason)).toEqual(
       expect.arrayContaining(['cabinet_place', 'cabinet_clear'])
     );
@@ -205,8 +281,15 @@ describe('profile service', () => {
     )!;
     const itemId = `compat_${item.id}`;
     profile.codex = [itemId];
-    profile.lastCollectionIncomeAt = Date.now() - 2 * 3600_000;
+    addInventory(profile, 'warehouse', itemId, 1, 'test:collection:cabinet');
     profiles.setCabinetItem(profile.playerId, itemId);
+    const lastRewardAt = Date.now() - 2 * 3600_000;
+    profile.lastCollectionIncomeAt = lastRewardAt;
+    for (const container of profile.stockContainers ?? []) {
+      if (container.kind === 'cabinet' && container.cabinet) {
+        container.cabinet.lastRewardAt = lastRewardAt;
+      }
+    }
 
     const beforeSnapshot = profiles.getSnapshot(profile.playerId).profile;
     const beforeCoins = beforeSnapshot.coins;
@@ -355,7 +438,7 @@ describe('profile service', () => {
     const equipped = profiles.equipBattleItems('p_battle_item', [100102]).profile;
 
     expect(equipped.equippedBattleItems).toEqual([
-      expect.objectContaining({ itemId: 100102, quantity: 1 })
+      expect.objectContaining({ itemId: 100102, quantity: 1, stockId: expect.any(Number), boxId: expect.any(Number) })
     ]);
   });
 
@@ -368,6 +451,7 @@ describe('profile service', () => {
     const used = profiles.useBattleItem('p_use_item', 100102).profile;
 
     expect(used.inventory.some((entry) => entry.refId === '100102')).toBe(false);
+    expect(used.stockContainers?.flatMap((container) => container.boxes).some((box) => box.item.cid === 100102)).toBe(false);
     expect(used.equippedBattleItems).toEqual([]);
     expect(used.conditionStats).toEqual(expect.objectContaining({
       usedItemCount: 1,
@@ -1155,6 +1239,7 @@ describe('profile service', () => {
     expect(profile.coins).toBe(DEFAULT_PROFILE_COINS);
     expect(profile.rankPoints).toBe(8);
     expect(inventoryQuantity(profile, 'compat_100102')).toBe(1);
+    expect(profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.item.cid === 100102)).toBe(true);
     expect(profile.completedTasks).toEqual(expect.arrayContaining(['daily_complete_match', 'daily_light_codex', 'ach_rare_collector']));
     expect(profile.auctionStats).toEqual(expect.objectContaining({
       totalProfit: 150000,

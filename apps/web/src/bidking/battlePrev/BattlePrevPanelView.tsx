@@ -4,8 +4,11 @@ import {
   bidKingBidGameCountChoices,
   bidKingBidRateChoices,
   bidKingDefaultRoundTimeSeconds,
+  bidKingBidMapAccess,
+  bidKingHeroIdForRoleId,
+  bidKingHeroStateFromProfile,
   bidKingInitialCashChoices,
-  bidKingInitialCashForProfileCoins,
+  bidKingInitialCashForBidMap,
   bidKingItemBudgetChoices,
   bidKingReliefFundRuntime,
   bidKingRoomPlayerCountChoices
@@ -78,7 +81,8 @@ export function BattlePrevPanelView({
   const selectedBidMap = selectedGroup.children.find((map) => map.id === selectedBidMapId) ?? selectedGroup.children[0]!;
   const selectedParentMap = selectedGroup.parent;
   const selectedRankMap = bidKingRankMaps.find((rankMap) => rankMap.id === selectedBidMap.id);
-  const selectedInitialCash = bidKingInitialCashForProfileCoins(profile.coins, selectedBidMap.id, gameConfig.rules.initialCash);
+  const selectedAccess = bidKingBidMapAccess(profile, selectedBidMap.id);
+  const selectedInitialCash = bidKingInitialCashForBidMap(selectedBidMap.id, gameConfig.rules.initialCash);
   const sceneMode = modeForBidKingMap(selectedParentMap);
   const selectedRoleSkill = roleSkillDetails[selectedRole.skillId];
   const tabs = [
@@ -118,21 +122,25 @@ export function BattlePrevPanelView({
               const sample = group.children[0]!;
               const selected = group.parent.id === selectedParentMap.id;
               const mode = modeForBidKingMap(group.parent);
+              const firstAvailable = group.children.find((bidMap) => bidKingBidMapAccess(profile, bidMap.id).canEnter);
+              const access = firstAvailable ? bidKingBidMapAccess(profile, firstAvailable.id) : bidKingBidMapAccess(profile, sample.id);
               return (
                 <button
-                  className={`battle-prev-node risk-${sample.risk} mode-${mode} ${selected ? 'selected' : ''}`}
+                  className={`battle-prev-node risk-${sample.risk} mode-${mode} ${selected ? 'selected' : ''} ${access.canEnter ? '' : 'locked'}`}
+                  disabled={!access.canEnter}
                   key={group.parent.id}
-                  onClick={() => onSelectBidMap(sample.id)}
+                  onClick={() => onSelectBidMap((firstAvailable ?? sample).id)}
                   style={{
                     '--node-x': `${group.x}%`,
                     '--node-y': `${group.y}%`,
                     '--node-art': `url(${containerArtForKey(group.parent.art_key || sample.art_key)})`
                   } as CSSProperties}
+                  title={access.canEnter ? undefined : access.reasons.join('、')}
                   type="button"
                 >
                   <span />
                   <strong>{bidKingParentMapName(group.parent)}</strong>
-                  <small>{bidKingMapModeName(group.parent.type)} · {group.children.length} 仓型</small>
+                  <small>{access.canEnter ? `${bidKingMapModeName(group.parent.type)} · ${group.children.length} 仓型` : access.reasons[0]}</small>
                 </button>
               );
             })}
@@ -172,8 +180,9 @@ export function BattlePrevPanelView({
                   bidMaps={selectedGroup.children}
                   selectedBidMapId={selectedBidMap.id}
                   onSelect={onSelectBidMap}
+                  profile={profile}
                 />
-                <BidKingRuleSummary bidMap={selectedBidMap} profileCoins={profile.coins} rankMap={selectedRankMap} />
+                <BidKingRuleSummary bidMap={selectedBidMap} profile={profile} rankMap={selectedRankMap} />
               </div>
             )}
 
@@ -182,16 +191,13 @@ export function BattlePrevPanelView({
                 <RoleDetailView role={selectedRole} selected onSelect={() => onSelectRole(selectedRoleId)} />
                 <div className="battle-prev-role-grid">
                   {gameConfig.roles.slice(0, 12).map((role) => (
-                    <button
-                      className={role.id === selectedRoleId ? 'selected' : ''}
+                    <RoleChoiceButton
                       key={role.id}
-                      onClick={() => onSelectRole(role.id)}
-                      style={{ '--role-color': role.color } as CSSProperties}
-                      type="button"
-                    >
-                      <img src={roleAvatarForRoleId(role.id)} alt="" loading="lazy" />
-                      <span>{role.name}</span>
-                    </button>
+                      role={role}
+                      selected={role.id === selectedRoleId}
+                      state={bidKingHeroStateFromProfile(profile, bidKingHeroIdForRoleId(role.id, gameConfig.roles)).state}
+                      onSelect={() => onSelectRole(role.id)}
+                    />
                   ))}
                 </div>
               </div>
@@ -223,9 +229,9 @@ export function BattlePrevPanelView({
 
             <footer className="battle-prev-actions">
               <button type="button" onClick={onCancel}>返回珍宝局</button>
-              <button className="primary" type="button" onClick={onConfirm}>
+              <button className="primary" type="button" onClick={onConfirm} disabled={!selectedAccess.canEnter}>
                 <Play size={18} />
-                确认开拍
+                {selectedAccess.canEnter ? '确认开拍' : selectedAccess.reasons[0]}
               </button>
             </footer>
           </aside>
@@ -290,36 +296,43 @@ function BattlePrevItemChoose({
 function BidKingBidMapSelector({
   bidMaps,
   selectedBidMapId,
-  onSelect
+  onSelect,
+  profile
 }: {
   bidMaps: BidKingBidMapRow[];
   selectedBidMapId: number;
   onSelect: (bidMapId: number) => void;
+  profile: PlayerProfile;
 }): JSX.Element {
   return (
     <div className="bidmap-toggle-grid" aria-label="仓型选择">
-      {bidMaps.map((bidMap) => (
-        <button
-          className={bidMap.id === selectedBidMapId ? 'selected' : ''}
-          key={bidMap.id}
-          onClick={() => onSelect(bidMap.id)}
-          type="button"
-        >
-          <strong>{bidKingDisplayBidMapName(bidMap)}</strong>
-          <span>{bidMap.map_cell}格 · {riskName(bidMap.risk)} · {bidKingRoundTimes(bidMap)}</span>
-        </button>
-      ))}
+      {bidMaps.map((bidMap) => {
+        const access = bidKingBidMapAccess(profile, bidMap.id);
+        return (
+          <button
+            className={`${bidMap.id === selectedBidMapId ? 'selected' : ''} ${access.canEnter ? '' : 'locked'}`}
+            disabled={!access.canEnter}
+            key={bidMap.id}
+            onClick={() => onSelect(bidMap.id)}
+            title={access.canEnter ? undefined : access.reasons.join('、')}
+            type="button"
+          >
+            <strong>{bidKingDisplayBidMapName(bidMap)}</strong>
+            <span>{access.canEnter ? `${bidMap.map_cell}格 · ${riskName(bidMap.risk)} · ${bidKingRoundTimes(bidMap)}` : access.reasons[0]}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 function BidKingRuleSummary({
   bidMap,
-  profileCoins,
+  profile,
   rankMap
 }: {
   bidMap: BidKingBidMapRow;
-  profileCoins: number;
+  profile: PlayerProfile;
   rankMap?: (typeof bidKingRankMaps)[number];
 }): JSX.Element {
   const roundRules = bidMap.auction_rounds_rate.map((rate, index) => {
@@ -332,7 +345,8 @@ function BidKingRuleSummary({
     .slice(0, 3);
   const skillGroups = bidMap.map_random_skill.filter((groupId) => groupId > 0);
   const reliefFund = bidKingReliefFundRuntime();
-  const initialCash = bidKingInitialCashForProfileCoins(profileCoins, bidMap.id, gameConfig.rules.initialCash);
+  const access = bidKingBidMapAccess(profile, bidMap.id);
+  const initialCash = bidKingInitialCashForBidMap(bidMap.id, gameConfig.rules.initialCash);
   return (
     <section className="bidking-rule-summary">
       <div className="bidking-round-rate">
@@ -345,6 +359,7 @@ function BidKingRuleSummary({
       </div>
       <div className="bidking-rule-list">
         <p><strong>入场</strong>{bidKingCostText(bidMap)}</p>
+        <p><strong>状态</strong>{access.canEnter ? '可入场' : access.reasons.join(' / ')}</p>
         <p><strong>起始资金</strong>{formatCompactCurrency(initialCash)} · 档位 {bidKingInitialCashChoices().map(formatCompactCurrency).join(' / ')}</p>
         <p><strong>产出</strong>{bidMap.item_count_min}-{bidMap.item_count_max} 件 · {bidKingBidMapDesc(bidMap)}</p>
         <p><strong>最低价池</strong>{minBidRanges?.join(' / ') || '-'}</p>
@@ -416,6 +431,46 @@ function RoleDetailView({
       </button>
     </div>
   );
+}
+
+function RoleChoiceButton({
+  role,
+  selected,
+  state,
+  onSelect
+}: {
+  role: RoleDefinition;
+  selected: boolean;
+  state: string;
+  onSelect: () => void;
+}): JSX.Element {
+  const selectable = state !== 'locked';
+  return (
+    <button
+      className={`${selected ? 'selected' : ''} ${selectable ? `state-${state}` : 'locked'}`}
+      disabled={!selectable}
+      onClick={onSelect}
+      style={{ '--role-color': role.color } as CSSProperties}
+      title={selectable ? heroStateLabel(state) : '竞买人尚未解锁'}
+      type="button"
+    >
+      <img src={roleAvatarForRoleId(role.id)} alt="" loading="lazy" />
+      <span>{role.name}</span>
+    </button>
+  );
+}
+
+function heroStateLabel(state: string): string {
+  if (state === 'owned') {
+    return '已拥有';
+  }
+  if (state === 'free') {
+    return '限免';
+  }
+  if (state === 'trial') {
+    return '体验';
+  }
+  return '未拥有';
 }
 
 function DetailStat({ label, value }: { label: string; value: string }): JSX.Element {

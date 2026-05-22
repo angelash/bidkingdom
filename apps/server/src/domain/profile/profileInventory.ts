@@ -1,4 +1,10 @@
 import type { PlayerInventoryEntry, PlayerProfile } from '@bitkingdom/shared';
+import {
+  addStockItemsForInventoryRef,
+  consumeStockItemsForInventoryRef,
+  ensureProfileStockState,
+  isStockBackedInventoryRef
+} from './profileStockRuntime';
 
 export function inventoryRecord(profile: PlayerProfile): Record<string, number> {
   const record: Record<string, number> = {};
@@ -14,6 +20,9 @@ export function canonicalCodexItemId(itemId: string): string {
 }
 
 export function addInventory(profile: PlayerProfile, type: string, refId: string, quantity: number, sourceId: string): void {
+  if (isStockBackedInventoryRef(refId)) {
+    ensureProfileStockState(profile);
+  }
   const key = `${type}:${refId}`;
   let entry: PlayerInventoryEntry | undefined = profile.inventory.find((candidate) => candidate.key === key);
   if (!entry) {
@@ -29,6 +38,7 @@ export function addInventory(profile: PlayerProfile, type: string, refId: string
   const before = entry.quantity;
   entry.quantity += quantity;
   entry.updatedAt = Date.now();
+  addStockItemsForInventoryRef(profile, refId, quantity, sourceId, entry.updatedAt);
   // Inventory transactions use the quantity counter for audit readability.
   profile.updatedAt = Date.now();
   void before;
@@ -37,13 +47,16 @@ export function addInventory(profile: PlayerProfile, type: string, refId: string
 
 export function inventoryQuantity(profile: PlayerProfile, itemId: number | string): number {
   return profile.inventory
-    .filter((entry) => entry.refId === String(itemId))
+    .filter((entry) => inventoryRefMatches(entry.refId, itemId))
     .reduce((sum, entry) => sum + entry.quantity, 0);
 }
 
 export function consumeInventory(profile: PlayerProfile, itemId: number | string, quantity: number): void {
+  if (isStockBackedInventoryRef(itemId)) {
+    ensureProfileStockState(profile);
+  }
   let remaining = quantity;
-  for (const entry of profile.inventory.filter((candidate) => candidate.refId === String(itemId))) {
+  for (const entry of profile.inventory.filter((candidate) => inventoryRefMatches(candidate.refId, itemId))) {
     if (remaining <= 0) {
       break;
     }
@@ -53,5 +66,16 @@ export function consumeInventory(profile: PlayerProfile, itemId: number | string
     remaining -= consumed;
   }
   profile.inventory = profile.inventory.filter((entry) => entry.quantity > 0);
+  consumeStockItemsForInventoryRef(profile, itemId, quantity);
   profile.updatedAt = Date.now();
+}
+
+function inventoryRefMatches(left: number | string, right: number | string): boolean {
+  return sourceInventoryItemId(left) === sourceInventoryItemId(right);
+}
+
+function sourceInventoryItemId(value: number | string): string {
+  const raw = String(value);
+  const compatMatch = /^compat_(\d+)/.exec(raw);
+  return compatMatch?.[1] ?? raw;
 }

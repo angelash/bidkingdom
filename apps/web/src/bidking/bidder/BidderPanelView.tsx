@@ -6,6 +6,7 @@ import {
   type BidKingHeroSkinRuntime
 } from '@bitkingdom/bidking-compat';
 import { gameConfig } from '@bitkingdom/config';
+import { bidKingHeroIdForRoleId, bidKingHeroStateFromProfile } from '@bitkingdom/match-core';
 import type { PlayerProfile } from '@bitkingdom/shared';
 import { roleAvatarForRoleId, rolePortraitForRoleId } from '../../artAssets';
 import {
@@ -25,6 +26,7 @@ interface BidderPanelViewProps {
   selectedRoleId: string;
   onClose: () => void;
   onSelectHeroSkin: (skinId: number) => void;
+  onUnlockHero: (heroId: number) => void;
   onSelectRole: (roleId: string) => void;
 }
 
@@ -34,16 +36,17 @@ export function BidderPanelView({
   selectedRoleId,
   onClose,
   onSelectHeroSkin,
+  onUnlockHero,
   onSelectRole
 }: BidderPanelViewProps): JSX.Element {
   const [tab, setTab] = useState<BidderTab>('detail');
   const [focusedRoleId, setFocusedRoleId] = useState(selectedRoleId);
   const [previewCue, setPreviewCue] = useState<BidKingSoundCue>();
   const focusedRole = roles.find((role) => role.id === focusedRoleId) ?? roles[0]!;
-  const focusedIndex = roles.findIndex((role) => role.id === focusedRole.id);
-  const owned = focusedIndex >= 0 && focusedIndex < 8;
+  const sourceHeroId = bidKingHeroIdForRoleId(focusedRole.id, roles);
+  const heroState = bidKingHeroStateFromProfile(profile, sourceHeroId);
+  const selectable = heroState.state !== 'locked';
   const skill = roleSkillDetails[focusedRole.skillId];
-  const sourceHeroId = 101 + Math.max(0, focusedIndex);
   const skinRows = bidKingHeroSkins.filter((skin) => skin.skinhero === sourceHeroId);
   const skinRuntimes = skinRows.map((skin) => bidKingHeroSkinRuntime(skin));
   const selectedSkinId = profile.selectedHeroSkins?.[String(sourceHeroId)];
@@ -57,7 +60,7 @@ export function BidderPanelView({
   })));
 
   function chooseRole(): void {
-    if (owned) {
+    if (selectable) {
       onSelectRole(focusedRole.id);
     }
   }
@@ -148,33 +151,35 @@ export function BidderPanelView({
 
         <aside className="bidder-roster">
           <div className="bidder-roster-grid">
-            {roles.slice(0, 20).map((role, index) => {
-              const roleOwned = index < 8;
+            {roles.slice(0, 20).map((role) => {
+              const state = bidKingHeroStateFromProfile(profile, bidKingHeroIdForRoleId(role.id, roles));
+              const roleSelectable = state.state !== 'locked';
               return (
                 <button
-                  className={`${role.id === focusedRole.id ? 'selected' : ''} ${roleOwned ? 'owned' : 'locked'}`}
+                  className={`${role.id === focusedRole.id ? 'selected' : ''} ${roleSelectable ? 'owned' : 'locked'} state-${state.state}`}
                   key={role.id}
                   onClick={() => setFocusedRoleId(role.id)}
+                  title={heroStateLabel(state.state)}
                   type="button"
                 >
                   <img src={roleAvatarForRoleId(role.id)} alt="" loading="lazy" />
-                  {!roleOwned && <Lock size={16} />}
+                  {!roleSelectable && <Lock size={16} />}
                 </button>
               );
             })}
           </div>
           <div className="bidder-action">
-            {owned ? (
+            {selectable ? (
               <>
-                <span>已拥有</span>
+                <span>{heroStateLabel(heroState.state)}</span>
                 <button className="primary" type="button" onClick={chooseRole} disabled={selectedRoleId === focusedRole.id}>
                   {selectedRoleId === focusedRole.id ? '已选用' : '选用'}
                 </button>
               </>
             ) : (
               <>
-                <span>380</span>
-                <button className="primary buy" type="button">购买</button>
+                <span>{heroCostLabel(heroState.accessCost)}</span>
+                <button className="primary buy" type="button" onClick={() => onUnlockHero(sourceHeroId)}>购买</button>
               </>
             )}
           </div>
@@ -182,6 +187,26 @@ export function BidderPanelView({
       </section>
     </FullScreenPanel>
   );
+}
+
+function heroStateLabel(state: string): string {
+  if (state === 'owned') {
+    return '已拥有';
+  }
+  if (state === 'free') {
+    return '限免';
+  }
+  if (state === 'trial') {
+    return '体验';
+  }
+  return '未拥有';
+}
+
+function heroCostLabel(cost: ReturnType<typeof bidKingHeroStateFromProfile>['accessCost']): string {
+  if (!cost) {
+    return '待开放';
+  }
+  return `${cost.label} ${cost.quantity.toLocaleString()}`;
 }
 
 function HeroSkinPreview({

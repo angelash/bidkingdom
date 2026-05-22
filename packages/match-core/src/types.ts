@@ -1,5 +1,6 @@
 import type {
   AuctionMode,
+  BidKingUserSelectItemDataSnapshot,
   Clue,
   CoreAuctionMode,
   FinalMatchSummary,
@@ -24,6 +25,9 @@ export interface CreateMatchPlayer {
   name: string;
   kind: 'human' | 'bot';
   roleId: string;
+  heroCid?: number;
+  heroSkinCid?: number;
+  selectedItemList?: BidKingUserSelectItemDataSnapshot[];
 }
 
 export interface RuntimePlayer {
@@ -32,6 +36,9 @@ export interface RuntimePlayer {
   name: string;
   kind: 'human' | 'bot';
   roleId: string;
+  heroCid?: number;
+  heroSkinCid?: number;
+  selectedItemList?: BidKingUserSelectItemDataSnapshot[];
   cash: number;
   status: PublicPlayer['status'];
   passed: boolean;
