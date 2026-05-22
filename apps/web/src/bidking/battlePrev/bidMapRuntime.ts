@@ -32,7 +32,7 @@ export function buildBidKingBattleMapGroups(): BidKingBattleMapGroup[] {
   const minY = Math.min(...ys, -260);
   const maxY = Math.max(...ys, 260);
 
-  return openParents
+  const groups = openParents
     .map((parent, index) => {
       const children = fallbackBidMaps
         .filter((bidMap) => bidMap.parent_map_id === parent.id)
@@ -50,6 +50,7 @@ export function buildBidKingBattleMapGroups(): BidKingBattleMapGroup[] {
     })
     .filter((group): group is BidKingBattleMapGroup => Boolean(group))
     .sort((left, right) => left.parent.id - right.parent.id);
+  return spreadBattleMapGroups(groups);
 }
 
 function normalizeMapCoordinate(value: number, min: number, max: number, low: number, high: number): number {
@@ -57,6 +58,34 @@ function normalizeMapCoordinate(value: number, min: number, max: number, low: nu
     return (low + high) / 2;
   }
   return Math.round(low + ((value - min) / (max - min)) * (high - low));
+}
+
+function spreadBattleMapGroups(groups: BidKingBattleMapGroup[]): BidKingBattleMapGroup[] {
+  const result = groups.map((group) => ({ ...group }));
+  for (let pass = 0; pass < 4; pass += 1) {
+    for (let index = 0; index < result.length; index += 1) {
+      const current = result[index]!;
+      for (let previousIndex = 0; previousIndex < index; previousIndex += 1) {
+        const previous = result[previousIndex]!;
+        const dx = Math.abs(current.x - previous.x);
+        const dy = Math.abs(current.y - previous.y);
+        if (dx >= 17 || dy >= 13) {
+          continue;
+        }
+        const verticalDirection = current.y >= previous.y ? 1 : -1;
+        current.y = clampMapPercent(current.y + verticalDirection * (13 - dy + 2), 14, 80);
+        if (Math.abs(current.x - previous.x) < 17 && Math.abs(current.y - previous.y) < 13) {
+          const horizontalDirection = current.x >= previous.x ? 1 : -1;
+          current.x = clampMapPercent(current.x + horizontalDirection * (17 - dx + 2), 10, 90);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+function clampMapPercent(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.round(value)));
 }
 
 function parentMapForBidMap(bidMap?: BidKingBidMapRow): BidKingMapRow | undefined {

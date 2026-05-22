@@ -280,6 +280,7 @@ export function BidKingApp(): JSX.Element {
           serverUrl={SERVER_URL}
           authError={authError}
           onChangeAccountPassword={changeAccountPassword}
+          onReportException={reportException}
           onSetBotCount={setBotCount}
           onLogoutAllAccounts={logoutAllAccounts}
           onLogoutAccount={logoutAccount}

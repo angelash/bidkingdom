@@ -2257,10 +2257,10 @@ h1 {
   position: absolute;
   left: var(--node-x);
   top: var(--node-y);
-  width: 190px;
-  min-height: 88px;
+  width: 178px;
+  min-height: 80px;
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 50px minmax(0, 1fr);
   grid-template-areas:
     "art title"
     "art source";
@@ -2291,8 +2291,8 @@ h1 {
 
 .battle-prev-node span {
   grid-area: art;
-  width: 56px;
-  height: 56px;
+  width: 50px;
+  height: 50px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 5px;
   background: var(--node-art) center / cover no-repeat;
@@ -2339,7 +2339,7 @@ h1 {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 12px;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .battle-prev-tabs {
@@ -2421,8 +2421,12 @@ h1 {
 }
 
 .battle-prev-map-rules {
+  min-height: 0;
+  overflow: auto;
   display: grid;
   gap: 10px;
+  padding-right: 4px;
+  padding-bottom: 12px;
 }
 
 .bidmap-toggle-grid {
@@ -2520,8 +2524,12 @@ h1 {
 }
 
 .battle-prev-hero {
+  min-height: 0;
+  overflow: auto;
   display: grid;
   gap: 10px;
+  padding-right: 4px;
+  padding-bottom: 12px;
 }
 
 .battle-prev-hero .role-detail-view {
@@ -2552,6 +2560,12 @@ h1 {
   outline-offset: 1px;
 }
 
+.battle-prev-role-grid button.locked {
+  cursor: not-allowed;
+  filter: grayscale(0.82);
+  opacity: 0.56;
+}
+
 .battle-prev-role-grid img {
   width: 42px;
   height: 42px;
@@ -2560,8 +2574,12 @@ h1 {
 }
 
 .battle-prev-settings {
+  min-height: 0;
+  overflow: auto;
   display: grid;
   gap: 12px;
+  padding-right: 4px;
+  padding-bottom: 12px;
 }
 
 .battle-prev-settings label {
@@ -2597,11 +2615,20 @@ h1 {
 }
 
 .battle-prev-actions {
+  position: relative;
+  z-index: 2;
   display: grid;
   grid-template-columns: 1fr 1.25fr;
   gap: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-top: 12px;
+  margin-top: 0;
+  padding: 12px 0 0;
+  background: linear-gradient(180deg, rgba(12, 11, 10, 0), rgba(12, 11, 10, 0.98) 18px);
+}
+
+.battle-prev-actions .locked-action {
+  cursor: not-allowed;
+  opacity: 0.72;
 }
 
 .home-grid,
@@ -4647,8 +4674,12 @@ button.cabinet-slot {
 }
 
 .battle-prev-items-panel {
+  min-height: 0;
+  overflow: auto;
   display: grid;
   gap: 12px;
+  padding-right: 4px;
+  padding-bottom: 12px;
 }
 
 .battle-prev-items-panel > header {

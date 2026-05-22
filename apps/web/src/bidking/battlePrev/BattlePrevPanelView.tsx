@@ -28,6 +28,7 @@ import { gameConfig } from '@bitkingdom/config';
 import type { CoreAuctionMode, PlayerProfile } from '@bitkingdom/shared';
 import { containerArtForKey, roleAvatarForRoleId, rolePortraitForRoleId } from '../../artAssets';
 import { roleSkillDetails } from '../bidder/roleSkillDetails';
+import type { GameExceptionInput } from '../system/gameExceptionRuntime';
 
 export type BattlePrevTab = 'map' | 'hero' | 'items' | 'settings';
 
@@ -54,6 +55,7 @@ interface BattlePrevPanelViewProps {
   onSelectCoreAuctionMode: (mode: CoreAuctionMode) => void;
   onSelectBidMap: (bidMapId: number) => void;
   onSelectRole: (roleId: string) => void;
+  onReportException: (exception: GameExceptionInput) => void;
   onEquipBattleItems: (itemIds: number[]) => void;
   onSetBotCount: (value: number) => void;
   onSetTab: (tab: BattlePrevTab) => void;
@@ -73,6 +75,7 @@ export function BattlePrevPanelView({
   onSelectCoreAuctionMode,
   onSelectBidMap,
   onSelectRole,
+  onReportException,
   onEquipBattleItems,
   onSetBotCount,
   onSetTab
@@ -93,6 +96,48 @@ export function BattlePrevPanelView({
     { id: 'items', label: '试宝令', icon: <Archive size={16} /> },
     { id: 'settings', label: '局规', icon: <Shield size={16} /> }
   ] satisfies Array<{ id: BattlePrevTab; label: string; icon: ReactNode }>;
+
+  function reportBlockedBidMap(bidMap: BidKingBidMapRow, reasons: string[]): void {
+    onReportException({
+      action: 'dismiss',
+      code: `BID_MAP_LOCKED_${bidMap.id}`,
+      context: {
+        bidMapId: bidMap.id,
+        reasons
+      },
+      key: `battle-prev-bid-map-locked:${bidMap.id}:${reasons.join('|')}`,
+      kind: 'system',
+      message: `${bidKingDisplayBidMapName(bidMap)}暂不能开拍：${reasons.join('、')}。`,
+      modal: true,
+      source: '入场校验',
+      title: '暂未满足开拍条件',
+      tone: 'warning'
+    });
+  }
+
+  function selectOrReportBidMap(bidMap: BidKingBidMapRow): void {
+    const access = bidKingBidMapAccess(profile, bidMap.id);
+    if (!access.canEnter) {
+      reportBlockedBidMap(bidMap, access.reasons);
+      return;
+    }
+    onSelectBidMap(bidMap.id);
+  }
+
+  function reportLockedRole(role: RoleDefinition): void {
+    onReportException({
+      action: 'dismiss',
+      code: `HERO_LOCKED_${role.id}`,
+      context: { roleId: role.id },
+      key: `battle-prev-role-locked:${role.id}`,
+      kind: 'system',
+      message: `${role.name}尚未解锁，暂不能作为本局竞买人出场。`,
+      modal: true,
+      source: '竞买人校验',
+      title: '竞买人未解锁',
+      tone: 'warning'
+    });
+  }
 
   return (
     <div className="battle-prev-backdrop" onMouseDown={onCancel}>
@@ -129,9 +174,8 @@ export function BattlePrevPanelView({
               return (
                 <button
                   className={`battle-prev-node risk-${sample.risk} mode-${mode} ${selected ? 'selected' : ''} ${access.canEnter ? '' : 'locked'}`}
-                  disabled={!access.canEnter}
                   key={group.parent.id}
-                  onClick={() => onSelectBidMap((firstAvailable ?? sample).id)}
+                  onClick={() => selectOrReportBidMap(firstAvailable ?? sample)}
                   style={{
                     '--node-x': `${group.x}%`,
                     '--node-y': `${group.y}%`,
@@ -181,7 +225,8 @@ export function BattlePrevPanelView({
                 <BidKingBidMapSelector
                   bidMaps={selectedGroup.children}
                   selectedBidMapId={selectedBidMap.id}
-                  onSelect={onSelectBidMap}
+                  onReportBlocked={reportBlockedBidMap}
+                  onSelect={selectOrReportBidMap}
                   profile={profile}
                 />
                 <BidKingRuleSummary bidMap={selectedBidMap} profile={profile} rankMap={selectedRankMap} />
@@ -199,6 +244,7 @@ export function BattlePrevPanelView({
                       selected={role.id === selectedRoleId}
                       state={bidKingHeroStateFromProfile(profile, bidKingHeroIdForRoleId(role.id, gameConfig.roles)).state}
                       onSelect={() => onSelectRole(role.id)}
+                      onReportLocked={() => reportLockedRole(role)}
                     />
                   ))}
                 </div>
@@ -231,7 +277,17 @@ export function BattlePrevPanelView({
 
             <footer className="battle-prev-actions">
               <button type="button" onClick={onCancel}>返回珍宝局</button>
-              <button className="primary" type="button" onClick={onConfirm} disabled={!selectedAccess.canEnter}>
+              <button
+                className={`primary ${selectedAccess.canEnter ? '' : 'locked-action'}`}
+                type="button"
+                onClick={() => {
+                  if (!selectedAccess.canEnter) {
+                    reportBlockedBidMap(selectedBidMap, selectedAccess.reasons);
+                    return;
+                  }
+                  onConfirm();
+                }}
+              >
                 <Play size={18} />
                 {selectedAccess.canEnter ? '确认开拍' : selectedAccess.reasons[0]}
               </button>
@@ -299,11 +355,13 @@ function BidKingBidMapSelector({
   bidMaps,
   selectedBidMapId,
   onSelect,
+  onReportBlocked,
   profile
 }: {
   bidMaps: BidKingBidMapRow[];
   selectedBidMapId: number;
-  onSelect: (bidMapId: number) => void;
+  onSelect: (bidMap: BidKingBidMapRow) => void;
+  onReportBlocked: (bidMap: BidKingBidMapRow, reasons: string[]) => void;
   profile: PlayerProfile;
 }): JSX.Element {
   return (
@@ -313,9 +371,8 @@ function BidKingBidMapSelector({
         return (
           <button
             className={`${bidMap.id === selectedBidMapId ? 'selected' : ''} ${access.canEnter ? '' : 'locked'}`}
-            disabled={!access.canEnter}
             key={bidMap.id}
-            onClick={() => onSelect(bidMap.id)}
+            onClick={() => access.canEnter ? onSelect(bidMap) : onReportBlocked(bidMap, access.reasons)}
             title={access.canEnter ? undefined : access.reasons.join('、')}
             type="button"
           >
@@ -439,19 +496,20 @@ function RoleChoiceButton({
   role,
   selected,
   state,
-  onSelect
+  onSelect,
+  onReportLocked
 }: {
   role: RoleDefinition;
   selected: boolean;
   state: string;
   onSelect: () => void;
+  onReportLocked: () => void;
 }): JSX.Element {
   const selectable = state !== 'locked';
   return (
     <button
       className={`${selected ? 'selected' : ''} ${selectable ? `state-${state}` : 'locked'}`}
-      disabled={!selectable}
-      onClick={onSelect}
+      onClick={selectable ? onSelect : onReportLocked}
       style={{ '--role-color': role.color } as CSSProperties}
       title={selectable ? heroStateLabel(state) : '竞买人尚未解锁'}
       type="button"

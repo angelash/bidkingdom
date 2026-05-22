@@ -47,6 +47,7 @@ import {
   translateBidKingLanguage,
   type BidKingStartupNotice
 } from '../system/bidKingSystemRuntime';
+import type { GameExceptionInput } from '../system/gameExceptionRuntime';
 import { TaskDetailPanel } from '../task/TaskDetailPanel';
 import { taskBoardDefinitions } from '../task/taskDefinitions';
 
@@ -119,6 +120,7 @@ export function MainHallView({
   onUpdateSettings,
   onApplyLanguageName,
   onChangeAccountPassword,
+  onReportException,
   onSetBotCount,
   onLogoutAllAccounts,
   onLogoutAccount,
@@ -186,6 +188,7 @@ export function MainHallView({
   onUpdateSettings: (settings: Record<string, string | number | boolean>) => void;
   onApplyLanguageName: () => void;
   onChangeAccountPassword: (currentPassword: string, nextPassword: string) => Promise<void>;
+  onReportException: (exception: GameExceptionInput) => void;
   onSetBotCount: (value: number) => void;
   onLogoutAllAccounts: () => void;
   onLogoutAccount: () => void;
@@ -576,6 +579,7 @@ export function MainHallView({
           onSelectCoreAuctionMode={onSelectCoreAuctionMode}
           onSelectBidMap={selectBattleBidMap}
           onSelectRole={onSelectRole}
+          onReportException={onReportException}
           onEquipBattleItems={onEquipBattleItems}
           onSetBotCount={onSetBotCount}
           onSetTab={setBattlePrevTab}

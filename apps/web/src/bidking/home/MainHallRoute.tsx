@@ -7,6 +7,7 @@ import { codexCatalogItems } from '../catalog/codexRuntime';
 import type { ProfileActions } from '../profile/useProfileActions';
 import type { RoomActions } from '../room/useRoomActions';
 import { MainHallView } from './MainHallView';
+import type { GameExceptionInput } from '../system/gameExceptionRuntime';
 
 interface MainHallRouteProps {
   botCount: number;
@@ -23,6 +24,7 @@ interface MainHallRouteProps {
   serverUrl: string;
   authError?: string;
   onChangeAccountPassword: (currentPassword: string, nextPassword: string) => Promise<void>;
+  onReportException: (exception: GameExceptionInput) => void;
   onSetBotCount: (value: number) => void;
   onLogoutAllAccounts: () => void;
   onLogoutAccount: () => void;
@@ -45,6 +47,7 @@ export function MainHallRoute({
   serverUrl,
   authError,
   onChangeAccountPassword,
+  onReportException,
   onSetBotCount,
   onLogoutAllAccounts,
   onLogoutAccount,
@@ -117,6 +120,7 @@ export function MainHallRoute({
       onUpdateSettings={profileActions.updateProfileSettings}
       onApplyLanguageName={profileActions.applyLanguageName}
       onChangeAccountPassword={onChangeAccountPassword}
+      onReportException={onReportException}
       onSetBotCount={onSetBotCount}
       onLogoutAllAccounts={onLogoutAllAccounts}
       onLogoutAccount={onLogoutAccount}
