@@ -151,6 +151,7 @@ function revealKindName(kind: string): string {
   const names: Record<string, string> = {
     category: '品类',
     footprint: '轮廓',
+    identity: '本体',
     quality: '品质',
     quantity: '数量',
     risk: '风险',

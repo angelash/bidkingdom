@@ -473,7 +473,31 @@ function buildBidKingSkillClue(
     };
   }
 
-  if ([5, 6].includes(effect.Category)) {
+  if ([2, 3, 4].includes(effect.Category)) {
+    const targetItems = selectedSlots.length > 0 ? selectedSlots.map((slot) => slot.item) : core.hiddenItems;
+    const totalCells = targetItems.reduce((sum, item) => sum + item.footprint.w * item.footprint.h, 0);
+    const value = effect.Category === 2
+      ? totalCells
+      : effect.Category === 3
+        ? Math.round(totalCells / Math.max(1, targetItems.length))
+        : targetItems.length;
+    const label = effect.Category === 2
+      ? '总占格'
+      : effect.Category === 3
+        ? '平均占格'
+        : '命中数量';
+    return {
+      id: clueId,
+      kind: 'category',
+      text: `${hero.packaged_name}·${skillName}：${label}为 ${value}。`,
+      accuracy: trigger === 'manual' ? 0.9 : 0.84,
+      targetItemIds: scanSlots.map((slot) => slot.item.id),
+      source: 'skill',
+      isTruthful: true
+    };
+  }
+
+  if (effect.Category === 5) {
     const target = selectedSlots[0] ?? [...core.warehouseSlots].sort((left, right) => right.item.value - left.item.value)[0];
     if (!target) {
       return undefined;
@@ -489,6 +513,23 @@ function buildBidKingSkillClue(
         min: Math.max(1000, Math.round(target.item.value * 0.9)),
         max: Math.max(2000, Math.round(target.item.value * 1.1))
       },
+      source: 'skill',
+      isTruthful: true
+    };
+  }
+
+  if (effect.Category === 6) {
+    const target = selectedSlots[0] ?? scanSlots[0];
+    if (!target) {
+      return undefined;
+    }
+    return {
+      id: clueId,
+      kind: 'category',
+      text: `${hero.packaged_name}·${skillName}：显示藏品本体，${target.item.name}，${target.item.category}，品质接近${rarityNameForText(target.item.rarity)}。`,
+      accuracy: 0.9,
+      targetItemId: target.item.id,
+      targetItemIds: [target.item.id],
       source: 'skill',
       isTruthful: true
     };
@@ -511,12 +552,34 @@ function buildBidKingSkillClue(
     };
   }
 
+  if (effect.Category === 14) {
+    const target = selectedSlots[0] ?? [...core.warehouseSlots].sort((left, right) => right.item.value - left.item.value)[0];
+    if (!target) {
+      return undefined;
+    }
+    const digits = Math.max(1, String(Math.max(0, Math.floor(target.item.value))).length);
+    const min = digits === 1 ? 0 : 10 ** (digits - 1);
+    const max = 10 ** digits - 1;
+    return {
+      id: clueId,
+      kind: 'value',
+      text: `${hero.packaged_name}·${skillName}：命中格价格为 ${digits} 位数。`,
+      accuracy: 0.82,
+      targetItemId: target.item.id,
+      targetItemIds: [target.item.id],
+      valueHint: { min, max },
+      source: 'skill',
+      isTruthful: true
+    };
+  }
+
   if ([1, 11, 22].includes(effect.Category)) {
     const targets = scanSlots.length > 0 ? scanSlots : shuffleByRng(core.warehouseSlots, state).slice(0, trigger === 'manual' ? 3 : 2);
+    const label = effect.Category === 11 ? '占格数' : '占位轮廓';
     return {
       id: clueId,
       kind: 'category',
-      text: `${hero.packaged_name}·${skillName}：揭示 ${targets.length} 个命中格的占位轮廓。`,
+      text: `${hero.packaged_name}·${skillName}：揭示 ${targets.length} 个命中格的${label}。`,
       accuracy: 0.86,
       targetItemIds: targets.map((slot) => slot.item.id),
       source: 'skill',

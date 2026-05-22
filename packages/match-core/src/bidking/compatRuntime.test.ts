@@ -210,6 +210,35 @@ describe('BidKing compatible core runtime', () => {
     expect(buildSnapshot(match, 'p1').public.players[0]?.bidRanks?.[0]?.usedSkillName).toBeTruthy();
   });
 
+  it('preserves source SkillEffect count and identity categories for skills and items', () => {
+    const countHero = Hero.find((hero) => hero.cast_type.includes(100106));
+    const identitySkill = skillById(200021);
+    const identityEffect = skillEffectById(identitySkill?.skilleffect_position[0] ?? 0);
+    if (!countHero || !identitySkill || !identityEffect) {
+      throw new Error('BidKing fixtures must include count and identity skill effects');
+    }
+    const match = createMatch({
+      id: 'compat-skill-effect-categories',
+      players: players.map((player) => player.id === 'p1' ? { ...player, heroCid: countHero.id } : player),
+      seed: 91012,
+      coreMode: true,
+      coreAuctionMode: 'sealed'
+    });
+    startNextRound(match, 1000);
+    setRoundPhase(match, 'intel', 3200, 1200);
+
+    useSkill(match, 'p1', undefined, 1300);
+
+    const clue = match.players[0]?.privateClues.at(-1);
+    const plan = battleItemEffectPlanForItem(BattleItem[0]!, { skill: identitySkill, effect: identityEffect });
+    expect(clue?.text).toContain('命中数量');
+    expect(clue?.text).not.toContain('合计价值');
+    expect(plan.revealKind).toBe('identity');
+    expect(plan.identityHint).toBe(true);
+    expect(plan.implementationStatus).toBe('implemented');
+    expect(plan.description).toContain('藏品本体');
+  });
+
   it('links every Hero cast skill and every Skill effect to original SkillEffect rows', () => {
     const missingHeroSkills: Array<{ heroId: number; skillId: number }> = [];
     const missingSkillEffects: Array<{ skillId: number; effectId: number }> = [];

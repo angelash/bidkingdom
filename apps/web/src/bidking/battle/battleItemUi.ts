@@ -123,6 +123,7 @@ function revealKindLabel(kind: BattleItemEffectPlan['revealKind']): string {
   const labels: Record<BattleItemEffectPlan['revealKind'], string> = {
     category: '品类',
     footprint: '轮廓',
+    identity: '本体',
     quality: '品质',
     quantity: '数量',
     risk: '风险',

@@ -12,7 +12,7 @@ import type { Clue, SkillFeedEntry } from '@bitkingdom/shared';
 import { pushEvent, requirePlayer, requireRound } from './match';
 import type { MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } from './types';
 
-export type BattleItemRevealKind = 'value' | 'risk' | 'category' | 'quality' | 'quantity' | 'footprint';
+export type BattleItemRevealKind = 'value' | 'risk' | 'category' | 'quality' | 'quantity' | 'footprint' | 'identity';
 export type BattleItemTargetMode = 'skill_target' | 'highest_value' | 'risk_first' | 'largest_slots';
 export type BattleItemEffectImplementationStatus = 'implemented' | 'simplified';
 
@@ -45,6 +45,7 @@ export interface BattleItemEffectPlan {
   categoryHint: boolean;
   qualityHint: boolean;
   quantityHint: boolean;
+  identityHint: boolean;
   implementationStatus: BattleItemEffectImplementationStatus;
   description: string;
 }
@@ -224,6 +225,7 @@ export function battleItemEffectPlanForItem(
     categoryHint: revealKind === 'category',
     qualityHint: revealKind === 'quality',
     quantityHint: revealKind === 'quantity' || revealKind === 'footprint',
+    identityHint: revealKind === 'identity',
     implementationStatus: battleItemEffectImplementationStatus(revealKind, effectCategory),
     description: battleItemEffectDescription(item, skill, effect, revealKind, targetCount)
   };
@@ -261,6 +263,19 @@ function buildBattleItemClue(
     };
   }
   const target = targetItems[0] ?? round.container.hiddenItems[0]!;
+  if (effectPlan.revealKind === 'identity') {
+    return {
+      id: prefix,
+      kind: 'category',
+      text: `${itemName}·${skillName ?? '辨形'}：显示藏品本体，${target.name}，${target.category}，品质接近${target.rarity}。`,
+      accuracy: Math.min(0.97, 0.7 + item.item_quality * 0.045),
+      targetItemId: target.id,
+      targetItemIds: [target.id],
+      riskHint: target.isFake ? 'fake' : target.repairCost > 0 ? 'repair' : 'safe',
+      source: 'skill',
+      isTruthful: true
+    };
+  }
   const riskHint = target.isFake ? 'fake' : target.repairCost > 0 ? 'repair' : 'safe';
   return {
     id: prefix,
@@ -361,7 +376,10 @@ function battleItemRevealKind(item: BidKingBattleItemRow, effectCategory: number
     if ([7, 12].includes(effectCategory)) {
       return 'quality';
     }
-    if ([1, 6, 22].includes(effectCategory)) {
+    if (effectCategory === 6) {
+      return 'identity';
+    }
+    if ([1, 22].includes(effectCategory)) {
       return 'footprint';
     }
     if ([13].includes(effectCategory)) {
@@ -434,6 +452,9 @@ function battleItemRevealLabel(revealKind: BattleItemRevealKind): string {
   if (revealKind === 'footprint') {
     return '轮廓';
   }
+  if (revealKind === 'identity') {
+    return '藏品本体';
+  }
   return '品类';
 }
 
@@ -453,6 +474,9 @@ function battleItemClueTextForPlan(
   }
   if (effectPlan.revealKind === 'footprint') {
     return `${itemName}·${skillName}：命中格位轮廓 ${target.footprint.w}x${target.footprint.h}，品类 ${target.category}。`;
+  }
+  if (effectPlan.revealKind === 'identity') {
+    return `${itemName}·${skillName}：显示藏品本体，${target.name}，${target.category}，品质接近${target.rarity}。`;
   }
   return `${itemName}·${skillName}：命中格位属于${target.category}，品质接近${target.rarity}。`;
 }
