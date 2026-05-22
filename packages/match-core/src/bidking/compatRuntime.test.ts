@@ -292,6 +292,41 @@ describe('BidKing compatible core runtime', () => {
     expect(Emoji.map((row) => bidKingRawTableDisplayName(row))).toContain(action.emote);
   });
 
+  it('binds core bot bidding to heroCid and source RankAi bid ratios', () => {
+    const botHero = Hero[9]!;
+    const match = createMatch({
+      id: 'probe-bot-ai',
+      players: players.map((player) => player.id === 'p2' ? { ...player, heroCid: botHero.id } : player),
+      seed: 12345,
+      coreMode: true,
+      coreAuctionMode: 'sealed'
+    });
+    startNextRound(match, 1000);
+    match.players.forEach((player) => {
+      player.cash = 1_000_000;
+    });
+    const bot = match.players.find((player) => player.id === 'p2')!;
+    bot.skillCooldown = 1;
+    bot.skillUsesRemaining = 0;
+    setRoundPhase(match, 'auction', 60000, 1200);
+
+    const action = chooseBotAction(match, bot.id, 'mentor');
+
+    const seatHero = Hero[bot.seat % Hero.length]!;
+    const expectedRankAi = RankAi.find((row) =>
+      row.role_id === botHero.id &&
+      row.round_count === match.roundIndex + 1
+    )!;
+    expect(botHero.id).not.toBe(seatHero.id);
+    expect(action.audit?.rankAiRowId).toBe(expectedRankAi.id);
+    expect(action.audit?.rankAiRoleId).toBe(botHero.id);
+    expect(action.audit?.rankAiMinBidRatio).toBeGreaterThan(1000);
+    expect(action.audit?.maxBidRatio).toBeGreaterThan(1);
+    expect(action.audit?.targetBidRatio).toBeGreaterThan(1);
+    expect(action.type).toBe('bid');
+    expect(action.audit?.actionBidRatio).toBeGreaterThan(1);
+  });
+
   it('requires BidKing core manual skills before bidding', () => {
     const match = createMatch({
       id: 'compat-skill-before-bid',

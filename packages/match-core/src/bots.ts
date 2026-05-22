@@ -16,6 +16,8 @@ export interface BotActionAudit {
   rankAiRowId?: number;
   rankAiRoleId?: number;
   rankAiRoundCount?: number;
+  rankAiMinBidRatio?: number;
+  rankAiPkRatio?: number;
   riskAppetite: number;
   bluffChance: number;
   overpayTolerance: number;
@@ -483,7 +485,10 @@ function maxBidForAssessment(
     ? (confidence < 0.48 ? 0.45 : 0.25)
     : confidence < 0.48 ? 0.9 : 0.55;
   const riskFactor = 1 - riskPenalty * riskScale;
-  const raw = estimate * confidenceFactor * styleFactor * riskFactor;
+  const behaviorTreeLimit = estimate * confidenceFactor * styleFactor * riskFactor;
+  const raw = coreMode
+    ? Math.max(behaviorTreeLimit, coreRankAiBidLimit(estimate, confidence, riskPenalty, tuning, round))
+    : behaviorTreeLimit;
   return floorToIncrement(Math.min(availableCash, raw), minIncrement);
 }
 
@@ -503,7 +508,7 @@ function targetBidForAssessment(params: {
   const rankAdjustment = previousRankAdjustment(previous, confidence);
   const confidenceAdjustment = (confidence - 0.5) * 0.2;
   const aggressionAdjustment = (tuning.bidAggression - 0.5) * 0.16;
-  const pkAdjustment = (clamp(tuning.pkRatio / 1000, 0.3, 1.6) - 1) * 0.08;
+  const pkAdjustment = (rankAiPkRatio(tuning, state.coreMode) - 1) * 0.08;
   const modeAdjustment = round.auctionMode === 'second_price'
     ? 0.08
     : round.auctionMode === 'flash'
@@ -515,10 +520,10 @@ function targetBidForAssessment(params: {
     state.coreMode ? 0.44 : 0.32,
     round.index >= 4 ? 1.2 : state.coreMode ? 1.1 : 1.02
   );
-  const tableRatio = clamp(tuning.minBidRatio / 1000, state.coreMode ? 0.62 : 0.35, 1.35);
+  const tableRatio = rankAiMinBidRatio(tuning, state.coreMode);
   const tableAnchor = estimate * tableRatio;
   const rawTarget = state.coreMode
-    ? estimate * commitment * 0.62 + tableAnchor * 0.38
+    ? Math.max(estimate * commitment, tableAnchor * (0.92 + confidence * 0.08))
     : estimate * commitment * 0.78 + tableAnchor * 0.22;
   const competitiveFloor = state.coreMode
     ? estimate * coreCompetitiveBidFloorRatio(round, tuning, confidence, riskPenalty)
@@ -528,7 +533,7 @@ function targetBidForAssessment(params: {
   if (target >= minimum) {
     return roundToIncrement(target, state.config.rules.minIncrement);
   }
-  return shouldBidAtFloor(estimate, minimum, confidence, riskPenalty, round) && maxBid >= minimum
+  return shouldBidAtFloor(estimate, minimum, confidence, riskPenalty, round, tuning, state.coreMode) && maxBid >= minimum
     ? minimum
     : 0;
 }
@@ -554,7 +559,7 @@ function coreCompetitiveBidFloorRatio(
   const base = baseByRound[Math.max(0, Math.min(round.index, baseByRound.length - 1))] ?? 1;
   const confidenceAdjustment = clamp((confidence - 0.5) * 0.18, -0.05, 0.08);
   const aggressionAdjustment = clamp(
-    (tuning.bidAggression - 0.5) * 0.12 + (clamp(tuning.pkRatio / 1000, 0.4, 1.8) - 1) * 0.05,
+    (tuning.bidAggression - 0.5) * 0.12 + (rankAiPkRatio(tuning, true) - 1) * 0.05,
     -0.04,
     0.08
   );
@@ -584,10 +589,15 @@ function shouldBidAtFloor(
   floor: number,
   confidence: number,
   riskPenalty: number,
-  round: RuntimeRound
+  round: RuntimeRound,
+  tuning?: BotTuning,
+  coreMode = false
 ): boolean {
   if (floor <= 0) {
     return estimate > 0;
+  }
+  if (coreMode && tuning && floor <= coreRankAiBidLimit(estimate, confidence, riskPenalty, tuning, round)) {
+    return true;
   }
   const edgeRatio = round.auctionMode === 'second_price'
     ? -0.02
@@ -742,7 +752,7 @@ function chooseOpenAuctionAction(context: BotContext): BotAction {
 function openBidAmount(context: BotContext): number {
   const { state, round, assessment, tuning } = context;
   const nextBid = assessment.nextOpenBid;
-  if (nextBid > assessment.maxBid || !shouldBidAtFloor(assessment.estimate, nextBid, assessment.confidence, assessment.riskPenalty, round)) {
+  if (nextBid > assessment.maxBid || !shouldBidAtFloor(assessment.estimate, nextBid, assessment.confidence, assessment.riskPenalty, round, tuning, state.coreMode)) {
     return 0;
   }
   const closeBid = assessment.desiredCloseBid;
@@ -758,7 +768,7 @@ function openBidAmount(context: BotContext): number {
       ? Math.max(anchoredTarget, closeBid)
       : anchoredTarget;
     const amount = ceilToIncrement(Math.min(assessment.maxBid, pressureTarget), state.config.rules.minIncrement);
-    return amount >= nextBid && shouldBidAtFloor(assessment.estimate, amount, assessment.confidence, assessment.riskPenalty, round)
+    return amount >= nextBid && shouldBidAtFloor(assessment.estimate, amount, assessment.confidence, assessment.riskPenalty, round, tuning, state.coreMode)
       ? amount
       : 0;
   }
@@ -804,7 +814,7 @@ function sealedBidAmount(context: BotContext): number {
   if (amount < minimum || amount > assessment.availableCash) {
     return 0;
   }
-  if (!shouldBidAtFloor(assessment.estimate, amount, assessment.confidence, assessment.riskPenalty, round)) {
+  if (!shouldBidAtFloor(assessment.estimate, amount, assessment.confidence, assessment.riskPenalty, round, tuning, state.coreMode)) {
     return 0;
   }
   return amount;
@@ -860,7 +870,7 @@ function botTuningForPlayer(
 }
 
 function rankAiRowForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
-  const hero = Hero[player.seat % Math.max(1, Hero.length)];
+  const hero = Hero.find((candidate) => candidate.id === player.heroCid) ?? Hero[player.seat % Math.max(1, Hero.length)];
   const roundCount = Math.max(1, state.roundIndex + 1);
   const heroRows = hero ? RankAi.filter((row) => row.role_id === hero.id) : [];
   return heroRows.find((row) => row.round_count === roundCount) ??
@@ -869,6 +879,29 @@ function rankAiRowForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
     RankAi.find((row) => row.round_count === roundCount) ??
     RankAi[(Math.max(0, state.roundIndex) * state.players.length + player.seat) % RankAi.length] ??
     RankAi[0]!;
+}
+
+function rankAiMinBidRatio(tuning: BotTuning, coreMode: boolean): number {
+  return clamp(tuning.minBidRatio / 1000, coreMode ? 0.3 : 0.35, coreMode ? 2 : 1.35);
+}
+
+function rankAiPkRatio(tuning: BotTuning, coreMode: boolean): number {
+  return clamp(tuning.pkRatio / 1000, coreMode ? 0.3 : 0.4, coreMode ? 2 : 1.8);
+}
+
+function coreRankAiBidLimit(
+  estimate: number,
+  confidence: number,
+  riskPenalty: number,
+  tuning: BotTuning,
+  round: RuntimeRound
+): number {
+  const sourceRatio = Math.max(rankAiMinBidRatio(tuning, true), rankAiPkRatio(tuning, true));
+  const confidenceScale = 0.9 + confidence * 0.18;
+  const roundPressure = 0.98 + Math.min(round.index, 4) * 0.015 + (round.index >= 4 ? 0.04 : 0);
+  const riskScale = 1 - riskPenalty * 0.22;
+  const auctionModeScale = round.auctionMode === 'flash' ? 0.94 : round.auctionMode === 'second_price' ? 1.04 : 1;
+  return Math.max(0, estimate * sourceRatio * confidenceScale * roundPressure * riskScale * auctionModeScale);
 }
 
 function weightedRangeValue(
@@ -1029,6 +1062,8 @@ function buildBotActionAudit(context: BotContext, trace: string[], action: BotAc
     rankAiRowId: tuning.rankAiRowId,
     rankAiRoleId: tuning.rankAiRoleId,
     rankAiRoundCount: tuning.rankAiRoundCount,
+    rankAiMinBidRatio: tuning.rankAiRowId !== undefined ? tuning.minBidRatio : undefined,
+    rankAiPkRatio: tuning.rankAiRowId !== undefined ? tuning.pkRatio : undefined,
     riskAppetite: tuning.riskAppetite,
     bluffChance: tuning.bluffChance,
     overpayTolerance: tuning.overpayTolerance,
