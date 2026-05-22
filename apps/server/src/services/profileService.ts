@@ -28,6 +28,7 @@ import {
 } from '../domain/economy/profileMarketRuntime';
 import {
   createSendAuctionForProfile,
+  listSendAuctionGamesForProfile,
   listSendAuctionsForProfile,
   recycleSendAuctionForProfile,
   settleSendAuctionForProfile,
@@ -528,6 +529,10 @@ export function createProfileService(store: ServerStore): ProfileService {
     return listSendAuctionsForProfile(getOrCreateProfile(playerId), includeHistory);
   }
 
+  function listSendAuctionGames(playerId: string) {
+    return listSendAuctionGamesForProfile(getOrCreateProfile(playerId));
+  }
+
   function addDemoFriend(playerId: string): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
     if (addDemoFriendToProfile(profile, recordTransaction)) {
@@ -795,6 +800,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     settleSendAuction,
     recycleSendAuction,
     listSendAuctions,
+    listSendAuctionGames,
     addDemoFriend,
     removeFriend,
     setFriendRemark,

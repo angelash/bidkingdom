@@ -5,6 +5,7 @@ import type {
   ProfileSnapshot,
   ProfileTransaction,
   RankSnapshot,
+  SendAuctionGameState,
   SendAuctionState
 } from '@bitkingdom/shared';
 import type {
@@ -66,6 +67,7 @@ export interface ProfileService {
   settleSendAuction(playerId: string, sendAuctionId: string, finalPrice?: number): ProfileSnapshot;
   recycleSendAuction(playerId: string, slotId: number): ProfileSnapshot;
   listSendAuctions(playerId: string, includeHistory?: boolean): SendAuctionState[];
+  listSendAuctionGames(playerId: string): SendAuctionGameState[];
   addDemoFriend(playerId: string): ProfileSnapshot;
   removeFriend(playerId: string, friendId: string): ProfileSnapshot;
   setFriendRemark(playerId: string, friendId: string, remark: string): ProfileSnapshot;

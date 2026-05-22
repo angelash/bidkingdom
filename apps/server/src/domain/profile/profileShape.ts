@@ -89,6 +89,7 @@ export function ensureProfileShape(profile: PlayerProfile): void {
   profile.claimedGiftPackages ??= [];
   profile.marketOrders ??= [];
   profile.sendAuctions ??= [];
+  profile.sendAuctionGames ??= [];
   profile.purchaseOrders ??= [];
   profile.dlcUnlocks ??= [];
   profile.friends ??= [];

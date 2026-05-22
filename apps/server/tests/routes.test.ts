@@ -240,6 +240,11 @@ describe('server routes', () => {
         payload: { mapCid: 101, itemSelections: [] }
       });
       expect(unauthenticated.statusCode).toBe(401);
+      const unauthenticatedGames = await app.inject({
+        method: 'GET',
+        url: '/api/send-auction/games'
+      });
+      expect(unauthenticatedGames.statusCode).toBe(401);
 
       const { profileId, headers } = await createGuestAuth(app, 'route_send_auction', '路由委托');
       const profile = store.state.profiles[profileId]!;
@@ -290,6 +295,23 @@ describe('server routes', () => {
         status: 'recycled',
         finalPrice: unitValue * 15
       }));
+
+      const games = await app.inject({
+        method: 'GET',
+        url: '/api/send-auction/games',
+        headers
+      });
+      const gamesPayload = JSON.parse(games.payload) as {
+        games: Array<{ sendAuctionId: string; finalPrice: number; gameData: { userLog: Array<{ priceLog: Array<{ itemCidOrPrice: number }> }> } }>;
+      };
+      expect(games.statusCode).toBe(200);
+      expect(gamesPayload.games).toEqual([expect.objectContaining({
+        sendAuctionId: auction.id,
+        finalPrice: unitValue * 15
+      })]);
+      expect(gamesPayload.games[0]?.gameData.userLog.some((user) =>
+        user.priceLog.at(-1)?.itemCidOrPrice === unitValue * 15
+      )).toBe(true);
     });
   });
 

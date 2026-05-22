@@ -899,6 +899,24 @@ export interface SendAuctionState {
   failedAt?: number;
 }
 
+export interface SendAuctionGameState {
+  id: string;
+  sendAuctionId: string;
+  uid: number;
+  playerId: string;
+  playerName: string;
+  mapCid: number;
+  mapName?: string;
+  bidMapId: number;
+  gameData: BidKingGameDataSnapshot;
+  gameOverTime: number;
+  userSkillList: BidKingGameSkillDataSnapshot[];
+  finalPrice: number;
+  totalValue: number;
+  profit: number;
+  createdAt: number;
+}
+
 export interface FriendState {
   id: string;
   name: string;
@@ -1079,6 +1097,7 @@ export interface PlayerProfile {
   claimedGiftPackages?: string[];
   marketOrders: MarketOrderState[];
   sendAuctions?: SendAuctionState[];
+  sendAuctionGames?: SendAuctionGameState[];
   purchaseOrders?: PurchaseOrderState[];
   dlcUnlocks?: string[];
   friends: FriendState[];

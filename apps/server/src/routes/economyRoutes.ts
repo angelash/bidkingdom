@@ -239,6 +239,25 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
     }
   });
 
+  app.get<{
+    Querystring: { playerId?: string };
+  }>('/api/send-auction/games', async (request, reply) => {
+    const { playerId } = request.query;
+    if (!playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    try {
+      return {
+        generatedAt: Date.now(),
+        games: profiles.listSendAuctionGames(playerId)
+      };
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'send auction game list failed' };
+    }
+  });
+
   app.post<{
     Body: { playerId?: string; sendAuctionId?: string; slotId?: number; action?: 'settle' | 'recycle'; finalPrice?: number };
   }>('/api/send-auction/action', async (request, reply) => {

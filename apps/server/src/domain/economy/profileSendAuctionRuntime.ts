@@ -1,15 +1,21 @@
-import { Item, Map as BidKingMap, bidKingMapDisplayName } from '@bitkingdom/bidking-compat';
-import { bidKingEntrustSlotBase } from '@bitkingdom/match-core';
+import { Hero, Item, Map as BidKingMap, RankAi, bidKingMapDisplayName, itemFootprint } from '@bitkingdom/bidking-compat';
+import { bidKingBotHeroIdsForBidMap, bidKingEntrustSlotBase } from '@bitkingdom/match-core';
 import type {
+  BidKingGameDataSnapshot,
+  BidKingGameUserDataSnapshot,
+  BidKingStockBoxDataSnapshot,
+  BidKingStockContainerDataSnapshot,
   PlayerProfile,
   ProfileStockBoxState,
   ProfileStockContainerState,
   ProfileTransaction,
+  SendAuctionGameState,
   SendAuctionItemState,
   SendAuctionState
 } from '@bitkingdom/shared';
 import { randomUUID } from 'node:crypto';
 import { inventoryQuantity } from '../profile/profileInventory';
+import { addCustomMailToProfile } from '../profile/profileMailRuntime';
 import { ensureProfileShape } from '../profile/profileShape';
 
 type BidKingMapRow = (typeof BidKingMap)[number];
@@ -147,6 +153,7 @@ export function settleSendAuctionForProfile(
   now = Date.now()
 ): boolean {
   ensureProfileShape(profile);
+  profile.sendAuctionGames ??= [];
   const auction = profile.sendAuctions!.find((candidate) => candidate.id === sendAuctionId);
   if (!auction) {
     throw new Error('委托不存在');
@@ -154,15 +161,18 @@ export function settleSendAuctionForProfile(
   if (auction.status !== 'listed') {
     return false;
   }
-  const safeFinalPrice = Math.max(0, Math.floor(finalPrice ?? auction.totalValue));
+  const safeFinalPrice = Math.max(0, Math.floor(finalPrice ?? generatedSendAuctionFinalPrice(auction)));
+  const game = buildSendAuctionGameState(profile, auction, safeFinalPrice, now);
   auction.status = 'settled';
   auction.finalPrice = safeFinalPrice;
   auction.profit = safeFinalPrice - auction.totalValue;
   auction.settledAt = now;
   auction.updatedAt = now;
+  profile.sendAuctionGames.unshift(game);
   if (safeFinalPrice > 0) {
     applyNumberChange(profile, `send_auction:${profile.playerId}:${auction.id}:settle:coins`, 'send_auction_settle_coins', 'coins', safeFinalPrice);
   }
+  deliverSendAuctionResultMail(profile, auction, game, 'settled', recordTransaction, now);
   recordTransaction(profile, `send_auction:${profile.playerId}:${auction.id}:settle`, 'send_auction_settle', 'task', 0, 1);
   profile.updatedAt = now;
   return true;
@@ -176,18 +186,22 @@ export function recycleSendAuctionForProfile(
   now = Date.now()
 ): boolean {
   ensureProfileShape(profile);
+  profile.sendAuctionGames ??= [];
   const auction = profile.sendAuctions!.find((candidate) => candidate.slotId === slotId && candidate.status === 'listed');
   if (!auction) {
     throw new Error('委托槽位不存在');
   }
+  const game = buildSendAuctionGameState(profile, auction, auction.totalValue, now);
   auction.status = 'recycled';
   auction.finalPrice = auction.totalValue;
   auction.profit = 0;
   auction.recycledAt = now;
   auction.updatedAt = now;
+  profile.sendAuctionGames.unshift(game);
   if (auction.totalValue > 0) {
     applyNumberChange(profile, `send_auction:${profile.playerId}:${auction.id}:recycle:coins`, 'send_auction_recycle_coins', 'coins', auction.totalValue);
   }
+  deliverSendAuctionResultMail(profile, auction, game, 'recycled', recordTransaction, now);
   recordTransaction(profile, `send_auction:${profile.playerId}:${auction.id}:recycle`, 'send_auction_recycle', 'task', 0, 1);
   profile.updatedAt = now;
   return true;
@@ -198,6 +212,220 @@ export function listSendAuctionsForProfile(profile: PlayerProfile, includeHistor
   return profile.sendAuctions!
     .filter((auction) => includeHistory || auction.status === 'listed')
     .sort((left, right) => right.createdAt - left.createdAt);
+}
+
+export function listSendAuctionGamesForProfile(profile: PlayerProfile): SendAuctionGameState[] {
+  ensureProfileShape(profile);
+  return profile.sendAuctionGames!.sort((left, right) => right.gameOverTime - left.gameOverTime);
+}
+
+function buildSendAuctionGameState(
+  profile: PlayerProfile,
+  auction: SendAuctionState,
+  finalPrice: number,
+  now: number
+): SendAuctionGameState {
+  const stockContainer = toBidKingStockContainer(auction.stockContainer);
+  const userLog = buildSendAuctionUserLog(auction, finalPrice, now);
+  const ownerUid = stableNumericId(profile.playerId);
+  const gameData: BidKingGameDataSnapshot = {
+    uid: `${auction.id}:game:${now}`,
+    mapId: auction.bidMapId,
+    round: 1,
+    stockContainer,
+    userLog,
+    heroSkillLog: [],
+    mapSkillLog: [],
+    itemSkillLog: [],
+    nextRoundTime: now,
+    selectItemCount: 0,
+    roundCanUseItemCount: 1,
+    gameCarryItemMax: 3,
+    gameGoldRateMax: 0,
+    gameType: 1,
+    sendAuctionUserUid: ownerUid,
+    sendAuctionUserName: profile.name,
+    sendAuctionUserHead: 0,
+    sendAuctionHeadBox: 0,
+    sendAuctionUserTitle: 0,
+    serverTime: now
+  };
+  return {
+    id: `send_auction_game_${auction.id}_${now}`,
+    sendAuctionId: auction.id,
+    uid: stableNumericId(`${auction.id}:${now}`),
+    playerId: profile.playerId,
+    playerName: profile.name,
+    mapCid: auction.mapCid,
+    mapName: auction.mapName,
+    bidMapId: auction.bidMapId,
+    gameData,
+    gameOverTime: now,
+    userSkillList: [],
+    finalPrice,
+    totalValue: auction.totalValue,
+    profit: finalPrice - auction.totalValue,
+    createdAt: now
+  };
+}
+
+function toBidKingStockContainer(container: ProfileStockContainerState): BidKingStockContainerDataSnapshot {
+  return {
+    stockId: stableNumericId(`send-auction-stock:${container.stockId}:${container.cid}`),
+    stockCid: container.cid,
+    stockBoxes: container.boxes.map((box) => toBidKingStockBox(container, box)),
+    cabinetLastGetRewardTime: 0,
+    cabinetCumulativeReward: 0,
+    cabinetBasicReward: 0,
+    cabinetReward: 0
+  };
+}
+
+function toBidKingStockBox(container: ProfileStockContainerState, box: ProfileStockBoxState): BidKingStockBoxDataSnapshot {
+  const item = Item.find((candidate) => candidate.id === box.item.cid);
+  const footprint = item ? itemFootprint(item.slot_type) : { w: 1, h: 1 };
+  const x = Math.max(0, box.position % Math.max(1, container.width));
+  const y = Math.max(0, Math.floor(box.position / Math.max(1, container.width)));
+  const positions = [];
+  for (let offsetY = 0; offsetY < footprint.h; offsetY += 1) {
+    for (let offsetX = 0; offsetX < footprint.w; offsetX += 1) {
+      positions.push({ x: x + offsetX, y: y + offsetY });
+    }
+  }
+  return {
+    boxId: box.boxId,
+    position: { x, y },
+    item: {
+      uid: stableNumericId(box.item.uid),
+      cid: box.item.cid,
+      count: box.item.count,
+      boxPositionData: positions,
+      rotate: box.item.rotate,
+      canTrade: box.item.canTrade,
+      no: box.item.no,
+      isLock: box.item.isLock,
+      quality: box.item.quality,
+      sourceItemId: String(box.item.cid)
+    }
+  };
+}
+
+function buildSendAuctionUserLog(auction: SendAuctionState, finalPrice: number, now: number): BidKingGameUserDataSnapshot[] {
+  const heroIds = bidKingBotHeroIdsForBidMap({
+    bidMapId: auction.bidMapId,
+    seed: auction.id,
+    count: 4
+  });
+  const winnerIndex = stableNumericId(`${auction.id}:winner`) % Math.max(1, heroIds.length);
+  const bids = heroIds.map((heroId, index) => {
+    const rankAi = rankAiForHero(heroId, 1);
+    const pressure = rankAiPressure(rankAi);
+    const variance = deterministicUnit(`${auction.id}:${heroId}:${index}`);
+    const amount = index === winnerIndex
+      ? finalPrice
+      : Math.min(
+          Math.max(0, finalPrice - 1000),
+          Math.round(auction.totalValue * (0.58 + pressure * 0.28 + variance * 0.18))
+        );
+    return {
+      heroId,
+      amount: Math.max(0, Math.floor(amount))
+    };
+  });
+  const sorted = [...bids].sort((left, right) => right.amount - left.amount);
+  if (sorted[0]) {
+    sorted[0].amount = finalPrice;
+  }
+  return sorted.map(({ heroId, amount }, index) => {
+    const hero = Hero.find((candidate) => candidate.id === heroId) ?? Hero[index % Math.max(1, Hero.length)];
+    const playerId = `send_auction_bot_${auction.id}_${index + 1}`;
+    return {
+      userUid: stableNumericId(playerId),
+      playerId,
+      name: hero?.packaged_title || hero?.packaged_name || `竞买人${index + 1}`,
+      heroCid: hero?.id ?? heroId,
+      useItemLog: [],
+      priceLog: amount > 0
+        ? [{ round: 1, itemCidOrPrice: amount, createdAt: now - (sorted.length - index) * 1000 }]
+        : [],
+      isStandDown: amount <= 0,
+      isQuit: false,
+      headCid: 0,
+      heroSkinCid: 0,
+      selectItemList: [],
+      headBoxCid: 0,
+      titleCid: 0,
+      remark: ''
+    };
+  });
+}
+
+function rankAiForHero(heroId: number, roundCount: number) {
+  const heroRows = RankAi.filter((row) => row.role_id === heroId);
+  return heroRows.find((row) => row.round_count === roundCount)
+    ?? heroRows.find((row) => row.round_count > roundCount)
+    ?? heroRows.at(-1)
+    ?? RankAi.find((row) => row.round_count === roundCount)
+    ?? RankAi[0];
+}
+
+function rankAiPressure(rankAi: (typeof RankAi)[number] | undefined): number {
+  if (!rankAi) {
+    return 0.5;
+  }
+  const minRatio = weightedRangeAverage(rankAi.min_bid_ratio, 850) / 1000;
+  const pkRatio = weightedRangeAverage(rankAi.bid_pk, 1000) / 1000;
+  return clamp((minRatio * 0.45 + pkRatio * 0.55 - 0.4) / 1.6, 0.15, 0.95);
+}
+
+function weightedRangeAverage(ranges: readonly (readonly number[])[], fallback: number): number {
+  let weighted = 0;
+  let totalWeight = 0;
+  for (const range of ranges) {
+    if (range.length < 2) {
+      continue;
+    }
+    const min = Number(range[0] ?? fallback);
+    const max = Number(range[1] ?? min);
+    const weight = Math.max(0, Number(range[2] ?? 1));
+    if (!Number.isFinite(min) || !Number.isFinite(max) || weight <= 0) {
+      continue;
+    }
+    weighted += ((min + max) / 2) * weight;
+    totalWeight += weight;
+  }
+  return totalWeight > 0 ? weighted / totalWeight : fallback;
+}
+
+function generatedSendAuctionFinalPrice(auction: SendAuctionState): number {
+  const roll = deterministicUnit(`${auction.id}:final-price`);
+  const probabilityBias = clamp(((auction.entrustProbability ?? 500) - 500) / 5000, -0.08, 0.08);
+  const multiplier = 0.9 + probabilityBias + roll * 0.34;
+  return Math.max(0, Math.round(auction.totalValue * multiplier));
+}
+
+function deliverSendAuctionResultMail(
+  profile: PlayerProfile,
+  auction: SendAuctionState,
+  game: SendAuctionGameState,
+  outcome: 'settled' | 'recycled',
+  recordTransaction: SendAuctionTransactionRecorder,
+  now: number
+): void {
+  const profitText = game.profit >= 0 ? `盈利 ${game.profit.toLocaleString()}` : `亏损 ${Math.abs(game.profit).toLocaleString()}`;
+  const title = outcome === 'settled' ? '委托拍卖已成交' : '委托拍卖已回收';
+  const body = outcome === 'settled'
+    ? `${auction.mapName ?? '委托拍场'}送拍完成，${auction.items.length} 件藏品成交价 ${game.finalPrice.toLocaleString()}，估价 ${game.totalValue.toLocaleString()}，${profitText}。`
+    : `${auction.mapName ?? '委托拍场'}委托已下架，${auction.items.length} 件藏品按系统价 ${game.finalPrice.toLocaleString()} 回收。`;
+  const mail = addCustomMailToProfile(profile, {
+    sourceKey: `send_auction_${game.uid}_${outcome}`,
+    title,
+    body,
+    now
+  });
+  if (mail) {
+    recordTransaction(profile, `send_auction:${profile.playerId}:${auction.id}:${outcome}:mail`, 'send_auction_result_mail', 'mail', 0, 1);
+  }
 }
 
 function activeSendAuctions(profile: PlayerProfile): SendAuctionState[] {
@@ -347,4 +575,21 @@ function sourceInventoryItemId(value: number | string): string {
   const raw = String(value);
   const compatMatch = /^compat_(\d+)/.exec(raw);
   return compatMatch?.[1] ?? raw;
+}
+
+function deterministicUnit(value: string): number {
+  return (stableNumericId(value) % 10_000) / 10_000;
+}
+
+function stableNumericId(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.max(1, hash >>> 0);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

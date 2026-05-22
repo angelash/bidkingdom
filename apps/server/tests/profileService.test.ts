@@ -811,12 +811,27 @@ describe('profile service', () => {
       finalPrice: unitValue * 15,
       profit: 0
     }));
+    const recycledGame = recycled.sendAuctionGames?.[0]!;
+    expect(recycledGame).toEqual(expect.objectContaining({
+      sendAuctionId: auction.id,
+      mapCid: 101,
+      bidMapId: 2101,
+      finalPrice: unitValue * 15,
+      totalValue: unitValue * 15,
+      profit: 0
+    }));
+    expect(recycledGame.gameData.stockContainer.stockBoxes).toHaveLength(15);
+    expect(recycledGame.gameData.userLog.some((user) =>
+      user.priceLog.at(-1)?.itemCidOrPrice === unitValue * 15
+    )).toBe(true);
+    expect(recycled.mail.some((mail) => mail.title === '委托拍卖已回收')).toBe(true);
     expect(recycled.coins).toBe(9_000 + unitValue * 15);
     expect(inventoryQuantity(recycled, String(SEND_AUCTION_TEST_ITEM_ID))).toBe(0);
     expect(profiles.getSnapshot('p_send_auction').transactions.map((transaction) => transaction.reason)).toEqual(expect.arrayContaining([
       'send_auction_fee',
       'send_auction_item_lock',
-      'send_auction_recycle_coins'
+      'send_auction_recycle_coins',
+      'send_auction_result_mail'
     ]));
   });
 
@@ -836,6 +851,19 @@ describe('profile service', () => {
       finalPrice: first.totalValue + 5_000,
       profit: 5_000
     }));
+    const settledGame = settled.sendAuctionGames?.[0]!;
+    expect(settledGame).toEqual(expect.objectContaining({
+      sendAuctionId: first.id,
+      finalPrice: first.totalValue + 5_000,
+      totalValue: first.totalValue,
+      profit: 5_000
+    }));
+    expect(settledGame.gameData.mapId).toBe(first.bidMapId);
+    expect(settledGame.gameData.sendAuctionUserName).toBe('委托规则');
+    expect(settledGame.gameData.userLog.some((user) =>
+      user.priceLog.at(-1)?.itemCidOrPrice === first.totalValue + 5_000
+    )).toBe(true);
+    expect(settled.mail.some((mail) => mail.title === '委托拍卖已成交')).toBe(true);
 
     const second = profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profiles.getOrCreateProfile('p_send_auction_rules'), SEND_AUCTION_TEST_ITEM_ID, 15)).profile.sendAuctions?.[0]!;
     const third = profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profiles.getOrCreateProfile('p_send_auction_rules'), SEND_AUCTION_TEST_ITEM_ID, 15)).profile.sendAuctions?.[0]!;

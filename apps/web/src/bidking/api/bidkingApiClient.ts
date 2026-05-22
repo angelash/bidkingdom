@@ -2,6 +2,7 @@ import type {
   AccountSessionSnapshot,
   MatchEventLog,
   ProfileSnapshot,
+  SendAuctionGameState,
   TransactionLog
 } from '@bitkingdom/shared';
 
@@ -14,6 +15,11 @@ interface ApiErrorPayload {
 export interface ReplayBundlePayload {
   events: MatchEventLog[];
   transactions: TransactionLog[];
+}
+
+export interface SendAuctionGamesPayload {
+  generatedAt: number;
+  games: SendAuctionGameState[];
 }
 
 export async function fetchProfileSnapshot(serverUrl: string, playerId: string, playerName: string, sessionToken?: string): Promise<ProfileSnapshot> {
@@ -121,12 +127,31 @@ export async function fetchReplayBundle(serverUrl: string, matchId: string): Pro
   };
 }
 
+export async function fetchSendAuctionGames(
+  serverUrl: string,
+  playerId: string,
+  sessionToken?: string
+): Promise<SendAuctionGamesPayload> {
+  const url = new URL('/api/send-auction/games', serverUrl);
+  url.searchParams.set('playerId', playerId);
+  const response = await fetch(url, { headers: authHeaders(sessionToken) });
+  const payload = await response.json() as SendAuctionGamesPayload | ApiErrorPayload;
+  if (!response.ok || !isSendAuctionGamesPayload(payload)) {
+    throw new Error(apiErrorText(payload, '委托记录读取失败'));
+  }
+  return payload;
+}
+
 function isProfileSnapshot(payload: ProfileSnapshot | ApiErrorPayload): payload is ProfileSnapshot {
   return 'profile' in payload && 'transactions' in payload;
 }
 
 function isAccountSessionSnapshot(payload: AccountSessionSnapshot | ApiErrorPayload): payload is AccountSessionSnapshot {
   return 'account' in payload && 'sessionToken' in payload && 'profile' in payload;
+}
+
+function isSendAuctionGamesPayload(payload: SendAuctionGamesPayload | ApiErrorPayload): payload is SendAuctionGamesPayload {
+  return 'generatedAt' in payload && 'games' in payload && Array.isArray(payload.games);
 }
 
 async function postAccountSession(
