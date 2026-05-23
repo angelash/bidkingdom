@@ -15,7 +15,6 @@ import {
   bidKingRawTableDisplayName,
   bidKingSkillDisplayName,
   dropsForGroup,
-  itemById,
   skillById,
   skillEffectById,
   validateBidKingParity
@@ -116,6 +115,36 @@ describe('BidKing compatible core runtime', () => {
     expect(match.currentRound?.container.publicInfo.source).not.toContain('掉落组');
   });
 
+  it('mirrors source item drops and 10-column warehouse placement', () => {
+    const bidMap = BidMap.find((row) => row.id === 2101)!;
+    const match = createMatch({
+      id: 'compat-source-drops',
+      players: players.slice(0, 2),
+      seed: 1,
+      coreMode: true,
+      coreAuctionMode: 'sealed',
+      coreBidMapId: bidMap.id
+    });
+    startNextRound(match, 1000);
+
+    const slots = match.currentRound?.container.warehouseSlots ?? [];
+    expect(match.currentRound?.container.templateId).toBe('bidmap_2101');
+    const occupied = new Set<string>();
+    for (const slot of slots) {
+      expect(slot.x + slot.w).toBeLessThanOrEqual(10);
+      expect(slot.y + slot.h).toBeLessThanOrEqual(60);
+      for (let y = slot.y; y < slot.y + slot.h; y += 1) {
+        for (let x = slot.x; x < slot.x + slot.w; x += 1) {
+          const key = `${x}:${y}`;
+          expect(occupied.has(key)).toBe(false);
+          occupied.add(key);
+        }
+      }
+    }
+    expect(slots.length).toBeGreaterThan(bidMap.item_count_max);
+    expect(slots.some((slot) => slot.rotate)).toBe(true);
+  });
+
   it('uses the original strict BidMap auction round rates for the core close decision', () => {
     const match = createMatch({
       id: 'compat-close-rule',
@@ -192,10 +221,10 @@ describe('BidKing compatible core runtime', () => {
     setRoundPhase(match, 'auction', 60000, 1200);
     const firstBid = Math.max(match.currentRound?.container.minimumBid ?? 0, 60000);
     submitBid(match, 'p1', firstBid, 1300);
-    expect(() => submitBid(match, 'p1', firstBid + 2000, 1400)).toThrow(/cannot be modified/);
+    expect(() => submitBid(match, 'p1', firstBid + 2000, 1400)).toThrow(/Already bid this round/);
   });
 
-  it('uses compatible Hero and Skill tables for manual intel skills', () => {
+  it('uses compatible Hero and Skill tables for first-round automatic hero skills', () => {
     const match = createMatch({
       id: 'compat-skill',
       players,
@@ -204,23 +233,45 @@ describe('BidKing compatible core runtime', () => {
       coreAuctionMode: 'sealed'
     });
     startNextRound(match, 1000);
-    setRoundPhase(match, 'intel', 3200, 1200);
-    useSkill(match, 'p1', 'p2', 1300);
     const hero = Hero.find((candidate) => candidate.id === bidKingHeroIdForRoleId(players[0]!.roleId, match.config.roles))!;
     const skill = skillById(hero.cast_type[0]!)!;
     const effect = skillEffectById(skill.skilleffect_position[0]!)!;
-    const skillEvent = match.events.find((event) => event.type === 'skill_used' && event.actorId === 'p1');
-    const skillPayload = skillEvent?.payload as { skillCid?: number; effectCategory?: number; effectPlan?: { effectId?: number } } | undefined;
-    const feedEntry = match.currentRound?.skillFeed.find((entry) => entry.source === 'manual' && entry.playerId === 'p1');
-    expect(match.players[0]?.skillUsedThisRound).toBe(true);
-    expect(match.players[0]?.privateClues.at(-1)?.text).toContain('卧龙掌眼');
-    expect(skillPayload?.skillCid).toBe(skill.id);
-    expect(skillPayload?.effectCategory).toBe(effect.Category);
-    expect(skillPayload?.effectPlan?.effectId).toBe(effect.EffectId);
+    const skillEvent = match.events.find((event) => event.type === 'skill_triggered' && event.actorId === 'p1');
+    const skillPayload = skillEvent?.payload as { entry?: { skillCid?: number; effectCategory?: number; effectId?: number } } | undefined;
+    const feedEntry = match.currentRound?.skillFeed.find((entry) => entry.source === 'hero' && entry.playerId === 'p1');
+    expect(match.players[0]?.skillUsedThisRound).toBe(false);
+    expect(match.players[0]?.privateClues.at(-1)?.text).toContain(hero.packaged_name);
+    expect(skillPayload?.entry?.skillCid).toBe(skill.id);
+    expect(skillPayload?.entry?.effectCategory).toBe(effect.Category);
+    expect(skillPayload?.entry?.effectId).toBe(effect.EffectId);
     expect(feedEntry?.skillCid).toBe(skill.id);
     expect(feedEntry?.effectCategory).toBe(effect.Category);
-    expect(match.currentRound?.skillFeed.some((entry) => entry.playerId === 'p1' && entry.source === 'manual')).toBe(true);
+    expect(feedEntry?.hitBoxList?.length).toBe(feedEntry?.targetCount);
+    expect(feedEntry?.hitBoxList?.[0]?.itemSlotType).toBeGreaterThan(0);
+    expect(feedEntry?.hitBoxList?.[0]?.itemCid).toBe(0);
+    expect(feedEntry?.hitBoxList?.[0]?.itemPrice).toBe(0);
+    expect(feedEntry?.hitBoxList?.[0]?.itemQuility).toBeGreaterThan(0);
+    expect(match.currentRound?.skillFeed.some((entry) => entry.playerId === 'p1' && entry.source === 'hero')).toBe(true);
     expect(buildSnapshot(match, 'p1').public.players[0]?.bidRanks?.[0]?.usedSkillName).toBeTruthy();
+  });
+
+  it('does not collapse empty Hero.cast_type slots into first-round skills', () => {
+    const delayedHero = Hero.find((hero) => (hero.cast_type[0] ?? 0) === 0 && hero.cast_type.some((skillId) => skillId > 0));
+    if (!delayedHero) {
+      throw new Error('BidKing fixtures must include a hero with delayed cast_type skills');
+    }
+    const match = createMatch({
+      id: 'compat-delayed-hero-skill',
+      players: players.map((player) => player.id === 'p1' ? { ...player, heroCid: delayedHero.id } : player),
+      seed: 91013,
+      coreMode: true,
+      coreAuctionMode: 'sealed'
+    });
+    startNextRound(match, 1000);
+
+    expect(match.currentRound?.skillFeed.some((entry) => entry.source === 'hero' && entry.playerId === 'p1')).toBe(false);
+    expect(match.events.some((event) => event.type === 'skill_triggered' && event.actorId === 'p1')).toBe(false);
+    expect(match.players[0]?.privateClues.some((clue) => clue.text.includes(delayedHero.packaged_name))).toBe(false);
   });
 
   it('preserves source SkillEffect count and identity categories for skills and items', () => {
@@ -238,14 +289,22 @@ describe('BidKing compatible core runtime', () => {
       coreAuctionMode: 'sealed'
     });
     startNextRound(match, 1000);
-    setRoundPhase(match, 'intel', 3200, 1200);
-
-    useSkill(match, 'p1', undefined, 1300);
 
     const clue = match.players[0]?.privateClues.at(-1);
+    const countFeed = match.currentRound?.skillFeed.find((entry) => entry.source === 'hero' && entry.playerId === 'p1');
     const plan = battleItemEffectPlanForItem(BattleItem[0]!, { skill: identitySkill, effect: identityEffect });
     expect(clue?.text).toContain('命中数量');
     expect(clue?.text).not.toContain('合计价值');
+    expect(countFeed?.effectCategory).toBe(4);
+    expect(countFeed?.targetCount).toBe(countFeed?.hitBoxList?.length);
+    expect(countFeed?.hitBoxList?.every((box) => (
+      box.itemCid === 0 &&
+      box.itemSlotType === 0 &&
+      box.itemQuility === 0 &&
+      box.itemPrice === 0 &&
+      box.itemBoxIndex === 0 &&
+      box.itemType.length === 0
+    ))).toBe(true);
     expect(plan.revealKind).toBe('identity');
     expect(plan.identityHint).toBe(true);
     expect(plan.implementationStatus).toBe('implemented');
@@ -408,7 +467,7 @@ describe('BidKing compatible core runtime', () => {
     expect(action.audit?.actionBidRatio).toBeGreaterThan(1);
   });
 
-  it('requires BidKing core manual skills before bidding', () => {
+  it('disables manual hero skills in BidKing core mode', () => {
     const match = createMatch({
       id: 'compat-skill-before-bid',
       players,
@@ -421,8 +480,7 @@ describe('BidKing compatible core runtime', () => {
       player.cash = 1_000_000;
     });
     setRoundPhase(match, 'auction', 60000, 1200);
-    submitBid(match, 'p1', Math.max(match.currentRound?.container.minimumBid ?? 0, 60000), 1300);
-    expect(() => useSkill(match, 'p1', 'p2', 1400)).toThrow(/before bidding/);
+    expect(() => useSkill(match, 'p1', 'p2', 1400)).toThrow(/automatic/);
   });
 
   it('uses equipped BattleItem rows as private in-round intel', () => {
@@ -478,20 +536,21 @@ describe('BidKing compatible core runtime', () => {
     match.currentRound!.index = 4;
     match.roundIndex = 4;
     setRoundPhase(match, 'intel', 3200, 1200);
-    const manualHero = Hero[1]!;
-    const manualCastIds = manualHero.cast_type.filter((skillId) => skillId > 0);
-    const manualSkill = skillById(manualCastIds[Math.min(4, manualCastIds.length - 1)]!)!;
-    useSkill(match, 'p1', undefined, 1250);
+    const autoHero = Hero[1]!;
+    const autoSkill = skillById(autoHero.cast_type.filter((skillId) => skillId > 0)[0]!)!;
     useBattleItem(match, 'p1', BattleItem[0]!, 1300);
     setRoundPhase(match, 'auction', 60000, 1400);
     submitBid(match, 'p1', Math.max(match.currentRound?.container.minimumBid ?? 0, 500_000), 1500);
     submitBid(match, 'p2', Math.max(match.currentRound?.container.minimumBid ?? 0, 100_000), 1600);
     settleCurrentRound(match, 1700);
+    const warehouseSlotsBeforeArchive = match.currentRound?.container.warehouseSlots.map((slot) => ({ ...slot })) ?? [];
     finishRound(match, 1800);
     startNextRound(match, 1900);
 
     const gameData = match.roundHistory[0]?.bidKingGameData;
     const p1Log = gameData?.userLog.find((entry) => entry.playerId === 'p1');
+    const firstStockBox = gameData?.stockContainer.stockBoxes[0];
+    const firstWarehouseSlot = warehouseSlotsBeforeArchive[0];
 
     expect(gameData?.uid).toBe('compat-game-data:compat-game-data_round_1');
     expect(gameData?.round).toBe(5);
@@ -504,12 +563,22 @@ describe('BidKing compatible core runtime', () => {
     expect(gameData?.selectItemCount).toBe(1);
     expect(p1Log?.priceLog.at(-1)?.itemCidOrPrice).toBeGreaterThanOrEqual(500_000);
     expect(p1Log?.useItemLog.at(-1)?.itemCidOrPrice).toBe(BattleItem[0]!.id);
-    const manualSkillLog = gameData?.heroSkillLog.find((entry) => entry.skillCid === manualSkill.id);
-    const firstHitBox = manualSkillLog?.hitBoxList[0];
-    const firstHitItem = firstHitBox ? itemById(firstHitBox.itemCid) : undefined;
-    expect(manualSkillLog?.allHitItemAvgBoxIndex).toBeGreaterThan(0);
-    expect(firstHitBox?.itemType).toEqual(firstHitItem ? [...firstHitItem.item_type_ids] : undefined);
-    expect(manualSkillLog?.hitItemTypeList).toEqual(expect.arrayContaining(firstHitItem ? [...firstHitItem.item_type_ids] : []));
+    expect(firstStockBox?.boxId).toBe(firstWarehouseSlot ? firstWarehouseSlot.y * 10 + firstWarehouseSlot.x : undefined);
+    expect(firstStockBox?.item.rotate).toBe(firstWarehouseSlot?.rotate ?? false);
+    expect(gameData?.stockContainer.stockBoxes.some((box) => box.item.rotate)).toBe(warehouseSlotsBeforeArchive.some((slot) => slot.rotate));
+    const autoSkillLog = gameData?.heroSkillLog.find((entry) => entry.skillCid === autoSkill.id);
+    const firstHitBox = autoSkillLog?.hitBoxList[0];
+    const autoEffect = skillEffectById(autoSkill.skilleffect_position[0]!)!;
+    expect(autoSkillLog?.allHitItemAvgBoxIndex).toBeGreaterThan(0);
+    expect(firstHitBox?.boxId).toBeGreaterThanOrEqual(0);
+    expect(autoEffect.Category).toBe(1);
+    expect(firstHitBox?.itemSlotType).toBeGreaterThan(0);
+    expect(firstHitBox?.itemCid).toBe(0);
+    expect(firstHitBox?.itemPrice).toBe(0);
+    expect(firstHitBox?.itemQuility).toBeGreaterThan(0);
+    expect(firstHitBox?.itemBoxIndex).toBe(0);
+    expect(firstHitBox?.itemType).toEqual([]);
+    expect(autoSkillLog?.hitItemTypeList.length).toBeGreaterThan(0);
     expect(gameData?.itemSkillLog.some((entry) => entry.itemCid === BattleItem[0]!.id)).toBe(true);
     expect(buildSnapshot(match, 'p1').public.finalSummary?.bidKingReplay).toHaveLength(1);
   });

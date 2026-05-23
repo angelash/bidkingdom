@@ -12,13 +12,23 @@ const HERO_ITEM_TYPE = 15;
 const TRIAL_HERO_ITEM_TYPE = 19;
 
 export function bidKingHeroIdForRoleId(roleId: string | undefined, roles: readonly Pick<RoleConfig, 'id'>[]): number {
-  const index = Math.max(0, roles.findIndex((role) => role.id === roleId));
+  const roleIndex = roles.findIndex((role) => role.id === roleId);
+  const index = roleIndex >= 0 && roleIndex < Hero.length ? roleIndex : 0;
   return Hero[index]?.id ?? Hero[0]?.id ?? 0;
 }
 
 export function bidKingRoleIdForHeroId(heroId: number | undefined, roles: readonly Pick<RoleConfig, 'id'>[]): string | undefined {
   const index = Hero.findIndex((hero) => hero.id === heroId);
   return index >= 0 ? roles[index]?.id : undefined;
+}
+
+export function bidKingRoleHasSourceHero(roleId: string | undefined, roles: readonly Pick<RoleConfig, 'id'>[]): boolean {
+  const index = roles.findIndex((role) => role.id === roleId);
+  return index >= 0 && index < Hero.length;
+}
+
+export function bidKingSourceRoles<T extends Pick<RoleConfig, 'id'>>(roles: readonly T[]): T[] {
+  return roles.slice(0, Hero.length);
 }
 
 export function bidKingStarterOwnedHeroIds(): number[] {

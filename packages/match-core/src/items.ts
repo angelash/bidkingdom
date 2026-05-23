@@ -94,6 +94,7 @@ export function useBattleItem(
   round.skillFeed.push(entry);
   state.updatedAt = now;
   pushEvent(state, 'battle_item_used', playerId, {
+    roundId: round.id,
     itemId: item.id,
     skillGroup: item.skill_group,
     skillId: skillContext.skill?.id,
@@ -131,8 +132,8 @@ function prepareBattleItemUse(
   if (!['intel', 'auction'].includes(round.phase)) {
     throw new Error('Battle items are only allowed during intel or auction phase');
   }
-  if (state.coreMode && round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === playerId))) {
-    throw new Error('BidKing core battle items must be used before bidding');
+  if (round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === playerId))) {
+    throw new Error('Battle items must be used before bidding');
   }
   const cooldownRemaining = battleItemCooldownRemainingForPlayer(player, item.id);
   if (cooldownRemaining > 0) {

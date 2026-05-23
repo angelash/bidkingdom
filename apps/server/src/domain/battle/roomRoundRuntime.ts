@@ -6,18 +6,20 @@ import {
   settleCurrentRound,
   startNextRound
 } from '@bitkingdom/match-core';
+import { revealDelayForItem } from './roomActionRuntime';
+import { runBotAuctionForRoom } from './roomBotRuntime';
 import {
   CORE_AUCTIONEER_REVEAL_MS,
   CORE_AUCTION_MS,
   CORE_ROUND_INTEL_MS,
   CORE_WAREHOUSE_SELECTED_MS
 } from './roomRuntimeConfig';
-import { revealDelayForItem } from './roomActionRuntime';
-import { runBotAuctionForRoom } from './roomBotRuntime';
 import {
   scheduleRoomTimer
 } from './roomLifecycleRuntime';
 import type { Room } from './roomLifecycleRuntime';
+
+type ActiveRound = NonNullable<NonNullable<Room['match']>['currentRound']>;
 
 interface RoomRoundRuntimeDeps {
   broadcastRoom(room: Room): void;
@@ -35,6 +37,7 @@ export interface RoomRoundRuntime {
 
 export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRuntime {
   const settleFailureCountByRound = new Map<string, number>();
+  const scheduledTimerKeys = new Set<string>();
 
   function runCoreRound(room: Room): void {
     const match = room.match;
@@ -43,73 +46,88 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
       return;
     }
     deps.logRoundEvent('core_round_pulse', roundLogContext(room));
-    if (round.phase === 'intel') {
-      runBotAuctionForRoom(room);
-      deps.broadcastMatch(room);
-    }
-    if (['warehouse_roll', 'warehouse_selected', 'auctioneer_reveal', 'intel'].includes(round.phase)) {
-      const remainingMs = Math.max(350, round.phaseEndsAt - Date.now());
-      scheduleRoundTimer(room, remainingMs, 'advance_core_phase', () => advanceCorePhase(room));
-      return;
-    }
-    if (round.phase !== 'auction') {
-      return;
-    }
-    runBotAuctionForRoom(room);
-    deps.broadcastMatch(room);
-    const remainingMs = Math.max(1000, round.phaseEndsAt - Date.now());
-    scheduleRoundTimer(room, remainingMs, 'settle_room_round', () => settleRoomRound(room));
-    if (round.auctionMode === 'open') {
-      scheduleRoundTimer(room, 3500, 'open_bot_tick', () => openBotTick(room));
-    }
-  }
-
-  function advanceCorePhase(room: Room): void {
-    const match = room.match;
-    const round = match?.currentRound;
-    if (!match || match.status !== 'playing' || !round) {
-      return;
-    }
-    const now = Date.now();
-    if (round.phaseEndsAt > now + 120) {
-      scheduleRoundTimer(room, Math.max(250, round.phaseEndsAt - now), 'advance_core_phase_wait', () => advanceCorePhase(room));
-      return;
-    }
-    const fromPhase = round.phase;
     if (round.phase === 'warehouse_roll') {
-      setRoundPhase(match, 'warehouse_selected', CORE_WAREHOUSE_SELECTED_MS, now);
-    } else if (round.phase === 'warehouse_selected') {
-      setRoundPhase(match, 'auctioneer_reveal', CORE_AUCTIONEER_REVEAL_MS, now);
-    } else if (round.phase === 'auctioneer_reveal') {
-      setRoundPhase(match, 'intel', CORE_ROUND_INTEL_MS, now);
-    } else if (round.phase === 'intel') {
-      setRoundPhase(match, 'auction', round.container.auctionDurationMs ?? CORE_AUCTION_MS, now);
-    } else {
+      schedulePhaseTransition(room, 'warehouse_selected', CORE_WAREHOUSE_SELECTED_MS, 'select_core_warehouse');
       return;
     }
-    deps.logRoundEvent('core_phase_advanced', {
-      ...roundLogContext(room),
-      fromPhase,
-      toPhase: match.currentRound?.phase
-    });
-    deps.broadcastMatch(room);
-    runCoreRound(room);
-  }
-
-  function openBotTick(room: Room): void {
-    if (
-      !room.match ||
-      room.match.currentRound?.phase !== 'auction' ||
-      !['open', 'deposit_open'].includes(room.match.currentRound.auctionMode)
-    ) {
+    if (round.phase === 'warehouse_selected') {
+      schedulePhaseTransition(room, 'auctioneer_reveal', CORE_AUCTIONEER_REVEAL_MS, 'reveal_auctioneer_clue');
+      return;
+    }
+    if (round.phase === 'auctioneer_reveal') {
+      schedulePhaseTransition(room, 'intel', CORE_ROUND_INTEL_MS, 'start_intel_phase');
+      return;
+    }
+    if (round.phase === 'intel') {
+      runBotActionsOnceForPhase(room, 'intel');
+      deps.broadcastMatch(room);
+      schedulePhaseTransition(room, 'auction', auctionDurationMs(round), 'start_auction_phase');
       return;
     }
     runBotAuctionForRoom(room);
     deps.broadcastMatch(room);
     maybeSettleEarly(room);
-    if (room.match?.currentRound?.phase === 'auction') {
-      scheduleRoundTimer(room, 3500, 'open_bot_tick', () => openBotTick(room));
+    if (room.match?.currentRound?.phase !== 'auction') {
+      return;
     }
+    const remainingMs = Math.max(1000, round.phaseEndsAt - Date.now());
+    scheduleRoundTimer(room, remainingMs, 'settle_room_round', () => settleRoomRound(room));
+  }
+
+  function schedulePhaseTransition(
+    room: Room,
+    nextPhase: ActiveRound['phase'],
+    durationMs: number,
+    reason: string
+  ): void {
+    const match = room.match;
+    const round = match?.currentRound;
+    if (!match || !round) {
+      return;
+    }
+    const currentRoundId = round.id;
+    const currentPhase = round.phase;
+    const remainingMs = Math.max(0, round.phaseEndsAt - Date.now());
+    scheduleRoundTimer(room, remainingMs, reason, () => {
+      if (!room.match || room.match.currentRound?.id !== currentRoundId || room.match.currentRound.phase !== currentPhase) {
+        return;
+      }
+      setRoundPhase(room.match, nextPhase, durationMs);
+      deps.broadcastMatch(room);
+      runCoreRound(room);
+    });
+  }
+
+  function runBotActionsOnceForPhase(room: Room, phase: 'intel'): void {
+    const match = room.match;
+    const round = match?.currentRound;
+    if (!match || !round || round.phase !== phase || botPhaseActionRecorded(room, phase)) {
+      return;
+    }
+    runBotAuctionForRoom(room);
+  }
+
+  function botPhaseActionRecorded(room: Room, phase: 'intel'): boolean {
+    const match = room.match;
+    const round = match?.currentRound;
+    if (!match || !round) {
+      return false;
+    }
+    const botIds = match.players.filter((player) => player.kind === 'bot').map((player) => player.id);
+    if (botIds.length === 0) {
+      return true;
+    }
+    return botIds.every((playerId) => match.events.some((event) => {
+      const payload = event.payload as { roundId?: string; audit?: { phase?: string } } | undefined;
+      return (event.type === 'bot_action_chosen' || event.type === 'bot_action_failed')
+        && event.actorId === playerId
+        && payload?.roundId === round.id
+        && payload.audit?.phase === phase;
+    }));
+  }
+
+  function auctionDurationMs(round: ActiveRound): number {
+    return Math.max(1000, round.container.auctionDurationMs ?? CORE_AUCTION_MS);
   }
 
   function settleRoomRound(room: Room): void {
@@ -119,7 +137,7 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
     const round = room.match.currentRound;
     deps.logRoundEvent('auction_settle_started', roundLogContext(room));
     for (const player of room.match.players) {
-      if (!player.hasSubmittedBid && room.match.currentRound.auctionMode !== 'open') {
+      if (!player.hasSubmittedBid) {
         try {
           passAuction(room.match, player.id);
           deps.logRoundEvent('auction_auto_passed_player', {
@@ -206,6 +224,11 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
   }
 
   function scheduleRoundTimer(room: Room, ms: number, reason: string, callback: () => void): void {
+    const key = roundTimerKey(room, reason);
+    if (scheduledTimerKeys.has(key)) {
+      return;
+    }
+    scheduledTimerKeys.add(key);
     deps.logRoundEvent('round_timer_scheduled', {
       ...roundLogContext(room),
       reason,
@@ -213,6 +236,7 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
       nextTimerCount: room.timers.length + 1
     });
     scheduleRoomTimer(room, ms, () => {
+      scheduledTimerKeys.delete(key);
       deps.logRoundEvent('round_timer_fired', {
         ...roundLogContext(room),
         reason
@@ -226,6 +250,17 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
         });
       }
     });
+  }
+
+  function roundTimerKey(room: Room, reason: string): string {
+    const round = room.match?.currentRound;
+    return [
+      room.id,
+      round?.id ?? 'no-round',
+      round?.phase ?? 'no-phase',
+      round?.phaseEndsAt ?? 0,
+      reason
+    ].join(':');
   }
 
   function roundLogContext(room: Room): Record<string, unknown> {

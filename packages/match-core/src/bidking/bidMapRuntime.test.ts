@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { RankMap } from '@bitkingdom/bidking-compat';
+import { Hero, RankMap } from '@bitkingdom/bidking-compat';
+import { gameConfig } from '@bitkingdom/config';
 import {
   bidKingBidMapPlayerCount,
   bidKingBotHeroIdsForBidMap,
@@ -8,6 +9,7 @@ import {
   bidKingResolveRandomBidMapId
 } from './bidMapRuntime';
 import { createMatch } from '../match';
+import { bidKingHeroIdForRoleId, bidKingRoleHasSourceHero, bidKingSourceRoles } from './heroRuntime';
 
 describe('BidKing bid map runtime', () => {
   it('reads playable room capacity from original BidMap rows', () => {
@@ -60,12 +62,23 @@ describe('BidKing bid map runtime', () => {
     }));
   });
 
-  it('resolves original random BidMap branches from map_group weights', () => {
+  it('keeps selectable bidder roles bounded to original Hero rows', () => {
+    const sourceRoles = bidKingSourceRoles(gameConfig.roles);
+    const extraRole = gameConfig.roles[Hero.length];
+
+    expect(sourceRoles).toHaveLength(Hero.length);
+    expect(bidKingRoleHasSourceHero(sourceRoles[sourceRoles.length - 1]?.id, gameConfig.roles)).toBe(true);
+    expect(bidKingRoleHasSourceHero(extraRole?.id, gameConfig.roles)).toBe(false);
+    expect(bidKingHeroIdForRoleId(sourceRoles[sourceRoles.length - 1]?.id, gameConfig.roles)).toBe(Hero[Hero.length - 1]?.id);
+    expect(bidKingHeroIdForRoleId(extraRole?.id, gameConfig.roles)).toBe(Hero[0]?.id);
+  });
+
+  it('keeps the selected source BidMap id instead of rerolling map_group branches', () => {
     const candidates = bidKingRandomBidMapCandidates(2101);
     const resolved = bidKingResolveRandomBidMapId(2101, 'random-map-test');
 
-    expect(candidates).toEqual(expect.arrayContaining([2101, 2102, 2103, 2104, 2105, 2106, 2107]));
-    expect(candidates).toContain(resolved);
+    expect(candidates).toEqual([2101]);
+    expect(resolved).toBe(2101);
     expect(bidKingResolveRandomBidMapId(2101, 'random-map-test')).toBe(resolved);
     expect(bidKingRandomBidMapCandidates(999999)).toEqual([999999]);
     expect(bidKingResolveRandomBidMapId(999999, 'random-map-test')).toBe(999999);

@@ -49,6 +49,7 @@ export interface SkillFeedEntry {
   iconKey?: string;
   visibility: 'public' | 'private';
   targetItemIds?: string[];
+  hitBoxList?: BidKingBoxInfoDataSnapshot[];
   createdAt: number;
 }
 
@@ -367,6 +368,7 @@ export interface WarehouseSlotView {
     min: number;
     max: number;
   };
+  visibleSizeCount?: number;
   markedBySkill?: boolean;
   markReason?: string;
   itemName?: string;

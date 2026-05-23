@@ -122,7 +122,6 @@ export function BidKingApp(): JSX.Element {
     snapshot
   });
   const bidComposer = useBidComposerActions({
-    currentRound: matchState.currentRound,
     previousBid: matchState.previousSelfBid,
     recommendedBid: matchState.recommendedBid,
     selfCash: matchState.selfPlayer?.cash,

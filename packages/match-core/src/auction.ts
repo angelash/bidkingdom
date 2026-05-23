@@ -1,6 +1,5 @@
 import type { BidRecord, RoundBidDecision, RoundBidFeedback, RoundSettlement } from '@bitkingdom/shared';
 import { getBidKingCloseThreshold } from '@bitkingdom/bidking-compat';
-import { bidKingBidLossRebateAmount } from './bidking/economyRuleRuntime';
 import { reviewClues } from './clues';
 import { recordRoundHistory, setRoundPhase, pushEvent, requirePlayer, requireRound } from './match';
 import { calculateSetBonus, sumItemValue, sumRepairCost } from './scoring';
@@ -22,12 +21,8 @@ export function submitBid(
     throw new Error('Bid amount must be a non-negative number');
   }
 
-  if (state.coreMode && round.bids.some((bid) => bid.playerId === playerId)) {
-    throw new Error('BidKing core auction submissions cannot be modified');
-  }
-
-  if (round.auctionMode === 'flash' && round.bids.some((bid) => bid.playerId === playerId)) {
-    throw new Error('Flash bids cannot be modified');
+  if (round.bids.some((bid) => bid.playerId === playerId)) {
+    throw new Error('Already bid this round');
   }
 
   const requestedAmount = Math.round(amount);
@@ -36,6 +31,9 @@ export function submitBid(
     throw new Error('出价超过当前可用现金');
   }
   const normalizedAmount = requestedAmount;
+  if (normalizedAmount === 0) {
+    return passAuction(state, playerId, now);
+  }
   if (state.coreMode && round.index > 4 && normalizedAmount > 0) {
     const previousAmount = previousCoreBidAmount(state, playerId);
     if (previousAmount > 0 && normalizedAmount <= previousAmount) {
@@ -43,30 +41,22 @@ export function submitBid(
     }
   }
 
+  const isOpenRound = round.auctionMode === 'open' || round.auctionMode === 'deposit_open';
+
   if (round.auctionMode === 'deposit_open') {
     ensureDeposit(state, player, now);
   }
 
-  if (round.auctionMode === 'open' || round.auctionMode === 'deposit_open') {
-    const minimumBid = Math.max(round.container.minimumBid ?? 0, round.currentBid + state.config.rules.minIncrement);
-    if (normalizedAmount < minimumBid) {
-      throw new Error('Open auction bid is below the minimum increment');
-    }
-    round.currentBid = normalizedAmount;
-    round.currentLeaderId = playerId;
+  if (isOpenRound) {
     player.passed = false;
     player.hasSubmittedBid = true;
     round.bids.push({
       playerId,
       amount: normalizedAmount,
       createdAt: now,
-      visible: true
+      visible: false
     });
   } else {
-    const minimumBid = round.container.minimumBid ?? 0;
-    if (normalizedAmount > 0 && normalizedAmount < minimumBid) {
-      throw new Error('Sealed auction bid is below the minimum bid');
-    }
     upsertHiddenBid(round.bids, playerId, normalizedAmount, now);
     player.hasSubmittedBid = true;
   }
@@ -74,7 +64,7 @@ export function submitBid(
   state.updatedAt = now;
   pushEvent(state, 'bid_submitted', playerId, {
     roundId: round.id,
-    amount: ['open', 'deposit_open'].includes(round.auctionMode) ? normalizedAmount : undefined,
+    amount: undefined,
     mode: round.auctionMode
   });
   return state;
@@ -86,18 +76,12 @@ export function passAuction(state: MatchRuntimeState, playerId: string, now = Da
   if (round.phase !== 'auction') {
     throw new Error('Pass is only allowed during auction phase');
   }
-  if (state.coreMode && round.bids.some((bid) => bid.playerId === playerId)) {
-    throw new Error('BidKing core auction submissions cannot be modified');
+  if (round.bids.some((bid) => bid.playerId === playerId)) {
+    throw new Error('Already bid this round');
   }
   player.passed = true;
-  if (round.auctionMode !== 'open' && round.auctionMode !== 'deposit_open') {
-    const existingBid = round.bids.find((bid) => bid.playerId === playerId);
-    if (round.auctionMode === 'flash' && existingBid && existingBid.amount > 0) {
-      throw new Error('Flash bids cannot be withdrawn');
-    }
-    player.hasSubmittedBid = true;
-    upsertHiddenBid(round.bids, playerId, 0, now);
-  }
+  player.hasSubmittedBid = true;
+  upsertHiddenBid(round.bids, playerId, 0, now);
   state.updatedAt = now;
   pushEvent(state, 'auction_passed', playerId, { roundId: round.id });
   return state;
@@ -122,8 +106,9 @@ export function settleCurrentRound(state: MatchRuntimeState, now = Date.now()): 
     state.totalRounds = Math.max(state.totalRounds, round.index + 2);
   }
 
+  const isCoreLastScheduledRound = state.coreMode && round.index >= state.totalRounds - 1;
   const shouldSettleFinal = state.coreMode
-    ? Boolean(coreDecision?.shouldClose)
+    ? Boolean(coreDecision?.shouldClose || (isCoreLastScheduledRound && !coreDecision?.extraRound))
     : Boolean(round.isFinalAuction);
 
   if (!shouldSettleFinal) {
@@ -158,24 +143,17 @@ export function settleCurrentRound(state: MatchRuntimeState, now = Date.now()): 
     const depositPaid = round.depositPaidByPlayerId[player.id] ? depositValue : 0;
     const depositRefund = depositRefunds[player.id] ?? 0;
     const isWinner = player.id === winner?.id;
-    const profitBeforeLossRecovery = isWinner ? rawProfit + refund : depositRefund - depositPaid;
-    const participated = isWinner || round.bids.some((bid) => bid.playerId === player.id && bid.amount > 0);
-    const lossRebateRefund = participated
-      ? bidKingBidLossRebateAmount(Math.max(0, -profitBeforeLossRecovery))
-      : 0;
+    const profit = isWinner ? rawProfit + refund : depositRefund - depositPaid;
     return {
       player,
       depositPaid,
       depositRefund,
       isWinner,
       insuranceRefund: isWinner ? refund : 0,
-      lossRebateRefund,
-      profit: profitBeforeLossRecovery + lossRebateRefund
+      profit
     };
   });
-  const winnerLossRebateRefund = participantRows.find((row) => row.isWinner)?.lossRebateRefund ?? 0;
-  const totalLossRebateRefund = participantRows.reduce((sum, row) => sum + row.lossRebateRefund, 0);
-  const profit = rawProfit + refund + winnerLossRebateRefund;
+  const profit = rawProfit + refund;
 
   if (winner) {
     transact(state, winner, -payment, 'auction_payment', now);
@@ -187,12 +165,6 @@ export function settleCurrentRound(state: MatchRuntimeState, now = Date.now()): 
     }
     winner.holdings.push(...round.container.hiddenItems);
   }
-  for (const row of participantRows) {
-    if (row.lossRebateRefund > 0) {
-      transact(state, row.player, row.lossRebateRefund, 'bid_loss_rebate', now);
-    }
-  }
-
   const clueReview = reviewClues(
     [
       ...(round.auctioneerClue ? [round.auctioneerClue] : []),
@@ -210,7 +182,6 @@ export function settleCurrentRound(state: MatchRuntimeState, now = Date.now()): 
     payment,
     depositCost: winnerDepositCost,
     insuranceRefund: refund,
-    lossRebateRefund: totalLossRebateRefund,
     trueValue,
     repairCost,
     setBonus,
@@ -222,7 +193,6 @@ export function settleCurrentRound(state: MatchRuntimeState, now = Date.now()): 
       depositPaid: row.depositPaid,
       depositRefund: row.depositRefund,
       insuranceRefund: row.insuranceRefund,
-      lossRebateRefund: row.lossRebateRefund,
       trueValue: row.isWinner ? trueValue : 0,
       repairCost: row.isWinner ? repairCost : 0,
       setBonus: row.isWinner ? setBonus : 0,

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Gavel, Home, Info, ListChecks, Play, Shield, Users } from 'lucide-react';
 import { gameConfig } from '@bitkingdom/config';
+import { bidKingSourceRoles } from '@bitkingdom/match-core';
 import type { BidKingBidMapRow } from '@bitkingdom/bidking-compat';
 import type { CoreAuctionMode, PlayerProfile, RoomSnapshot } from '@bitkingdom/shared';
 import { roleAvatarForRoleId, rolePortraitForRoleId } from '../../artAssets';
@@ -50,6 +51,7 @@ export function RoomLobbyView({
     ?? lobbyBidMapChoices[0];
   const roomPlayerCount = room.maxPlayers ?? lobbyBidMap?.bidder_number ?? 4;
   const nextBidMap = lobbyBidMapChoices[(Math.max(0, lobbyBidMapChoices.findIndex((map) => map.id === lobbyBidMap?.id)) + 1) % Math.max(1, lobbyBidMapChoices.length)];
+  const sourceRoles = bidKingSourceRoles(gameConfig.roles);
   return (
     <section className="room-ready-hall">
       <aside className="hall-mode-rail">
@@ -100,7 +102,7 @@ export function RoomLobbyView({
       <aside className="hall-side-panel">
         <HallRoleCard initialCash={room.initialCash} profile={profile} role={selectedRole} />
         <div className="hall-role-roster">
-          {gameConfig.roles.map((role) => (
+          {sourceRoles.map((role) => (
             <button
               className={selectedRoleId === role.id ? 'selected' : ''}
               key={role.id}
@@ -198,7 +200,7 @@ function ModeSelector({
     <div className="mode-selector" aria-label="拍场局规">
       {([
         { mode: 'sealed', label: '暗拍', detail: '只公开排名' },
-        { mode: 'open', label: '明拍', detail: '记录金额' }
+        { mode: 'open', label: '明拍', detail: '轮后公开' }
       ] satisfies Array<{ mode: CoreAuctionMode; label: string; detail: string }>).map((option) => (
         <button
           className={mode === option.mode ? 'active' : ''}

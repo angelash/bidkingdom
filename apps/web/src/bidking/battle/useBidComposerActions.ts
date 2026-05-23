@@ -1,10 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import type { PlayerSnapshot } from '@bitkingdom/shared';
 import type { BidKingSocket } from '../socket/useBidKingSocket';
-import { minimumAllowedBid } from './BattlePanels';
 
 interface UseBidComposerActionsArgs {
-  currentRound?: NonNullable<PlayerSnapshot['public']['currentRound']>;
   previousBid?: number;
   recommendedBid?: { safePrice: number; reason: string };
   selfCash?: number;
@@ -26,7 +23,6 @@ export interface BidComposerActions {
   confirmBidAmount?: number;
   doubleBidDraft: () => void;
   fillRecommendedBid: () => void;
-  minimumBid: number;
   pressBidKey: (key: string) => void;
   requestBidConfirm: () => void;
   resetBidComposer: () => void;
@@ -39,7 +35,6 @@ export interface BidComposerActions {
 }
 
 export function useBidComposerActions({
-  currentRound,
   previousBid,
   recommendedBid,
   selfCash,
@@ -52,10 +47,9 @@ export function useBidComposerActions({
   const [confirmBidAmount, setConfirmBidAmount] = useState<number>();
   const [manualError, setManualError] = useState<string>();
 
-  const minimumBid = currentRound ? minimumAllowedBid(currentRound) : 0;
   const availableCash = selfCash ?? Number.MAX_SAFE_INTEGER;
   const draftAmount = Number(bidDraft || 0);
-  const bidDraftError = manualError ?? validateDraft(draftAmount, minimumBid, availableCash);
+  const bidDraftError = manualError ?? validateDraft(draftAmount, availableCash);
   const bidDraftValid = !bidDraftError;
 
   const setDraftAmount = useCallback((amount: number): void => {
@@ -66,10 +60,10 @@ export function useBidComposerActions({
 
   const preferredOpenAmount = useCallback((): number => {
     if (previousBid !== undefined && previousBid > 0) {
-      return Math.min(availableCash, Math.max(minimumBid, previousBid));
+      return Math.min(availableCash, previousBid);
     }
-    return Math.min(availableCash, Math.max(0, minimumBid));
-  }, [availableCash, minimumBid, previousBid]);
+    return Math.min(availableCash, Math.max(0, bidAmount));
+  }, [availableCash, bidAmount, previousBid]);
 
   const submitBidClick = useCallback((): void => {
     setDraftAmount(preferredOpenAmount());
@@ -80,9 +74,9 @@ export function useBidComposerActions({
     if (!recommendedBid) {
       return;
     }
-    setDraftAmount(Math.min(availableCash, Math.max(minimumBid, recommendedBid.safePrice)));
+    setDraftAmount(Math.min(availableCash, Math.max(0, recommendedBid.safePrice)));
     setBidComposerOpen(true);
-  }, [availableCash, minimumBid, recommendedBid, setDraftAmount]);
+  }, [availableCash, recommendedBid, setDraftAmount]);
 
   const pressBidKey = useCallback((key: string): void => {
     setBidDraft((current) => {
@@ -103,14 +97,14 @@ export function useBidComposerActions({
 
   const requestBidConfirm = useCallback((): void => {
     const rawAmount = Math.max(0, Number(bidDraft || 0));
-    const error = validateDraft(rawAmount, minimumBid, availableCash);
+    const error = validateDraft(rawAmount, availableCash);
     if (error) {
       setManualError(error);
       return;
     }
     setConfirmBidAmount(rawAmount);
     setBidComposerOpen(false);
-  }, [availableCash, bidDraft, minimumBid]);
+  }, [availableCash, bidDraft]);
 
   const submitConfirmedBid = useCallback((): void => {
     if (confirmBidAmount === undefined) {
@@ -130,12 +124,12 @@ export function useBidComposerActions({
   }, []);
 
   const usePreviousBidAmount = useCallback((amount: number): void => {
-    setDraftAmount(Math.min(availableCash, Math.max(minimumBid, amount)));
-  }, [availableCash, minimumBid, setDraftAmount]);
+    setDraftAmount(Math.min(availableCash, Math.max(0, amount)));
+  }, [availableCash, setDraftAmount]);
 
   const setBidDraftToMinimum = useCallback((): void => {
-    setDraftAmount(Math.min(availableCash, Math.max(0, minimumBid)));
-  }, [availableCash, minimumBid, setDraftAmount]);
+    setDraftAmount(0);
+  }, [setDraftAmount]);
 
   const setBidDraftToMax = useCallback((): void => {
     setDraftAmount(availableCash);
@@ -162,7 +156,6 @@ export function useBidComposerActions({
     confirmBidAmount,
     doubleBidDraft,
     fillRecommendedBid,
-    minimumBid,
     pressBidKey,
     requestBidConfirm,
     resetBidComposer,
@@ -184,7 +177,6 @@ export function useBidComposerActions({
     confirmBidAmount,
     doubleBidDraft,
     fillRecommendedBid,
-    minimumBid,
     pressBidKey,
     requestBidConfirm,
     resetBidComposer,
@@ -196,12 +188,9 @@ export function useBidComposerActions({
   ]);
 }
 
-function validateDraft(amount: number, minimumBid: number, availableCash: number): string | undefined {
+function validateDraft(amount: number, availableCash: number): string | undefined {
   if (!Number.isFinite(amount) || amount <= 0) {
     return '请输入有效出价';
-  }
-  if (amount < minimumBid) {
-    return `低于最低出价 ${minimumBid.toLocaleString()}`;
   }
   if (amount > availableCash) {
     return `现金不足，最多 ${availableCash.toLocaleString()}`;

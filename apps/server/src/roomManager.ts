@@ -5,7 +5,7 @@ import {
   bidKingHeroIdForRoleId,
   bidKingHeroSkinForHero,
   bidKingInitialCashForBidMap,
-  bidKingResolveRandomBidMapId,
+  bidKingRoleHasSourceHero,
   bidKingRoleIdForHeroId,
   bidKingDefaultBidGameCount,
   bidKingMaxBotCount,
@@ -194,7 +194,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       if (!context) {
         return;
       }
-      const roleExists = gameConfig.roles.some((role) => role.id === payload.roleId);
+      const roleExists = bidKingRoleHasSourceHero(payload.roleId, gameConfig.roles);
       const player = context.room.players.find((candidate) => candidate.id === context.playerId);
       if (!player || !roleExists || context.room.status !== 'lobby') {
         return;
@@ -526,7 +526,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     if (room.players.length > maxPlayers) {
       throw new Error(`当前拍场仅支持 ${maxPlayers} 人同局`);
     }
-    const matchBidMapId = bidKingResolveRandomBidMapId(room.selectedBidMapId, room.id);
+    const matchBidMapId = room.selectedBidMapId;
     room.initialCash = bidKingInitialCashForBidMap(matchBidMapId, room.initialCash);
     const humanPlayers = room.players.filter((candidate) => candidate.kind === 'human');
     for (const player of humanPlayers) {

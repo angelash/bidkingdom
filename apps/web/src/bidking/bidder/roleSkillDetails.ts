@@ -32,7 +32,7 @@ export const roleSkillDetails: Record<RoleDefinition['skillId'], {
     active: '指定一名对手，获得其可能愿意承受的价格区间。',
     positioning: '对抗型信息角色，擅长控制抬价、诱导和停手时机。',
     difficulty: '中等',
-    tips: ['优先读当前领先或明显感兴趣的对手。', '明拍中读心可以辅助决定是否继续抬价。']
+    tips: ['优先读上一轮领先或明显感兴趣的对手。', '明拍中读心可以辅助判断本轮心理价。']
   },
   spread_rumor: {
     skillName: '散布传言',

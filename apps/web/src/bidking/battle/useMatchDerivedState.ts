@@ -53,11 +53,13 @@ export function useMatchDerivedState({
     ? selfPlayer.bidRanks?.find((entry) => entry.round === currentRound.index + 1)
     : undefined;
   const selfAlreadyActed = Boolean(selfPlayer?.passed || selfPlayer?.hasSubmittedBid || selfCurrentBidRound?.submitted);
+  const isBidKingCoreRound = Boolean(currentRound?.container.templateId.startsWith('bidmap_'));
   const canBid = Boolean(currentRound?.phase === 'auction' && !selfAlreadyActed);
   const canUseSkill = Boolean(
     currentRound &&
+    !isBidKingCoreRound &&
     ['intel', 'auction'].includes(currentRound.phase) &&
-    !(currentRound.phase === 'auction' && currentRound.container.templateId.startsWith('bidmap_') && selfAlreadyActed) &&
+    !(currentRound.phase === 'auction' && selfAlreadyActed) &&
     !snapshot?.private?.skillUsedThisRound &&
     snapshot?.private?.skillCooldown === 0 &&
     (snapshot?.private?.skillUsesRemaining ?? 0) > 0
@@ -65,7 +67,7 @@ export function useMatchDerivedState({
   const canUseBattleItem = Boolean(
     currentRound &&
     ['intel', 'auction'].includes(currentRound.phase) &&
-    !(currentRound.phase === 'auction' && currentRound.container.templateId.startsWith('bidmap_') && selfAlreadyActed)
+    !(currentRound.phase === 'auction' && selfAlreadyActed)
   );
   const recommendedBid = snapshot ? calculateRecommendedBid(snapshot) : undefined;
   const skillTargets = snapshot?.public.players.filter((player) => player.id !== selfPlayer?.id) ?? [];

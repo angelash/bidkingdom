@@ -311,7 +311,7 @@ function assessAuction(
   });
   const availableCash = availableCashForBid(state, player, round);
   const bidFloor = bidFloorForRound(state, player, round);
-  const nextOpenBid = Math.max(round.container.minimumBid ?? 0, round.currentBid + state.config.rules.minIncrement);
+  const nextOpenBid = bidFloor;
   const maxBid = maxBidForAssessment(estimate, confidence, riskPenalty, availableCash, tuning, round, state.coreMode, state.config.rules.minIncrement);
   const closeThreshold = state.coreMode ? getBidKingCloseThreshold(round.index) : 0;
   const desiredCloseBid = desiredOpenCloseBid(state, round, closeThreshold);
@@ -693,7 +693,7 @@ function buildSkillIntent(
     score += lacksSlotValue ? 0.18 : 0.05;
     reason = 'high value slot is not identified';
   } else if (skillId === 'read_intent') {
-    const hasOpponentPressure = Boolean(targetOpponent) && (round.auctionMode === 'open' || assessment.previous?.rank === 2 || round.index >= 4);
+    const hasOpponentPressure = Boolean(targetOpponent) && (assessment.previous?.rank === 2 || round.index >= 4);
     score += hasOpponentPressure ? 0.22 : 0.04;
     reason = 'opponent pressure matters';
   } else if (skillId === 'spread_rumor') {
@@ -723,10 +723,13 @@ function buildSkillIntent(
 
 function canUseSkill(context: BotContext): boolean {
   const { player, round, state } = context;
+  if (state.coreMode) {
+    return false;
+  }
   if (!['intel', 'auction'].includes(round.phase)) {
     return false;
   }
-  if (state.coreMode && round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === player.id))) {
+  if (round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === player.id))) {
     return false;
   }
   return player.skillCooldown === 0 && !player.skillUsedThisRound && player.skillUsesRemaining > 0;
@@ -759,6 +762,9 @@ function skillAction(context: BotContext, reason: string): BotAction {
 function canUseBattleItem(context: BotContext): boolean {
   const { player, round, state } = context;
   if (!state.coreMode || !['intel', 'auction'].includes(round.phase)) {
+    return false;
+  }
+  if (botUsedBattleItemThisRound(state, player.id, round.id)) {
     return false;
   }
   if (round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === player.id))) {
@@ -799,6 +805,15 @@ function battleItemAction(context: BotContext, reason: string): BotAction {
     targetPlayerId: plan.targetPlayerRequired ? context.targetOpponent?.id : undefined,
     reason: `${reason}: ${bidKingBattleItemDisplayName(choice.item)} from Drop ${choice.dropGroupId}`
   };
+}
+
+function botUsedBattleItemThisRound(state: MatchRuntimeState, playerId: string, roundId: string): boolean {
+  return state.events.some((event) => (
+    event.type === 'battle_item_used'
+    && event.actorId === playerId
+    && ((event.payload as { roundId?: string } | undefined)?.roundId === roundId
+      || (event.payload as { entry?: { id?: string } } | undefined)?.entry?.id?.startsWith(`${roundId}_battle_item_${playerId}_`))
+  ));
 }
 
 function rankAiBattleItemChoice(context: BotContext): { item: (typeof BattleItem)[number]; dropGroupId: number } | undefined {
@@ -868,12 +883,9 @@ function chooseAuctionAction(context: BotContext): BotAction {
 }
 
 function chooseOpenAuctionAction(context: BotContext): BotAction {
-  const { state, round, player, assessment } = context;
-  if (round.currentLeaderId === player.id) {
-    return idleEmoteAction(context, 'Bot holds current open-auction lead');
-  }
-  if (state.coreMode && round.bids.some((bid) => bid.playerId === player.id)) {
-    return idleEmoteAction(context, 'Bot already submitted core open-auction bid');
+  const { round, player, assessment } = context;
+  if (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === player.id)) {
+    return idleEmoteAction(context, 'Bot already submitted open-auction bid');
   }
   if (player.passed) {
     return idleEmoteAction(context, 'Bot already passed this open auction');
@@ -895,41 +907,7 @@ function chooseOpenAuctionAction(context: BotContext): BotAction {
 }
 
 function openBidAmount(context: BotContext): number {
-  const { state, round, assessment, tuning } = context;
-  const nextBid = assessment.nextOpenBid;
-  if (nextBid > assessment.maxBid || !shouldBidAtFloor(assessment.estimate, nextBid, assessment.confidence, assessment.riskPenalty, round, tuning, state.coreMode)) {
-    return 0;
-  }
-  const closeBid = assessment.desiredCloseBid;
-  const shouldPressureClose =
-    closeBid !== undefined &&
-    closeBid >= nextBid &&
-    closeBid <= assessment.maxBid &&
-    closeBid <= Math.max(assessment.targetBid, nextBid) * 1.12 &&
-    (round.index >= 3 || assessment.confidence > 0.62 || tuning.bidAggression > 0.68);
-  if (state.coreMode) {
-    const anchoredTarget = Math.max(nextBid, assessment.targetBid);
-    const pressureTarget = shouldPressureClose && closeBid !== undefined
-      ? Math.max(anchoredTarget, closeBid)
-      : anchoredTarget;
-    const amount = ceilToIncrement(Math.min(assessment.maxBid, pressureTarget), state.config.rules.minIncrement);
-    return amount >= nextBid && shouldBidAtFloor(assessment.estimate, amount, assessment.confidence, assessment.riskPenalty, round, tuning, state.coreMode)
-      ? amount
-      : 0;
-  }
-  if (shouldPressureClose) {
-    return ceilToIncrement(closeBid, state.config.rules.minIncrement);
-  }
-  const canJump =
-    round.currentLeaderId &&
-    assessment.targetBid - nextBid >= state.config.rules.minIncrement * 4 &&
-    tuning.bidAggression > 0.7 &&
-    assessment.confidence > 0.54;
-  if (canJump) {
-    const jump = nextBid + state.config.rules.minIncrement * (1 + Math.round(tuning.bidAggression * 2));
-    return Math.min(assessment.maxBid, ceilToIncrement(jump, state.config.rules.minIncrement));
-  }
-  return nextBid;
+  return sealedBidAmount(context);
 }
 
 function sealedBidAmount(context: BotContext): number {
@@ -1093,9 +1071,7 @@ function weightedRangeValue(
 }
 
 function bidFloorForRound(state: MatchRuntimeState, player: RuntimePlayer, round: RuntimeRound): number {
-  const baseFloor = round.auctionMode === 'open' || round.auctionMode === 'deposit_open'
-    ? Math.max(round.container.minimumBid ?? 0, round.currentBid + state.config.rules.minIncrement)
-    : round.container.minimumBid ?? 0;
+  const baseFloor = round.container.minimumBid ?? 0;
   return coreExtraRoundMinimum(state, round, previousRoundSignalForPlayer(state, player.id)?.ownBid, baseFloor);
 }
 
@@ -1116,29 +1092,12 @@ function desiredOpenCloseBid(
   round: RuntimeRound,
   closeThreshold: number
 ): number | undefined {
+  void state;
+  void closeThreshold;
   if (!['open', 'deposit_open'].includes(round.auctionMode)) {
     return undefined;
   }
-  const amounts = highestVisibleOpenAmounts(round);
-  const secondAmount = amounts[1]?.amount ?? 0;
-  if (secondAmount <= 0) {
-    return undefined;
-  }
-  const pressure = closeThreshold > 0 ? closeThreshold + 0.035 : 0;
-  return ceilToIncrement(secondAmount * (1 + pressure), state.config.rules.minIncrement);
-}
-
-function highestVisibleOpenAmounts(round: RuntimeRound): Array<{ playerId: string; amount: number }> {
-  const highestByPlayer = new Map<string, number>();
-  for (const bid of round.bids) {
-    if (!bid.visible || bid.amount <= 0) {
-      continue;
-    }
-    highestByPlayer.set(bid.playerId, Math.max(highestByPlayer.get(bid.playerId) ?? 0, bid.amount));
-  }
-  return [...highestByPlayer.entries()]
-    .map(([playerId, amount]) => ({ playerId, amount }))
-    .sort((left, right) => right.amount - left.amount);
+  return undefined;
 }
 
 function previousRoundSignalForPlayer(state: MatchRuntimeState, playerId: string): PreviousRoundSignal | undefined {
@@ -1167,13 +1126,6 @@ function availableCashForBid(state: MatchRuntimeState, player: RuntimePlayer, ro
 }
 
 function pickRelevantOpponent(state: MatchRuntimeState, player: RuntimePlayer): RuntimePlayer | undefined {
-  const round = state.currentRound;
-  const currentLeader = round?.currentLeaderId && round.currentLeaderId !== player.id
-    ? state.players.find((candidate) => candidate.id === round.currentLeaderId)
-    : undefined;
-  if (currentLeader) {
-    return currentLeader;
-  }
   const previousLeaderId = previousRoundSignalForPlayer(state, player.id)?.leaderPlayerId;
   const previousLeader = previousLeaderId && previousLeaderId !== player.id
     ? state.players.find((candidate) => candidate.id === previousLeaderId)
@@ -1278,10 +1230,6 @@ function roundToIncrement(value: number, increment: number): number {
 
 function floorToIncrement(value: number, increment: number): number {
   return Math.max(0, Math.floor(value / increment) * increment);
-}
-
-function ceilToIncrement(value: number, increment: number): number {
-  return Math.max(0, Math.ceil(value / increment) * increment);
 }
 
 function roundNumber(value: number, digits: number): number {

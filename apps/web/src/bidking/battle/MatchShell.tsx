@@ -130,7 +130,9 @@ export function MatchShell({
         <div className="rule-strip">
           <Gavel size={16} />
           <span>{auctionRuleText(currentRound.auctionMode)}</span>
-          {currentRound.currentLeaderId && <strong>当前领先：{playerNameById(snapshot.public.players, currentRound.currentLeaderId)}</strong>}
+          {currentRound.bidFeedback?.leaderPlayerId && (
+            <strong>本轮反馈：{playerNameById(snapshot.public.players, currentRound.bidFeedback.leaderPlayerId)}领先</strong>
+          )}
         </div>
         <CloseRuleLadder currentRound={currentRound.index} />
         {!tutorialDismissed && (

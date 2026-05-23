@@ -5,6 +5,7 @@ import {
   bidKingInitialCashForBidMap,
   bidKingHeroIdForRoleId,
   bidKingRoleIdForHeroId,
+  bidKingRoleHasSourceHero,
   type CreateMatchPlayer,
   type MatchRuntimeState
 } from '@bitkingdom/match-core';
@@ -113,7 +114,7 @@ export function snapshotRoom(room: RoomSnapshotSource): RoomSnapshot {
 }
 
 export function validRole(roleId?: string): string {
-  return gameConfig.roles.some((role) => role.id === roleId) ? roleId! : gameConfig.roles[0]!.id;
+  return bidKingRoleHasSourceHero(roleId, gameConfig.roles) ? roleId! : gameConfig.roles[0]!.id;
 }
 
 export function validCoreAuctionMode(mode?: CoreAuctionMode): CoreAuctionMode {

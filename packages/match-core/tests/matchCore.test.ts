@@ -86,11 +86,9 @@ describe('match core', () => {
     const warehouseId = match.currentRound!.container.id;
     const hiddenItemCount = match.currentRound!.container.hiddenItems.length;
 
-    expect(match.currentRound!.phase).toBe('warehouse_roll');
+    expect(match.currentRound!.phase).toBe('auction');
     expect(match.currentRound!.openingCandidates?.length).toBeGreaterThan(3);
     expect(match.currentRound!.auctioneerClue?.text).toContain('掌眼人情报');
-    expect(buildSnapshot(match, 'p1').public.currentRound?.publicClues.some((clue) => clue.id === match.currentRound!.auctioneerClue?.id)).toBe(false);
-    setRoundPhase(match, 'auctioneer_reveal', 3000, 2500);
     expect(buildSnapshot(match, 'p1').public.currentRound?.publicClues.some((clue) => clue.id === match.currentRound!.auctioneerClue?.id)).toBe(true);
 
     for (let roundIndex = 0; roundIndex < 5; roundIndex += 1) {
@@ -130,7 +128,6 @@ describe('match core', () => {
 
     submitBid(match, 'p1', 30000, 3100);
     submitBid(match, 'p2', 36000, 3200);
-    passAuction(match, 'p1', 3300);
     settleCurrentRound(match, 4000);
 
     expect(match.currentRound!.settlement?.winnerId).toBe('p2');
@@ -160,9 +157,97 @@ describe('match core', () => {
     setRoundPhase(match, 'auction', 30000, 3000);
 
     submitBid(match, 'p1', 29000, 3100);
-    expect(match.currentRound!.currentBid).toBe(29000);
+    expect(match.currentRound!.bids.find((bid) => bid.playerId === 'p1')?.amount).toBe(29000);
+    expect(match.currentRound!.currentBid).toBe(0);
     settleCurrentRound(match, 4000);
     expect(player.cash).toBe(0);
+  });
+
+  it('keeps open auction amounts hidden until round feedback and allows lower one-shot bids', () => {
+    const match = makeMatch();
+    match.currentRound!.auctionMode = 'open';
+    match.currentRound!.container.minimumBid = 100000;
+    setRoundPhase(match, 'auction', 30000, 3000);
+
+    submitBid(match, 'p1', 50000, 3100);
+    submitBid(match, 'p2', 30000, 3200);
+
+    expect(match.currentRound!.currentBid).toBe(0);
+    expect(match.currentRound!.currentLeaderId).toBeUndefined();
+
+    const p1Round = buildSnapshot(match, 'p1').public.currentRound!;
+    expect(p1Round.bids.find((bid) => bid.playerId === 'p1')).toEqual(expect.objectContaining({
+      amount: 0,
+      visible: false
+    }));
+    expect(p1Round.bids.find((bid) => bid.playerId === 'p2')).toEqual(expect.objectContaining({
+      amount: 0,
+      visible: false
+    }));
+    expect(buildSnapshot(match, 'p1').public.players.find((player) => player.id === 'p2')?.bidRanks?.[0]).toEqual(expect.objectContaining({
+      submitted: true,
+      amount: undefined,
+      visibleAmount: false
+    }));
+
+    const p2Round = buildSnapshot(match, 'p2').public.currentRound!;
+    expect(p2Round.bids.find((bid) => bid.playerId === 'p1')).toEqual(expect.objectContaining({
+      amount: 0,
+      visible: false
+    }));
+    expect(p2Round.bids.find((bid) => bid.playerId === 'p2')).toEqual(expect.objectContaining({
+      amount: 0,
+      visible: false
+    }));
+    expect(buildSnapshot(match, 'p2').public.players.find((player) => player.id === 'p1')?.bidRanks?.[0]).toEqual(expect.objectContaining({
+      submitted: true,
+      amount: undefined,
+      visibleAmount: false
+    }));
+
+    settleCurrentRound(match, 4000);
+
+    const feedbackRound = buildSnapshot(match, 'p1').public.currentRound!;
+    expect(feedbackRound.settlement?.winnerId).toBe('p1');
+    expect(feedbackRound.bids.map((bid) => [bid.playerId, bid.amount, bid.visible])).toEqual([
+      ['p1', 50000, true],
+      ['p2', 30000, true]
+    ]);
+    expect(feedbackRound.bidFeedback?.publicRanking.map((entry) => [entry.playerId, entry.rank, entry.amount])).toEqual([
+      ['p1', 1, 50000],
+      ['p2', 2, 30000]
+    ]);
+  });
+
+  it('allows positive bids below configured BidKing minimum ranges', () => {
+    const match = makeMatch();
+    match.currentRound!.auctionMode = 'sealed';
+    match.currentRound!.container.minimumBid = 100000;
+    setRoundPhase(match, 'auction', 30000, 3000);
+
+    submitBid(match, 'p1', 1000, 3100);
+
+    expect(match.currentRound!.bids.find((bid) => bid.playerId === 'p1')?.amount).toBe(1000);
+  });
+
+  it('settles the last scheduled core round even when nobody gives a valid bid', () => {
+    const match = makeCoreMatch();
+    match.roundIndex = 4;
+    match.totalRounds = 5;
+    match.currentRound!.index = 4;
+    setRoundPhase(match, 'auction', 30000, 3000);
+
+    for (const player of match.players) {
+      passAuction(match, player.id, 3100 + player.seat);
+    }
+    settleCurrentRound(match, 4000);
+
+    expect(match.currentRound!.settlement?.isFinal).toBe(true);
+    expect(match.currentRound!.settlement?.winnerId).toBeUndefined();
+    expect(match.currentRound!.settlement?.payment).toBe(0);
+    expect(match.currentRound!.settlement?.title).toBe('全员观望');
+    expect(match.currentRound!.phase).toBe('reveal');
+    expect(match.transactions).toHaveLength(0);
   });
 
   it('deducts repair costs from cash so settlement profit matches net worth movement', () => {
@@ -182,8 +267,9 @@ describe('match core', () => {
     expect(match.transactions.some((tx) => tx.playerId === 'p1' && tx.reason === 'repair_cost_paid')).toBe(true);
   });
 
-  it('applies BidKing loss rebate when the final deal loses more than the configured threshold', () => {
+  it('applies BidKing loss rebate at match end when a participating player loses beyond the configured threshold', () => {
     const match = makeMatch();
+    match.totalRounds = 1;
     const lowValueItem = gameConfig.items.find((item) => item.value <= 5000 && item.repairCost === 0)!;
     match.currentRound!.container.hiddenItems = [lowValueItem];
     match.currentRound!.auctionMode = 'open';
@@ -194,31 +280,43 @@ describe('match core', () => {
 
     const rawProfit = lowValueItem.value - 50000;
     const expectedRebate = Math.floor(Math.abs(rawProfit) * 0.1);
-    expect(match.currentRound!.settlement?.lossRebateRefund).toBe(expectedRebate);
-    expect(match.currentRound!.settlement?.profit).toBe(rawProfit + expectedRebate);
-    expect(match.transactions.some((tx) => tx.reason === 'bid_loss_rebate' && tx.amountChange === expectedRebate)).toBe(true);
+    expect(match.currentRound!.settlement?.lossRebateRefund ?? 0).toBe(0);
+    expect(match.currentRound!.settlement?.profit).toBe(rawProfit);
+    expect(match.transactions.some((tx) => tx.reason === 'bid_loss_rebate')).toBe(false);
+
+    finishRound(match, 5000);
+    startNextRound(match, 6000);
+
+    expect(match.finalSummary?.lossRecoveryByPlayerId?.p1).toBe(expectedRebate);
   });
 
-  it('prevents modifying flash bids', () => {
-    const match = makeMatch();
-    match.currentRound!.auctionMode = 'flash';
-    setRoundPhase(match, 'auction', 10000, 3000);
+  it('prevents modifying bids in every auction mode', () => {
+    for (const mode of ['open', 'sealed', 'second_price', 'deposit_open', 'flash'] as const) {
+      const match = makeMatch();
+      match.currentRound!.auctionMode = mode;
+      setRoundPhase(match, 'auction', 10000, 3000);
 
-    submitBid(match, 'p1', 30000, 3100);
+      submitBid(match, 'p1', 30000, 3100);
 
-    expect(() => submitBid(match, 'p1', 32000, 3200)).toThrow(/Flash/);
+      expect(() => submitBid(match, 'p1', 32000, 3200)).toThrow(/Already bid this round/);
+      expect(() => passAuction(match, 'p1', 3300)).toThrow(/Already bid this round/);
+    }
   });
 
-  it('keeps hidden pass records idempotent', () => {
+  it('records pass as the one auction action for the round', () => {
     const match = makeMatch();
     match.currentRound!.auctionMode = 'sealed';
     setRoundPhase(match, 'auction', 10000, 3000);
 
     passAuction(match, 'p1', 3100);
-    passAuction(match, 'p1', 3200);
+    submitBid(match, 'p2', 0, 3150);
 
     expect(match.currentRound!.bids.filter((bid) => bid.playerId === 'p1')).toHaveLength(1);
     expect(match.currentRound!.bids.find((bid) => bid.playerId === 'p1')?.amount).toBe(0);
+    expect(match.players.find((player) => player.id === 'p1')?.hasSubmittedBid).toBe(true);
+    expect(match.players.find((player) => player.id === 'p2')?.passed).toBe(true);
+    expect(match.currentRound!.bids.find((bid) => bid.playerId === 'p2')?.amount).toBe(0);
+    expect(() => passAuction(match, 'p1', 3200)).toThrow(/Already bid this round/);
   });
 
   it('archives clues, bids and settlement details for admin replay', () => {
@@ -289,7 +387,7 @@ describe('match core', () => {
     }
   });
 
-  it('does not let an open-auction leader bid against itself', () => {
+  it('does not let open-auction bots submit twice', () => {
     const match = makeMatch();
     match.currentRound!.auctionMode = 'open';
     setRoundPhase(match, 'auction', 30000, 3000);
@@ -299,7 +397,7 @@ describe('match core', () => {
 
     expect(action.type).not.toBe('bid');
     expect(action.audit?.behaviorTree).toContain('BidKingBotRoot');
-    expect(action.reason).toMatch(/lead|submitted|skill|idle/i);
+    expect(action.reason).toMatch(/submitted|idle/i);
   });
 
   it('keeps sealed bot decisions independent from hidden opponent bid amounts', () => {
@@ -448,7 +546,6 @@ describe('match core', () => {
     round.warehouseSlots = [];
     round.container.publicClues = [];
     setRoundPhase(match, 'auction', 30000, 3000);
-    submitBid(match, 'p1', 300_000, 3100);
 
     const bot = match.players.find((player) => player.id === 'b1')!;
     bot.skillCooldown = 1;
@@ -459,7 +556,7 @@ describe('match core', () => {
     const action = chooseBotAction(match, 'b1', 'aggressive');
 
     expect(action.type).toBe('bid');
-    expect(action.audit?.nextOpenBid).toBe(301_000);
+    expect(action.audit?.nextOpenBid).toBe(267_000);
     expect(action.audit?.targetBid).toBeGreaterThan(390_000);
     expect(action.amount ?? 0).toBeGreaterThanOrEqual(action.audit?.targetBid ?? 0);
     expect(action.amount ?? 0).toBeGreaterThan(action.audit?.nextOpenBid ?? 0);
@@ -477,7 +574,7 @@ describe('match core', () => {
     const action = chooseBotAction(match, 'b1', 'aggressive');
 
     expect(action.type).toBe('emote');
-    expect(action.reason).toMatch(/already submitted core open-auction bid/i);
+    expect(action.reason).toMatch(/already submitted open-auction bid/i);
   });
 
   it('reveals items only during reveal phase', () => {

@@ -6,7 +6,7 @@ import {
   type BidKingHeroSkinRuntime
 } from '@bitkingdom/bidking-compat';
 import { gameConfig } from '@bitkingdom/config';
-import { bidKingHeroIdForRoleId, bidKingHeroStateFromProfile } from '@bitkingdom/match-core';
+import { bidKingHeroIdForRoleId, bidKingHeroStateFromProfile, bidKingSourceRoles } from '@bitkingdom/match-core';
 import type { PlayerProfile } from '@bitkingdom/shared';
 import { roleAvatarForRoleId, rolePortraitForRoleId } from '../../artAssets';
 import {
@@ -42,8 +42,9 @@ export function BidderPanelView({
   const [tab, setTab] = useState<BidderTab>('detail');
   const [focusedRoleId, setFocusedRoleId] = useState(selectedRoleId);
   const [previewCue, setPreviewCue] = useState<BidKingSoundCue>();
-  const focusedRole = roles.find((role) => role.id === focusedRoleId) ?? roles[0]!;
-  const sourceHeroId = bidKingHeroIdForRoleId(focusedRole.id, roles);
+  const sourceRoles = bidKingSourceRoles(roles);
+  const focusedRole = sourceRoles.find((role) => role.id === focusedRoleId) ?? sourceRoles[0]!;
+  const sourceHeroId = bidKingHeroIdForRoleId(focusedRole.id, sourceRoles);
   const heroState = bidKingHeroStateFromProfile(profile, sourceHeroId);
   const selectable = heroState.state !== 'locked';
   const skill = roleSkillDetails[focusedRole.skillId];
@@ -151,8 +152,8 @@ export function BidderPanelView({
 
         <aside className="bidder-roster">
           <div className="bidder-roster-grid">
-            {roles.slice(0, 20).map((role) => {
-              const state = bidKingHeroStateFromProfile(profile, bidKingHeroIdForRoleId(role.id, roles));
+            {sourceRoles.map((role) => {
+              const state = bidKingHeroStateFromProfile(profile, bidKingHeroIdForRoleId(role.id, sourceRoles));
               const roleSelectable = state.state !== 'locked';
               return (
                 <button

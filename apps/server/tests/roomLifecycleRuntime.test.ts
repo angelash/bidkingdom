@@ -90,6 +90,18 @@ describe('BidKing room lifecycle runtime', () => {
     }));
   });
 
+  it('bounds human role selection to source Hero-backed bidder rows', () => {
+    const extraRole = gameConfig.roles[20]!;
+    const player = createHumanRoomPlayer({
+      id: 'p_extra_role',
+      name: '甲',
+      roleId: extraRole.id,
+      socketId: 'socket_extra_role'
+    });
+
+    expect(player.roleId).toBe(gameConfig.roles[0]!.id);
+  });
+
   it('previews original BidKing initial cash tiers before the match starts', () => {
     const room = createRoomState({
       id: 'room_initial_cash',

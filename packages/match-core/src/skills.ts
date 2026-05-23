@@ -15,14 +15,17 @@ export function useSkill(
   const player = requirePlayer(state, playerId);
   const role = state.config.roles.find((candidate) => candidate.id === player.roleId);
 
+  if (state.coreMode) {
+    throw new Error('BidKing core hero skills are automatic');
+  }
   if (!role) {
     throw new Error(`Missing role ${player.roleId}`);
   }
   if (!['intel', 'auction'].includes(round.phase)) {
     throw new Error('Skills are only allowed during intel or auction phase');
   }
-  if (state.coreMode && round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === playerId))) {
-    throw new Error('BidKing core skills must be used before bidding');
+  if (round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === playerId))) {
+    throw new Error('Skills must be used before bidding');
   }
   if (player.skillCooldown > 0 || player.skillUsedThisRound || player.skillUsesRemaining <= 0) {
     throw new Error('Skill is on cooldown');

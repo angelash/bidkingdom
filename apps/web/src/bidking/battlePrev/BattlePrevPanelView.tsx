@@ -555,7 +555,7 @@ function ModeSelector({
     <div className="mode-selector" aria-label="拍卖模式">
       {([
         { mode: 'sealed', label: '暗拍', detail: '只公开排名' },
-        { mode: 'open', label: '明拍', detail: '记录金额' }
+        { mode: 'open', label: '明拍', detail: '轮后公开' }
       ] satisfies Array<{ mode: CoreAuctionMode; label: string; detail: string }>).map((option) => (
         <button
           className={mode === option.mode ? 'active' : ''}

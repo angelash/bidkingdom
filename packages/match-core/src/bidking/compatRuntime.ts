@@ -4,6 +4,7 @@ import {
   bidKingBidMapDisplayName,
   bidKingItemDisplayName,
   bidKingSkillDisplayName,
+  Drop,
   dropsForGroup,
   getBidKingCloseThreshold,
   Hero,
@@ -11,7 +12,6 @@ import {
   itemById,
   itemFootprint,
   RankMap,
-  Skill,
   SkillGroup,
   skillById,
   skillEffectById,
@@ -21,7 +21,7 @@ import {
   type BidKingSkillEffectRow,
   type BidKingSkillRow
 } from '@bitkingdom/bidking-compat';
-import type { Clue, PublicContainerInfo, RevealedItem, Rarity, SkillFeedEntry } from '@bitkingdom/shared';
+import type { BidKingBoxInfoDataSnapshot, Clue, PublicContainerInfo, RevealedItem, Rarity, SkillFeedEntry } from '@bitkingdom/shared';
 import { buildPrivateClues, buildPublicClues } from '../clues';
 import { sumItemValue } from '../scoring';
 import type { ContainerInstance, MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } from '../types';
@@ -30,6 +30,7 @@ import {
   bidKingInitialCashForBidMap
 } from './initialCashRuntime';
 import { bidKingHeroIdForRoleId } from './heroRuntime';
+import { bidKingSourceBoxInfoForSlot } from './gameDataRuntime';
 
 export { getBidKingCloseThreshold };
 
@@ -83,6 +84,9 @@ export function buildBidKingAutoSkillClues(
   player: RuntimePlayer,
   roundIndex: number
 ): Clue[] {
+  if (roundIndex !== 0) {
+    return [];
+  }
   return [buildBidKingSkillClue(core, state, player, roundIndex, 'auto')].filter((clue): clue is Clue => Boolean(clue));
 }
 
@@ -100,43 +104,55 @@ export function buildBidKingRoundStartSkillFeed(
       const bidMapName = bidKingBidMapDisplayName(bidMap);
       const mapSkillName = bidKingSkillDisplayName(mapSkill);
       const mapEffect = effectForSkill(mapSkill);
+      const hitSlots = selectSlotsBySkill(round.container, state, mapSkill);
+      const targetItemIds = slotItemIds(hitSlots);
       entries.push({
         id: `${round.id}_map_skill_${mapSkill.id}`,
         round: roundNumber,
         source: 'map',
         sourceName: bidMapName,
         skillName: mapSkillName,
-        ...skillFeedEffectMetadata(mapSkill, mapEffect, undefined),
+        ...skillFeedEffectMetadata(mapSkill, mapEffect, targetItemIds),
         text: `${bidMapName}触发${mapSkillName}，本轮公共情报与仓库可见格更新。`,
         iconKey: mapSkill.skill_icon || bidMap.art_key,
         visibility: 'public',
+        targetItemIds,
+        hitBoxList: sourceHitBoxList(round, hitSlots, mapSkill),
         createdAt: now
       });
     }
   }
 
-  for (const player of state.players) {
-    const hero = heroForPlayer(player, state);
-    const skill = skillForHero(hero, round.index);
-    const effect = effectForSkill(skill);
-    const skillName = bidKingSkillDisplayName(skill);
-    const clue = player.privateClues.find((candidate) => (
-      candidate.id.includes(`_auto_${player.id}_${roundNumber}_${hero.id}_${skill.id}`)
-    ));
-    entries.push({
-      id: `${round.id}_hero_skill_${player.id}_${skill.id}`,
-      round: roundNumber,
-      playerId: player.id,
-      source: 'hero',
-      sourceName: hero.packaged_name,
-      skillName,
-      ...skillFeedEffectMetadata(skill, effect, clue),
-      text: clue?.text ?? `${hero.packaged_name}触发${skillName}，获得一条专属情报。`,
-      iconKey: skill.skill_icon,
-      visibility: 'private',
-      targetItemIds: clue?.targetItemIds ?? (clue?.targetItemId ? [clue.targetItemId] : undefined),
-      createdAt: now
-    });
+  if (round.index === 0) {
+    for (const player of state.players) {
+      const hero = heroForPlayer(player, state);
+      const skill = skillForHero(hero, round.index);
+      if (!skill) {
+        continue;
+      }
+      const effect = effectForSkill(skill);
+      const skillName = bidKingSkillDisplayName(skill);
+      const clue = player.privateClues.find((candidate) => (
+        candidate.id.includes(`_auto_${player.id}_${roundNumber}_${hero.id}_${skill.id}`)
+      ));
+      const targetItemIds = clueTargetItemIds(clue);
+      const hitSlots = slotsForTargetItemIds(round.container.warehouseSlots, targetItemIds);
+      entries.push({
+        id: `${round.id}_hero_skill_${player.id}_${skill.id}`,
+        round: roundNumber,
+        playerId: player.id,
+        source: 'hero',
+        sourceName: hero.packaged_name,
+        skillName,
+        ...skillFeedEffectMetadata(skill, effect, targetItemIds),
+        text: clue?.text ?? `${hero.packaged_name}触发${skillName}，获得一条专属情报。`,
+        iconKey: skill.skill_icon,
+        visibility: 'private',
+        targetItemIds,
+        hitBoxList: sourceHitBoxList(round, hitSlots, skill),
+        createdAt: now
+      });
+    }
   }
 
   return entries;
@@ -183,6 +199,9 @@ export function buildBidKingManualSkillResult(
   }
   const hero = heroForPlayer(player, state);
   const skill = skillForHero(hero, round.index);
+  if (!skill) {
+    return undefined;
+  }
   const effect = effectForSkill(skill);
   const clue = buildBidKingSkillClue(round.container, state, player, round.index, 'manual', targetPlayerId);
   const cooldownRounds = Math.max(1, skill.skill_CD);
@@ -207,8 +226,12 @@ export function buildBidKingManualSkillFeedEntry(
   }
   const hero = heroForPlayer(player, state);
   const skill = skillForHero(hero, round.index);
+  if (!skill) {
+    return undefined;
+  }
   const effect = effectForSkill(skill);
   const skillName = bidKingSkillDisplayName(skill);
+  const targetItemIds = clueTargetItemIds(clue);
   return {
     id: `${round.id}_manual_skill_${player.id}_${skill.id}_${round.skillFeed.length + 1}`,
     round: round.index + 1,
@@ -216,11 +239,11 @@ export function buildBidKingManualSkillFeedEntry(
     source: 'manual',
     sourceName: hero.packaged_name,
     skillName,
-    ...skillFeedEffectMetadata(skill, effect, clue),
+    ...skillFeedEffectMetadata(skill, effect, targetItemIds),
     text: clue?.text ?? `${hero.packaged_name}使用${skillName}，获得一条专属情报。`,
     iconKey: skill.skill_icon,
     visibility: 'private',
-    targetItemIds: clue?.targetItemIds ?? (clue?.targetItemId ? [clue.targetItemId] : undefined),
+    targetItemIds,
     createdAt: now
   };
 }
@@ -335,29 +358,10 @@ function resolveBidMapForState(state: MatchRuntimeState): BidKingBidMapRow {
   if (!requested) {
     return state.rng.pick(eligible);
   }
-  const grouped = weightedBidMapGroup(requested, state);
-  if (grouped) {
-    return grouped;
-  }
   if (requested.bidder_number === state.players.length || eligible.length === 0) {
     return requested;
   }
   return state.rng.pick(eligible);
-}
-
-function weightedBidMapGroup(selected: BidKingBidMapRow, state: MatchRuntimeState): BidKingBidMapRow | undefined {
-  const weightedRows = selected.map_group
-    .filter((entry) => (entry[0] ?? 0) > 0 && (entry[1] ?? 0) > 0)
-    .map((entry) => {
-      const row = BidMap.find((candidate) => candidate.id === entry[0] && candidate.is_visiable === 1);
-      return row ? { item: row, weight: entry[1] ?? 0 } : undefined;
-    })
-    .filter((entry): entry is { item: BidKingBidMapRow; weight: number } => Boolean(entry))
-    .filter((entry) => entry.item.bidder_number === state.players.length);
-  if (weightedRows.length === 0) {
-    return undefined;
-  }
-  return state.rng.weighted(weightedRows);
 }
 
 function eligibleBidMapsForPlayerCount(playerCount: number, maxMinimumBid?: number): BidKingBidMapRow[] {
@@ -405,47 +409,96 @@ function weightedRangeValue(ranges: readonly (readonly number[])[], state?: Matc
 }
 
 function drawItemsForBidMap(state: MatchRuntimeState, bidMap: BidKingBidMapRow): RevealedItem[] {
-  const [routeType, routeGroupId, routeMin, routeMax] = bidMap.drop_group_id;
-  const fallbackItems = Item.filter((item) => item.drop_group_id === routeGroupId);
-  const count = state.rng.int(bidMap.item_count_min, bidMap.item_count_max);
-  return Array.from({ length: count }, (_, index) => {
-    const drop = routeType === 9999 && routeGroupId !== undefined
-      ? pickDropLeaf(state, routeGroupId)
-      : directDropFromRoute(routeGroupId, routeMin, routeMax);
-    const item = drop
-      ? itemById(drop.item_id)
-      : fallbackItems[index % Math.max(1, fallbackItems.length)];
-    const row = item ?? Item[((routeGroupId ?? bidMap.id) * 11 + index * 17) % Item.length]!;
-    return toRevealedItem(row, index);
-  });
+  const rows = drawSourceItemRowsForBidMap(state, bidMap);
+  const revealedItems = rows.map((row, index) => toRevealedItem(row, index));
+  return buildWarehouseSlots(revealedItems).map((slot) => slot.item);
 }
 
-function directDropFromRoute(itemId: number | undefined, minCount?: number, maxCount?: number): BidKingDropItemRow | undefined {
-  if (itemId === undefined) {
-    return undefined;
+function drawSourceItemRowsForBidMap(state: MatchRuntimeState, bidMap: BidKingBidMapRow): BidKingItemRow[] {
+  const [routeType, routeGroupId, routeMin, routeMax] = bidMap.drop_group_id;
+  const routeCount = sourceRandomCount(
+    state,
+    routeMin ?? bidMap.item_count_min,
+    routeMax ?? bidMap.item_count_max
+  );
+  const drops = routeType === 9999 && routeGroupId !== undefined
+    ? doSourceDrop(state, routeGroupId, routeCount)
+    : directSourceDrop(routeGroupId, routeCount);
+  const rows = drops
+    .map((drop) => itemById(drop.item_id))
+    .filter((item): item is BidKingItemRow => Boolean(item));
+  const routeKnown = routeType === 9999
+    ? routeGroupId !== undefined && Drop.some((candidate) => candidate.group_id === routeGroupId)
+    : routeGroupId !== undefined && Boolean(itemById(routeGroupId));
+  if (routeKnown || rows.length > 0) {
+    return rows;
   }
-  return {
+  const fallbackItems = Item.filter((item) => item.drop_group_id === routeGroupId);
+  const fallbackCount = Math.max(1, routeCount);
+  return Array.from({ length: fallbackCount }, (_, index) => (
+    fallbackItems[index % Math.max(1, fallbackItems.length)]
+    ?? Item[((routeGroupId ?? bidMap.id) * 11 + index * 17) % Item.length]!
+  ));
+}
+
+function directSourceDrop(itemId: number | undefined, count: number): BidKingDropItemRow[] {
+  if (itemId === undefined || count <= 0) {
+    return [];
+  }
+  return Array.from({ length: count }, () => ({
     item_type: 0,
     item_id: itemId,
-    min_count: minCount ?? 1,
-    max_count: maxCount ?? minCount ?? 1,
+    min_count: 1,
+    max_count: 1,
     drop_weight: 1
-  };
+  }));
 }
 
-function pickDropLeaf(state: MatchRuntimeState, groupId: number, depth = 0): BidKingDropItemRow | undefined {
+function doSourceDrop(state: MatchRuntimeState, groupId: number, dropCount = 1, depth = 0): BidKingDropItemRow[] {
   if (depth > 8) {
-    return undefined;
+    return [];
   }
-  const drops = dropsForGroup(groupId);
-  if (drops.length === 0) {
-    return undefined;
+  const group = Drop.find((candidate) => candidate.group_id === groupId);
+  const drops = group?.items_list.filter((row) => row.drop_weight > 0) ?? [];
+  if (!group || drops.length === 0 || dropCount <= 0) {
+    return [];
   }
-  const selected = state.rng.weighted(drops.map((row) => ({ item: row, weight: row.drop_weight })));
-  if (selected.item_type === 9999) {
-    return pickDropLeaf(state, selected.item_id, depth + 1);
+  const result: BidKingDropItemRow[] = [];
+  for (let index = 0; index < dropCount; index += 1) {
+    const selected = group.weight_type === 1
+      ? sourceProbabilityDrops(state, drops)
+      : [state.rng.weighted(drops.map((row) => ({ item: row, weight: row.drop_weight })))];
+    for (const drop of selected) {
+      const count = sourceRandomCount(state, drop.min_count, drop.max_count);
+      if (drop.item_type === 9999) {
+        result.push(...doSourceDrop(state, drop.item_id, count, depth + 1));
+      } else {
+        for (let copy = 0; copy < count; copy += 1) {
+          result.push(drop);
+        }
+      }
+    }
   }
-  return selected;
+  return result;
+}
+
+function sourceProbabilityDrops(state: MatchRuntimeState, drops: readonly BidKingDropItemRow[]): BidKingDropItemRow[] {
+  const total = drops.reduce((sum, row) => sum + Math.max(0, row.drop_weight), 0);
+  if (total <= 0) {
+    return [];
+  }
+  return drops.filter((row) => state.rng.next() < Math.max(0, row.drop_weight) / total);
+}
+
+function sourceRandomCount(state: MatchRuntimeState, num1 = 1, num2 = 1): number {
+  const left = Math.round(num1);
+  const right = Math.round(num2);
+  if (left === right) {
+    return left;
+  }
+  const min = Math.min(left, right);
+  const max = Math.max(left, right);
+  return Math.floor(state.rng.next() * Math.max(1, max - min)) + min;
 }
 
 function toRevealedItem(row: BidKingItemRow, instanceIndex: number): RevealedItem {
@@ -475,10 +528,14 @@ function buildBidKingSkillClue(
 ): Clue | undefined {
   const hero = heroForPlayer(player, state);
   const skill = skillForHero(hero, roundIndex);
+  if (!skill) {
+    return undefined;
+  }
   const effect = effectForSkill(skill);
   const clueId = `${core.id}_${trigger}_${player.id}_${roundIndex + 1}_${hero.id}_${skill.id}`;
   const selectedSlots = selectSlotsBySkill(core, state, skill, trigger);
   const scanSlots = selectedSlots.slice(0, trigger === 'manual' ? 3 : 2);
+  const selectedItemIds = slotItemIds(selectedSlots);
   const skillName = bidKingSkillDisplayName(skill);
 
   if ([8, 9, 10].includes(effect.Category)) {
@@ -500,7 +557,7 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：命中样本价值约在 ${low.toLocaleString()} ～ ${high.toLocaleString()}。`,
       accuracy: trigger === 'manual' ? 0.9 : 0.82,
       valueHint: { min: low, max: high },
-      targetItemIds: scanSlots.map((slot) => slot.item.id),
+      targetItemIds: selectedItemIds,
       source: 'skill',
       isTruthful: true
     };
@@ -524,7 +581,7 @@ function buildBidKingSkillClue(
       kind: 'category',
       text: `${hero.packaged_name}·${skillName}：${label}为 ${value}。`,
       accuracy: trigger === 'manual' ? 0.9 : 0.84,
-      targetItemIds: scanSlots.map((slot) => slot.item.id),
+      targetItemIds: selectedItemIds,
       source: 'skill',
       isTruthful: true
     };
@@ -541,7 +598,7 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：命中一个候选格，${target.item.category}，价值约 ${target.item.value.toLocaleString()}。`,
       accuracy: 0.88,
       targetItemId: target.item.id,
-      targetItemIds: [target.item.id],
+      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
       valueHint: {
         min: Math.max(1000, Math.round(target.item.value * 0.9)),
         max: Math.max(2000, Math.round(target.item.value * 1.1))
@@ -562,7 +619,7 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：显示藏品本体，${target.item.name}，${target.item.category}，品质接近${rarityNameForText(target.item.rarity)}。`,
       accuracy: 0.9,
       targetItemId: target.item.id,
-      targetItemIds: [target.item.id],
+      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
       source: 'skill',
       isTruthful: true
     };
@@ -579,7 +636,7 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：揭示一个命中格的品质，接近${rarityNameForText(target.item.rarity)}。`,
       accuracy: 0.86,
       targetItemId: target.item.id,
-      targetItemIds: [target.item.id],
+      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
       source: 'skill',
       isTruthful: true
     };
@@ -599,7 +656,7 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：命中格价格为 ${digits} 位数。`,
       accuracy: 0.82,
       targetItemId: target.item.id,
-      targetItemIds: [target.item.id],
+      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
       valueHint: { min, max },
       source: 'skill',
       isTruthful: true
@@ -607,7 +664,7 @@ function buildBidKingSkillClue(
   }
 
   if ([1, 11, 22].includes(effect.Category)) {
-    const targets = scanSlots.length > 0 ? scanSlots : shuffleByRng(core.warehouseSlots, state).slice(0, trigger === 'manual' ? 3 : 2);
+    const targets = selectedSlots.length > 0 ? selectedSlots : shuffleByRng(core.warehouseSlots, state).slice(0, trigger === 'manual' ? 3 : 2);
     const label = effect.Category === 11 ? '占格数' : '占位轮廓';
     return {
       id: clueId,
@@ -631,7 +688,7 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：揭示一个命中格的品类，属于${target.item.category}。`,
       accuracy: 0.86,
       targetItemId: target.item.id,
-      targetItemIds: [target.item.id],
+      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
       source: 'skill',
       isTruthful: true
     };
@@ -657,12 +714,9 @@ function heroForPlayer(player: RuntimePlayer, state?: MatchRuntimeState) {
   return Hero.find((hero) => hero.id === mappedHeroId) ?? Hero[player.seat % Hero.length]!;
 }
 
-function skillForHero(hero: ReturnType<typeof heroForPlayer>, roundIndex: number) {
-  const castIds = hero.cast_type.filter((id) => id > 0);
-  const indexedId = castIds[Math.min(Math.max(0, roundIndex), Math.max(0, castIds.length - 1))];
-  return (indexedId ? skillById(indexedId) : undefined)
-    ?? castIds.map((id) => skillById(id)).find((skill): skill is BidKingSkillRow => Boolean(skill))
-    ?? Skill[0]!;
+function skillForHero(hero: ReturnType<typeof heroForPlayer>, roundIndex: number): BidKingSkillRow | undefined {
+  const indexedId = hero.cast_type[Math.max(0, roundIndex)] ?? 0;
+  return indexedId > 0 ? skillById(indexedId) : undefined;
 }
 
 function effectForSkill(skill: BidKingSkillRow): BidKingSkillEffectRow {
@@ -673,7 +727,7 @@ function effectForSkill(skill: BidKingSkillRow): BidKingSkillEffectRow {
 function skillFeedEffectMetadata(
   skill: BidKingSkillRow,
   effect: BidKingSkillEffectRow,
-  clue: Clue | undefined
+  targetItemIds: readonly string[]
 ): Pick<SkillFeedEntry, 'skillCid' | 'effectId' | 'effectCategory' | 'effectKey' | 'effectName' | 'skillTarget' | 'targetCount'> {
   return {
     skillCid: skill.id,
@@ -682,7 +736,7 @@ function skillFeedEffectMetadata(
     effectKey: effect.effect_key,
     effectName: effect.effect_desc,
     skillTarget: skill.skilltarget,
-    targetCount: clueTargetItemIds(clue).length
+    targetCount: targetItemIds.length
   };
 }
 
@@ -726,20 +780,67 @@ function clueTargetItemIds(clue: Clue | undefined): string[] {
   return clue.targetItemIds ?? (clue.targetItemId ? [clue.targetItemId] : []);
 }
 
+function slotItemIds(slots: readonly WarehouseSlot[]): string[] {
+  return [...new Set(slots.map((slot) => slot.item.id))];
+}
+
+function slotsForTargetItemIds(slots: readonly WarehouseSlot[], targetItemIds: readonly string[]): WarehouseSlot[] {
+  if (targetItemIds.length === 0) {
+    return [];
+  }
+  const ids = new Set(targetItemIds);
+  return slots.filter((slot) => ids.has(slot.item.id));
+}
+
+function sourceHitBoxList(
+  round: RuntimeRound,
+  slots: readonly WarehouseSlot[],
+  skill: BidKingSkillRow
+): BidKingBoxInfoDataSnapshot[] {
+  const categories = skill.skilleffect_position
+    .map((effectId) => skillEffectById(effectId)?.Category)
+    .filter((category): category is number => typeof category === 'number' && category > 0);
+  const effectiveCategories = categories.length > 0 ? categories : [effectForSkill(skill).Category];
+  return slots.map((slot) => mergeSourceBoxInfo(
+    effectiveCategories.map((category) => bidKingSourceBoxInfoForSlot(slot, round.id, category))
+  ));
+}
+
+function mergeSourceBoxInfo(boxes: readonly BidKingBoxInfoDataSnapshot[]): BidKingBoxInfoDataSnapshot {
+  const first = boxes[0] ?? {
+    boxId: 0,
+    itemUid: 0,
+    itemCid: 0,
+    itemSlotType: 0,
+    itemType: [],
+    itemQuility: 0,
+    itemPrice: 0,
+    itemBoxIndex: 0
+  };
+  return boxes.reduce((merged, box) => ({
+    boxId: merged.boxId || box.boxId,
+    itemUid: merged.itemUid || box.itemUid,
+    itemCid: merged.itemCid || box.itemCid,
+    itemSlotType: merged.itemSlotType || box.itemSlotType,
+    itemType: [...new Set([...merged.itemType, ...box.itemType])],
+    itemQuility: merged.itemQuility || box.itemQuility,
+    itemPrice: merged.itemPrice || box.itemPrice,
+    itemBoxIndex: merged.itemBoxIndex || box.itemBoxIndex
+  }), { ...first, itemType: [...first.itemType] });
+}
+
 function selectSlotsBySkill(
   core: ContainerInstance,
   state: MatchRuntimeState,
   skill: BidKingSkillRow,
-  trigger: 'auto' | 'manual'
+  _trigger: 'auto' | 'manual' | 'map' = 'auto'
 ): WarehouseSlot[] {
   const targetCount = skill.skill_count === 0 ? 999 : skill.skill_count;
   let slots = slotsByTarget(core.warehouseSlots, state, skill.skilltarget, skill.skilltargetvalue, targetCount);
-  slots = applySecondaryTarget(slots, skill.skilltarget2, skill.skilltargetvalue2);
-  slots = applySecondaryTarget(slots, skill.skilltarget3, skill.skilltargetvalue3);
   if (slots.length === 0) {
     slots = shuffleByRng(core.warehouseSlots, state);
   }
-  const limit = targetCount === 999 ? (trigger === 'manual' ? slots.length : Math.min(2, slots.length)) : targetCount;
+  const limit = targetCount === 999 ? slots.length : targetCount;
   return slots.slice(0, Math.max(1, limit));
 }
 
@@ -756,7 +857,7 @@ function slotsByTarget(
   if (targetType === 1) {
     return slots.filter((slot) => {
       const row = itemRowForSlot(slot);
-      return row ? values.some((value) => row.item_type_ids.includes(value)) : false;
+      return row ? values.includes(row.item_type_id) : false;
     });
   }
   if (targetType === 2) {
@@ -773,7 +874,7 @@ function slotsByTarget(
   }
   if (targetType === 4) {
     const typeId = weightedTargetValue(values, state, [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]);
-    return slots.filter((slot) => itemRowForSlot(slot)?.item_type_ids.includes(typeId));
+    return slots.filter((slot) => itemRowForSlot(slot)?.item_type_id === typeId);
   }
   if (targetType === 5) {
     const quality = weightedTargetValue(values, state, [1, 2, 3, 4, 5, 6]);
@@ -783,8 +884,17 @@ function slotsByTarget(
     const filterType = values[0] ?? 3;
     const isMax = values[1] === 1;
     const sorted = [...slots].sort((left, right) => {
-      const diff = filterValueForSlot(right, slots, filterType) - filterValueForSlot(left, slots, filterType);
-      return isMax ? diff : -diff;
+      const leftValue = filterValueForSlot(left, slots, filterType);
+      const rightValue = filterValueForSlot(right, slots, filterType);
+      if (leftValue !== rightValue) {
+        return isMax ? rightValue - leftValue : leftValue - rightValue;
+      }
+      const leftItemId = itemRowForSlot(left)?.id ?? 0;
+      const rightItemId = itemRowForSlot(right)?.id ?? 0;
+      if (leftItemId !== rightItemId) {
+        return isMax ? rightItemId - leftItemId : leftItemId - rightItemId;
+      }
+      return sourceItemUidOrder(left) - sourceItemUidOrder(right);
     });
     if (targetCount === 999 && sorted[0]) {
       const best = filterValueForSlot(sorted[0], slots, filterType);
@@ -796,28 +906,6 @@ function slotsByTarget(
     return filterSlotsByShape(slots, values);
   }
   return shuffleByRng(slots, state);
-}
-
-function applySecondaryTarget(slots: WarehouseSlot[], targetType: number, values: readonly number[]): WarehouseSlot[] {
-  if (targetType === 0 || slots.length === 0) {
-    return slots;
-  }
-  if (targetType === 1) {
-    return slots.filter((slot) => {
-      const row = itemRowForSlot(slot);
-      return row ? values.some((value) => row.item_type_ids.includes(value)) : false;
-    });
-  }
-  if (targetType === 2) {
-    return slots.filter((slot) => {
-      const row = itemRowForSlot(slot);
-      return row ? values.includes(row.item_quality) : false;
-    });
-  }
-  if (targetType === 10) {
-    return filterSlotsByShape(slots, values);
-  }
-  return slots;
 }
 
 function filterSlotsByShape(slots: readonly WarehouseSlot[], values: readonly number[]): WarehouseSlot[] {
@@ -880,6 +968,11 @@ function itemRowForSlot(slot: WarehouseSlot): BidKingItemRow | undefined {
   return itemId ? itemById(itemId) : undefined;
 }
 
+function sourceItemUidOrder(slot: WarehouseSlot): number {
+  const match = /^compat_\d+_(\d+)$/.exec(slot.item.id);
+  return match?.[1] ? Number(match[1]) : slot.y * 10 + slot.x;
+}
+
 function rarityFromQuality(row: BidKingItemRow): Rarity {
   if (row.item_quality <= 1) {
     return 'junk';
@@ -909,30 +1002,88 @@ function rarityNameForText(rarity: Rarity): string {
 }
 
 function buildWarehouseSlots(items: RevealedItem[]): WarehouseSlot[] {
-  const columns = 8;
-  let x = 0;
-  let y = 0;
-  let rowHeight = 1;
-  return items.map((item, index) => {
-    const w = Math.max(1, Math.min(6, item.footprint.w));
-    const h = Math.max(1, Math.min(5, item.footprint.h));
-    if (x + w > columns) {
-      x = 0;
-      y += rowHeight;
-      rowHeight = 1;
+  const width = 10;
+  const height = 60;
+  const occupied = new Array<boolean>(width * height).fill(false);
+  const slots: WarehouseSlot[] = [];
+  for (const item of items) {
+    const placement = findSourceWarehousePlacement(item, occupied, width, height);
+    if (!placement) {
+      continue;
     }
-    const slot = {
-      slotId: `slot_${index + 1}`,
+    markSourceWarehousePlacement(placement, occupied, width);
+    slots.push({
+      slotId: `slot_${slots.length + 1}`,
       item,
-      x,
-      y,
-      w,
-      h
-    };
-    x += w;
-    rowHeight = Math.max(rowHeight, h);
-    return slot;
-  });
+      x: placement.x,
+      y: placement.y,
+      w: placement.w,
+      h: placement.h,
+      rotate: placement.rotate
+    });
+  }
+  return slots;
+}
+
+function findSourceWarehousePlacement(
+  item: RevealedItem,
+  occupied: readonly boolean[],
+  width: number,
+  height: number
+): { x: number; y: number; w: number; h: number; rotate: boolean } | undefined {
+  for (let pos = 0; pos < occupied.length; pos += 1) {
+    if (occupied[pos]) {
+      continue;
+    }
+    const normal = sourceWarehousePlacementAt(item, pos, false, occupied, width, height);
+    if (normal) {
+      return normal;
+    }
+    if (item.footprint.w !== item.footprint.h) {
+      const rotated = sourceWarehousePlacementAt(item, pos, true, occupied, width, height);
+      if (rotated) {
+        return rotated;
+      }
+    }
+  }
+  return undefined;
+}
+
+function sourceWarehousePlacementAt(
+  item: RevealedItem,
+  pos: number,
+  rotate: boolean,
+  occupied: readonly boolean[],
+  width: number,
+  height: number
+): { x: number; y: number; w: number; h: number; rotate: boolean } | undefined {
+  const w = Math.max(1, rotate ? item.footprint.h : item.footprint.w);
+  const h = Math.max(1, rotate ? item.footprint.w : item.footprint.h);
+  const x = pos % width;
+  const y = Math.floor(pos / width);
+  if (x + w > width || y + h > height) {
+    return undefined;
+  }
+  for (let dy = 0; dy < h; dy += 1) {
+    for (let dx = 0; dx < w; dx += 1) {
+      if (occupied[(y + dy) * width + x + dx]) {
+        return undefined;
+      }
+    }
+  }
+  return { x, y, w, h, rotate };
+}
+
+function markSourceWarehousePlacement(
+  placement: { x: number; y: number; w: number; h: number },
+  occupied: boolean[],
+  width: number
+): void {
+  for (let dy = 0; dy < placement.h; dy += 1) {
+    for (let dx = 0; dx < placement.w; dx += 1) {
+      occupied[(placement.y + dy) * width + placement.x + dx] = true;
+    }
+  }
 }
 
 function buildBidMapPreview(

@@ -107,7 +107,6 @@ export function MatchRoute({
         currentRound={currentRound}
         liveIntelOpen={liveIntel.liveIntelOpen}
         liveIntelSeed={liveIntel.liveIntelSeed}
-        minimumBid={bidComposer.minimumBid}
         previousBid={matchState.previousSelfBid}
         recommendedBid={matchState.recommendedBid?.safePrice}
         onBackspaceBid={bidComposer.backspaceBidDraft}

@@ -188,7 +188,6 @@ export function BidComposerModal({
   availableCash,
   canConfirm,
   error,
-  minimumBid,
   previousBid,
   recommendedBid,
   round,
@@ -209,7 +208,6 @@ export function BidComposerModal({
   availableCash: number;
   canConfirm: boolean;
   error?: string;
-  minimumBid: number;
   previousBid?: number;
   recommendedBid?: number;
   round: NonNullable<PlayerSnapshot['public']['currentRound']>;
@@ -256,7 +254,7 @@ export function BidComposerModal({
         </div>
         <div className="bid-tools">
           <button onClick={onBackspace}>退格</button>
-          <button onClick={onUseMinimum}>最低</button>
+          <button onClick={onUseMinimum}>0</button>
           <button disabled={recommendedBid === undefined} onClick={onUseRecommended}>推荐</button>
           <button onClick={onDouble}>x2.0</button>
           <button disabled={previousBid === undefined} onClick={() => previousBid !== undefined && onUsePrevious(previousBid)}>上一轮</button>
@@ -270,7 +268,7 @@ export function BidComposerModal({
           <p>{bidRuleNotice(round)}</p>
           <strong>{amountHidden ? '••••••' : Number(amount || 0).toLocaleString()}</strong>
           <small>
-            最低 {minimumBid.toLocaleString()} · 现金 {formatCompactCurrency(availableCash)}
+            现金 {formatCompactCurrency(availableCash)}
             {recommendedBid !== undefined ? ` · 推荐 ${formatCompactCurrency(recommendedBid)}` : ''}
           </small>
           {error && <em className="bid-draft-error">{error}</em>}
@@ -309,14 +307,14 @@ export function BidPanel({ players, snapshot }: { players: PublicPlayer[]; snaps
   if (!round) {
     return <></>;
   }
-  const isSealed = round.auctionMode === 'sealed';
+  const isOpenLike = round.auctionMode === 'open' || round.auctionMode === 'deposit_open';
   return (
     <section className="bid-block">
       <div className="section-title small">
         <History size={16} />
-        <h3>{isSealed ? '暗拍状态' : '出价记录'}</h3>
+        <h3>{isOpenLike ? '本轮出价' : '提交状态'}</h3>
       </div>
-      {isSealed ? (
+      {!isOpenLike ? (
         players.map((player) => {
           const feedbackEntry = round.bidFeedback?.publicRanking.find((entry) => entry.playerId === player.id);
           const rank = feedbackEntry?.rank;
@@ -331,12 +329,20 @@ export function BidPanel({ players, snapshot }: { players: PublicPlayer[]; snaps
       ) : (
         <>
           {round.bids.length === 0 && <p className="muted">暂无出价</p>}
-          {round.bids.slice(-8).map((bid, index) => (
-            <div className="bid-row" key={`${bid.playerId}_${bid.createdAt}_${index}`}>
-              <span>{playerNameById(players, bid.playerId)}</span>
-              <strong>{bid.amount > 0 ? bid.amount.toLocaleString() : '停手'}</strong>
-            </div>
-          ))}
+          {round.bids.slice(-8).map((bid, index) => {
+            const bidder = players.find((player) => player.id === bid.playerId);
+            const label = bid.visible && bid.amount > 0
+              ? bid.amount.toLocaleString()
+              : bidder?.passed || (bid.visible && bid.amount === 0)
+                ? '停手'
+                : '已出价';
+            return (
+              <div className="bid-row" key={`${bid.playerId}_${bid.createdAt}_${index}`}>
+                <span>{bidder?.name ?? playerNameById(players, bid.playerId)}</span>
+                <strong>{label}</strong>
+              </div>
+            );
+          })}
         </>
       )}
     </section>
@@ -431,7 +437,7 @@ export function WarehouseGrid({
               {revealed && <span className="slot-spinner" />}
               <div className="slot-content">
                 {itemIcon ? <img src={itemIcon} alt="" loading="lazy" /> : <span className="slot-shape" />}
-                <strong>{revealed?.item.name ?? slot.itemName ?? slot.visibleCategory ?? (slot.visibleRarity ? rarityName(slot.visibleRarity) : '未知')}</strong>
+                <strong>{revealed?.item.name ?? slot.itemName ?? slot.visibleCategory ?? (slot.visibleRarity ? rarityName(slot.visibleRarity) : slot.visibleSizeCount ? `${slot.visibleSizeCount}格` : '未知')}</strong>
                 {revealed ? (
                   <em>{revealed.item.value.toLocaleString()}</em>
                 ) : slot.visibleValueRange && (
@@ -492,10 +498,10 @@ export function auctionModeName(mode: string): string {
 
 export function auctionRuleText(mode: string): string {
   const rules: Record<string, string> = {
-    open: '明拍：出价公开，记录所有出价；每轮按最高价与第二名比例判断是否成交。',
-    sealed: '暗拍：过程显示提交与排名，自己可见报价，拍成后进入价格与藏品结算。',
+    open: '明拍：本轮只显示谁已出价，轮后公开上一轮金额；按最高价与第二名比例判断是否成交。',
+    sealed: '暗拍：过程只显示提交与排名，拍成后进入价格与藏品结算。',
     second_price: '最高出价者成交，但只支付第二高价 + 1,000。',
-    deposit_open: '首次出价先付2,000押金，未中标返还1,000，抬价也有成本。',
+    deposit_open: '押金明拍：本轮只显示谁已出价，轮后公开金额；首次出价先付押金。',
     flash: '10秒暗拍，提交后不能修改，适合最后一轮翻盘。'
   };
   return rules[mode] ?? '特殊拍卖规则。';
@@ -503,23 +509,14 @@ export function auctionRuleText(mode: string): string {
 
 function bidRuleNotice(round: NonNullable<PlayerSnapshot['public']['currentRound']>): string {
   const multiplier = closeRuleMultiplier(round.index);
-  const minimum = round.minimumBid ? `最低出价 ${round.minimumBid.toLocaleString()}。` : '';
-  if (round.auctionMode === 'open') {
+  if (round.auctionMode === 'open' || round.auctionMode === 'deposit_open') {
     return multiplier > 0
-      ? `${minimum}注意：当前最高价需超过第二名 ${multiplier}% 才会直接成交。`
-      : `${minimum}注意：最高价高于第二名即可成交；若同价则追加竞拍回合。`;
+      ? `本轮不会公开当前价；轮后最高价需超过第二名 ${multiplier}% 才会直接成交。`
+      : '本轮不会公开当前价；轮后最高价高于第二名即可成交，同价追加回合。';
   }
   return multiplier > 0
-    ? `${minimum}暗拍只公开排名，最高价需超过第二名 ${multiplier}% 才会直接成交。`
-    : `${minimum}暗拍只公开排名，最高价高于第二名即可成交；同价追加回合。`;
-}
-
-export function minimumAllowedBid(round: NonNullable<PlayerSnapshot['public']['currentRound']>): number {
-  const tableMinimum = round.minimumBid ?? 0;
-  if (round.auctionMode === 'open' || round.auctionMode === 'deposit_open') {
-    return Math.max(tableMinimum, round.currentBid + gameConfig.rules.minIncrement);
-  }
-  return tableMinimum;
+    ? `暗拍只公开排名，最高价需超过第二名 ${multiplier}% 才会直接成交。`
+    : '暗拍只公开排名，最高价高于第二名即可成交；同价追加回合。';
 }
 
 export function lastSubmittedBidAmount(snapshot: PlayerSnapshot, playerId: string): number | undefined {

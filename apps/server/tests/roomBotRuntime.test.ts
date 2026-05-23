@@ -65,7 +65,7 @@ describe('BidKing room bot runtime', () => {
     expect(['mentor', 'risk_taker', 'clue_reader']).toContain(payload.audit.profileId);
   });
 
-  it('lets behavior-tree bots use skills during the intel phase', () => {
+  it('does not let core behavior-tree bots use manual hero skills during intel', () => {
     const match = createMatch({
       id: 'bot-intel-match',
       seed: 40404,
@@ -117,20 +117,12 @@ describe('BidKing room bot runtime', () => {
     runBotAuctionForRoom(room);
 
     const skillEvents = match.events.filter((event) => event.type === 'skill_used' && event.actorId?.startsWith('b'));
-    expect(skillEvents.length).toBeGreaterThan(0);
+    expect(skillEvents).toHaveLength(0);
     const botChoice = match.events.find((event) => {
       const payload = event.payload as { actionType?: string } | undefined;
       return event.type === 'bot_action_chosen' && payload?.actionType === 'skill';
     });
-    expect(botChoice?.payload).toEqual(expect.objectContaining({
-      actionType: 'skill',
-      audit: expect.objectContaining({
-        phase: 'intel',
-        behaviorTree: expect.arrayContaining(['IntelSkillSequence']),
-        confidence: expect.any(Number),
-        skillIntent: expect.any(String)
-      })
-    }));
+    expect(botChoice).toBeUndefined();
   });
 
   it('executes RankAi battle item actions for bots during intel', () => {
@@ -189,5 +181,54 @@ describe('BidKing room bot runtime', () => {
         battleItemId: expect.any(Number)
       })
     }));
+  });
+
+  it('continues to an auction bid after one RankAi battle item action', () => {
+    const match = createMatch({
+      id: 'probe',
+      seed: 1,
+      players: [
+        { id: 'p1', name: '甲', kind: 'human', roleId: gameConfig.roles[0]!.id },
+        { id: 'b1', name: '乙', kind: 'bot', roleId: gameConfig.roles[1]!.id }
+      ],
+      totalRounds: 5,
+      coreMode: true,
+      coreAuctionMode: 'sealed',
+      coreBidMapId: 2101,
+      config: gameConfig,
+      now: 1000
+    });
+    startNextRound(match, 2000);
+    setRoundPhase(match, 'auction', 60000, 3000);
+    const room: Room = {
+      id: 'room_bot_item_bid',
+      code: 'BTBD',
+      hostId: 'p1',
+      botCount: 1,
+      totalRounds: 5,
+      initialCash: gameConfig.rules.initialCash,
+      coreAuctionMode: 'sealed',
+      selectedBidMapId: 2101,
+      status: 'playing',
+      players: [],
+      botProfiles: new Map([['b1', 'mentor']]),
+      match,
+      timers: []
+    };
+
+    runBotAuctionForRoom(room);
+
+    const botActions = match.events
+      .filter((event) => event.type === 'bot_action_chosen' && event.actorId === 'b1')
+      .map((event) => (event.payload as { actionType?: string }).actionType);
+    expect(botActions).toEqual(['battle_item', 'bid']);
+    expect(match.events.filter((event) => event.type === 'battle_item_used' && event.actorId === 'b1')).toHaveLength(1);
+    expect(match.currentRound?.bids).toEqual([
+      expect.objectContaining({
+        playerId: 'b1',
+        amount: expect.any(Number)
+      })
+    ]);
+    expect(match.currentRound?.bids[0]?.amount).toBeGreaterThan(0);
   });
 });

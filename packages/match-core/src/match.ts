@@ -2,6 +2,7 @@ import { gameConfig as defaultConfig } from '@bitkingdom/config';
 import { BidMap, Item } from '@bitkingdom/bidking-compat';
 import type {
   AuctionMode,
+  BidKingBoxInfoDataSnapshot,
   BidKingGameDataSnapshot,
   Clue,
   CoreAuctionMode,
@@ -15,7 +16,8 @@ import type {
   RevealedItem,
   Rarity,
   RoomSnapshot,
-  SkillFeedEntry
+  SkillFeedEntry,
+  WarehouseSlotView
 } from '@bitkingdom/shared';
 import type { GameConfig } from '@bitkingdom/config';
 import {
@@ -26,6 +28,7 @@ import {
   createBidKingCoreWarehouseInstance
 } from './bidking/compatRuntime';
 import { bidKingBidMapPlayerCount } from './bidking/bidMapRuntime';
+import { bidKingBidLossRebateAmount } from './bidking/economyRuleRuntime';
 import { buildBidKingGameDataSnapshot } from './bidking/gameDataRuntime';
 import { bidKingInitialCashForBidMap } from './bidking/initialCashRuntime';
 import { buildPrivateClues, buildPublicClues } from './clues';
@@ -39,9 +42,6 @@ import type {
   RuntimeRound,
   WarehouseSlot
 } from './types';
-
-const CORE_WAREHOUSE_ROLL_DURATION_MS = 4400;
-const CORE_ROUND_INTEL_DURATION_MS = 3200;
 
 export function createMatch(params: {
   id: string;
@@ -151,14 +151,10 @@ export function startNextRound(state: MatchRuntimeState, now = Date.now()): Matc
   const auctioneerClue = state.coreMode ? ensureCoreAuctioneerClue(state) : undefined;
   const auctioneerChoices = state.coreMode ? state.coreAuctioneerChoices : undefined;
   const startingPhase: RuntimeRound['phase'] = state.coreMode
-    ? isCoreFirstRound
-      ? 'warehouse_roll'
-      : 'intel'
+    ? 'auction'
     : 'container';
   const startingDurationMs = state.coreMode
-    ? isCoreFirstRound
-      ? CORE_WAREHOUSE_ROLL_DURATION_MS
-      : CORE_ROUND_INTEL_DURATION_MS
+    ? container.auctionDurationMs ?? 60000
     : 8000;
   const round: RuntimeRound = {
     id: `${state.id}_round_${state.roundIndex + 1}`,
@@ -237,7 +233,7 @@ function buildPublicMatchState(state: MatchRuntimeState, playerId?: string): Pub
     seed: state.status === 'ended' ? state.seed : 0,
     roundIndex: state.roundIndex,
     totalRounds: state.totalRounds,
-    players: state.players.map((player) => publicPlayer(player, state.config, state, playerId)),
+    players: state.players.map((player) => publicPlayer(player, state.config, state)),
     currentRound: state.currentRound ? publicRound(state.currentRound, playerId) : undefined,
     roundHistory: state.roundHistory,
     finalSummary: state.status === 'ended' ? state.finalSummary : undefined,
@@ -960,8 +956,7 @@ function pickAuctionMode(state: MatchRuntimeState, templateId: string): AuctionM
 function publicPlayer(
   player: RuntimePlayer,
   config: GameConfig,
-  state?: MatchRuntimeState,
-  viewerId?: string
+  state?: MatchRuntimeState
 ): PublicPlayer {
   return {
     id: player.id,
@@ -976,7 +971,7 @@ function publicPlayer(
     status: player.status,
     hasSubmittedBid: player.hasSubmittedBid,
     passed: player.passed,
-    bidRanks: state ? buildPlayerBidRanks(state, player.id, viewerId) : undefined,
+    bidRanks: state ? buildPlayerBidRanks(state, player.id) : undefined,
     emote: player.emote,
     emoteSoundId: player.emoteSoundId,
     emoteAnimationKey: player.emoteAnimationKey,
@@ -988,8 +983,7 @@ function publicPlayer(
 
 function buildPlayerBidRanks(
   state: MatchRuntimeState,
-  playerId: string,
-  viewerId?: string
+  playerId: string
 ): NonNullable<PublicPlayer['bidRanks']> {
   const ranks = Array.from({ length: Math.max(5, state.totalRounds) }, (_, index) => ({
     round: index + 1,
@@ -1005,7 +999,7 @@ function buildPlayerBidRanks(
   for (const history of state.roundHistory) {
     const rank = history.bidFeedback?.publicRanking.find((entry) => entry.playerId === playerId)?.rank;
     const bid = history.bids.find((entry) => entry.playerId === playerId);
-    const revealAmount = shouldRevealHistoryBidAmounts(state, history) || playerId === viewerId;
+    const revealAmount = shouldRevealHistoryBidAmounts(state, history);
     const skill = skillCellForPlayerRound(history.skillFeed ?? [], playerId);
     ranks[history.index] = {
       round: history.index + 1,
@@ -1023,7 +1017,7 @@ function buildPlayerBidRanks(
   if (currentRound) {
     const rank = currentRound.bidFeedback?.publicRanking.find((entry) => entry.playerId === playerId)?.rank;
     const bid = currentRound.bids.find((entry) => entry.playerId === playerId);
-    const revealAmount = shouldRevealRoundBidAmounts(currentRound) || playerId === viewerId;
+    const revealAmount = shouldRevealRoundBidAmounts(currentRound);
     const skill = skillCellForPlayerRound(currentRound.skillFeed, playerId);
     ranks[currentRound.index] = {
       round: currentRound.index + 1,
@@ -1057,9 +1051,10 @@ function shouldRevealHistoryBidAmounts(state: MatchRuntimeState, history: RoundH
 }
 
 function shouldRevealRoundBidAmounts(round: RuntimeRound): boolean {
-  return round.auctionMode === 'open'
-    || round.auctionMode === 'deposit_open'
-    || Boolean(round.settlement?.isFinal && ['reveal', 'settlement', 'ended'].includes(round.phase));
+  if (round.auctionMode === 'open' || round.auctionMode === 'deposit_open') {
+    return Boolean(round.bidFeedback || ['reveal', 'settlement', 'ended'].includes(round.phase));
+  }
+  return Boolean(round.settlement?.isFinal && ['reveal', 'settlement', 'ended'].includes(round.phase));
 }
 
 function inferClueKind(text: string): Clue['kind'] {
@@ -1108,13 +1103,12 @@ function publicRound(round: RuntimeRound, playerId?: string): PublicMatchState['
     auctioneerChoices: round.auctioneerChoices?.map((choice) => ({ ...choice })),
     publicClues: publicCluesForRound(round),
     warehouseSlots: publicWarehouseSlots(round, playerId),
-    bids: exposeBidAmounts ? round.bids.map((bid) => ({ ...bid })) : round.bids.map((bid) => ({
-      ...bid,
-      amount: bid.visible || bid.playerId === playerId ? bid.amount : 0
-    })),
+    bids: exposeBidAmounts
+      ? round.bids.map((bid) => ({ ...bid, visible: true }))
+      : round.bids.map((bid) => ({ ...bid, amount: 0, visible: false })),
     currentBid: round.currentBid,
     currentLeaderId: round.currentLeaderId,
-    bidFeedback: personalizeBidFeedback(round.bidFeedback, round, playerId),
+    bidFeedback: personalizeBidFeedback(round.bidFeedback, round),
     skillFeed: publicSkillFeedForRound(round.skillFeed, playerId),
     revealedItems: round.revealedItems,
     settlement: ['reveal', 'settlement', 'ended'].includes(round.phase) ? round.settlement : undefined,
@@ -1125,8 +1119,7 @@ function publicRound(round: RuntimeRound, playerId?: string): PublicMatchState['
 
 function personalizeBidFeedback(
   feedback: RuntimeRound['bidFeedback'],
-  round: RuntimeRound,
-  playerId?: string
+  round: RuntimeRound
 ): RuntimeRound['bidFeedback'] {
   if (!feedback) {
     return feedback;
@@ -1135,7 +1128,7 @@ function personalizeBidFeedback(
   return {
     ...feedback,
     publicRanking: feedback.publicRanking.map((entry) => {
-      const visibleAmount = exposeBidAmounts || entry.playerId === playerId;
+      const visibleAmount = exposeBidAmounts;
       return {
         ...entry,
         amount: visibleAmount ? entry.amount : undefined,
@@ -1153,7 +1146,8 @@ function publicSkillFeedForRound(
     .filter((entry) => entry.visibility === 'public' || entry.playerId === playerId)
     .map((entry) => ({
       ...entry,
-      targetItemIds: entry.targetItemIds ? [...entry.targetItemIds] : undefined
+      targetItemIds: entry.targetItemIds ? [...entry.targetItemIds] : undefined,
+      hitBoxList: entry.hitBoxList?.map((box) => ({ ...box, itemType: [...box.itemType] }))
     }));
 }
 
@@ -1209,21 +1203,23 @@ function applyKnowledgeToSlotViews(round: RuntimeRound, playerId?: string) {
   const auctioneerActive = Boolean(round.auctioneerClue && !['warehouse_roll', 'warehouse_selected'].includes(round.phase));
   const publicTargets = auctioneerActive ? clueTargetIds(round.auctioneerClue) : new Set<string>();
   const privateTargets = playerId
-    ? clueTargetIds(...(round.container.privateCluesByPlayerId[playerId] ?? []))
+    ? clueTargetIds(...(round.container.privateCluesByPlayerId[playerId] ?? []).filter((clue) => clue.source !== 'skill'))
     : new Set<string>();
+  const visibleSkillFeed = round.skillFeed.filter((entry) => entry.visibility === 'public' || entry.playerId === playerId);
 
   return round.warehouseSlots.map((slotView) => {
     const realSlot = round.container.warehouseSlots.find((slot) => slot.slotId === slotView.slotId);
     if (!realSlot) {
       return { ...slotView };
     }
+    let nextView = applySourceSkillKnowledgeToSlotView({ ...slotView }, realSlot, visibleSkillFeed);
     const publicMarked = publicTargets.has(realSlot.item.id);
     const privateMarked = privateTargets.has(realSlot.item.id);
     if (!publicMarked && !privateMarked) {
-      return { ...slotView };
+      return nextView;
     }
-    return {
-      ...slotView,
+    nextView = {
+      ...nextView,
       itemId: realSlot.item.id,
       visibleShape: true,
       visibleRarity: realSlot.item.rarity,
@@ -1231,7 +1227,82 @@ function applyKnowledgeToSlotViews(round: RuntimeRound, playerId?: string) {
       markedBySkill: true,
       markReason: publicMarked ? '掌眼人情报' : '名士掌眼'
     };
+    return nextView;
   });
+}
+
+function applySourceSkillKnowledgeToSlotView(
+  slotView: WarehouseSlotView,
+  realSlot: WarehouseSlot,
+  skillFeed: readonly SkillFeedEntry[]
+): WarehouseSlotView {
+  let view = slotView;
+  for (const entry of skillFeed) {
+    const hitBox = sourceHitBoxForSlot(entry, realSlot);
+    const targetMatched = entry.targetItemIds?.includes(realSlot.item.id) ?? false;
+    if (!hitBox && !targetMatched) {
+      continue;
+    }
+    view = applySourceHitBoxToSlotView(view, realSlot, entry, hitBox);
+  }
+  return view;
+}
+
+function sourceHitBoxForSlot(entry: SkillFeedEntry, realSlot: WarehouseSlot): BidKingBoxInfoDataSnapshot | undefined {
+  const boxId = realSlot.y * 10 + realSlot.x;
+  return entry.hitBoxList?.find((box) => box.boxId === boxId);
+}
+
+function applySourceHitBoxToSlotView(
+  slotView: WarehouseSlotView,
+  realSlot: WarehouseSlot,
+  entry: SkillFeedEntry,
+  hitBox: BidKingBoxInfoDataSnapshot | undefined
+): WarehouseSlotView {
+  const category = entry.effectCategory;
+  const view: WarehouseSlotView = {
+    ...slotView,
+    markedBySkill: true,
+    markReason: entry.source === 'map' ? '拍场技能' : entry.source === 'item' ? '试宝令' : '名士掌眼'
+  };
+
+  if (hitBox?.itemSlotType || category === 1 || category === 22) {
+    view.visibleShape = true;
+  }
+  if (hitBox?.itemBoxIndex || category === 11) {
+    view.visibleSizeCount = hitBox?.itemBoxIndex || Math.max(1, realSlot.w * realSlot.h);
+  }
+  if (hitBox?.itemQuility || category === 7 || category === 12) {
+    view.visibleRarity = realSlot.item.rarity;
+  }
+  if ((hitBox?.itemType?.length ?? 0) > 0 || category === 13) {
+    view.visibleCategory = realSlot.item.category;
+  }
+  if (hitBox?.itemPrice && category === 14) {
+    const digits = Math.max(1, String(Math.max(0, Math.floor(hitBox.itemPrice))).length);
+    view.visibleValueRange = {
+      min: digits === 1 ? 0 : 10 ** (digits - 1),
+      max: 10 ** digits - 1
+    };
+  } else if (hitBox?.itemPrice && category === 5) {
+    view.visibleValueRange = {
+      min: hitBox.itemPrice,
+      max: hitBox.itemPrice
+    };
+  }
+  if (hitBox?.itemCid || category === 6) {
+    view.itemId = realSlot.item.id;
+    view.visibleShape = true;
+    view.visibleRarity = realSlot.item.rarity;
+    view.visibleCategory = realSlot.item.category;
+    view.visibleValueRange = {
+      min: realSlot.item.value,
+      max: realSlot.item.value
+    };
+    view.itemName = realSlot.item.name;
+    view.iconKey = realSlot.item.iconKey;
+  }
+  return view;
 }
 
 function clueTargetIds(...clues: Array<Clue | undefined>): Set<string> {
@@ -1344,12 +1415,21 @@ function buildLossRecoveryByPlayerId(state: MatchRuntimeState): Record<string, n
   const lossRecoveryByPlayerId: Record<string, number> = Object.fromEntries(
     state.players.map((player) => [player.id, 0])
   );
-  for (const transaction of state.transactions) {
-    if (transaction.reason === 'bid_loss_rebate' && transaction.amountChange > 0) {
-      lossRecoveryByPlayerId[transaction.playerId] = (lossRecoveryByPlayerId[transaction.playerId] ?? 0) + transaction.amountChange;
+  for (const player of state.players) {
+    if (!hasPositiveBid(state, player.id)) {
+      continue;
     }
+    const loss = Math.max(0, state.config.rules.initialCash - calculateNetWorth(player, state.config));
+    lossRecoveryByPlayerId[player.id] = bidKingBidLossRebateAmount(loss);
   }
   return lossRecoveryByPlayerId;
+}
+
+function hasPositiveBid(state: MatchRuntimeState, playerId: string): boolean {
+  const rounds = state.currentRound
+    ? [...state.roundHistory, state.currentRound]
+    : state.roundHistory;
+  return rounds.some((round) => round.bids.some((bid) => bid.playerId === playerId && bid.amount > 0));
 }
 
 function collectionExperienceValue(item: RevealedItem): number {

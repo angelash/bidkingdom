@@ -108,16 +108,17 @@ function battleItemUseLogs(state: MatchRuntimeState, playerId: string): BidKingG
 function buildStockContainer(state: MatchRuntimeState, round: RuntimeRound): BidKingStockContainerDataSnapshot {
   const stockBoxes = round.container.warehouseSlots.map((slot, index): BidKingStockBoxDataSnapshot => {
     const itemCid = itemCidFromRevealedItem(slot.item);
+    const boxId = sourceWarehouseBoxId(slot);
     const position = { x: slot.x, y: slot.y };
     return {
-      boxId: index + 1,
+      boxId,
       position,
       item: {
         uid: stableNumericId(`${round.id}:${slot.item.id}`),
         cid: itemCid,
         count: 1,
         boxPositionData: footprintPositions(slot),
-        rotate: false,
+        rotate: slot.rotate ?? false,
         canTrade: true,
         no: index + 1,
         isLock: false,
@@ -181,7 +182,8 @@ function skillFeedToGameSkillLog(
   const player = entry.playerId ? state.players.find((candidate) => candidate.id === entry.playerId) : undefined;
   const hero = player ? heroForPlayer(state, player) : undefined;
   const hitSlots = hitSlotsForEntry(round, entry);
-  const hitBoxList = hitSlots.map((slot, index) => boxInfoForSlot(slot, round, index));
+  const hitBoxList = entry.hitBoxList?.map(cloneBoxInfo)
+    ?? hitSlots.map((slot, index) => boxInfoForSlot(slot, round, index));
   const hitItemTotalPrice = hitSlots.reduce((sum, slot) => sum + slot.item.value, 0);
   const boxCellCount = hitSlots.reduce((sum, slot) => sum + Math.max(1, slot.w * slot.h), 0);
   const itemQualities = [...new Set(hitSlots.map((slot) => qualityFromItem(slot.item)))];
@@ -277,18 +279,74 @@ function heroForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
   return Hero.find((candidate) => candidate.id === mappedHeroId) ?? Hero[player.seat % Hero.length];
 }
 
-function boxInfoForSlot(slot: WarehouseSlot, round: RuntimeRound, index: number): BidKingBoxInfoDataSnapshot {
+function boxInfoForSlot(slot: WarehouseSlot, round: RuntimeRound, _index: number): BidKingBoxInfoDataSnapshot {
   const itemCid = itemCidFromRevealedItem(slot.item);
+  const item = itemById(itemCid);
   return {
-    boxId: round.container.warehouseSlots.indexOf(slot) + 1,
+    boxId: sourceWarehouseBoxId(slot),
     itemUid: stableNumericId(`${round.id}:${slot.item.id}`),
     itemCid,
-    itemSlotType: Math.max(1, slot.w * 10 + slot.h),
+    itemSlotType: item?.slot_type ?? Math.max(1, slot.w * 10 + slot.h),
     itemType: itemTypeIdsFromItem(slot.item),
     itemQuility: qualityFromItem(slot.item),
     itemPrice: slot.item.value,
-    itemBoxIndex: index + 1
+    itemBoxIndex: Math.max(1, (item?.slot_type ? Math.floor(item.slot_type / 10) * (item.slot_type % 10) : slot.w * slot.h))
   };
+}
+
+export function bidKingSourceBoxInfoForSlot(
+  slot: WarehouseSlot,
+  roundId: string,
+  effectCategory?: number
+): BidKingBoxInfoDataSnapshot {
+  const itemCid = itemCidFromRevealedItem(slot.item);
+  const item = itemById(itemCid);
+  const itemSlotType = item?.slot_type ?? Math.max(1, slot.w * 10 + slot.h);
+  const itemBoxIndex = Math.max(1, item ? Math.floor(item.slot_type / 10) * (item.slot_type % 10) : slot.w * slot.h);
+  const base: BidKingBoxInfoDataSnapshot = {
+    boxId: sourceWarehouseBoxId(slot),
+    itemUid: stableNumericId(`${roundId}:${slot.item.id}`),
+    itemCid: 0,
+    itemSlotType: 0,
+    itemType: [],
+    itemQuility: 0,
+    itemPrice: 0,
+    itemBoxIndex: 0
+  };
+
+  if (effectCategory === 1 || effectCategory === 22) {
+    return { ...base, itemSlotType };
+  }
+  if (effectCategory === 5) {
+    return { ...base, itemPrice: slot.item.value };
+  }
+  if (effectCategory === 6) {
+    return { ...base, itemCid, itemQuility: qualityFromItem(slot.item) };
+  }
+  if (effectCategory === 7 || effectCategory === 12) {
+    return { ...base, itemQuility: qualityFromItem(slot.item) };
+  }
+  if (effectCategory === 11) {
+    return { ...base, itemBoxIndex };
+  }
+  if (effectCategory === 13) {
+    return { ...base, itemType: itemTypeIdsFromItem(slot.item) };
+  }
+  if (effectCategory === 14) {
+    return { ...base, itemPrice: slot.item.value };
+  }
+  return base;
+}
+
+function cloneBoxInfo(box: BidKingBoxInfoDataSnapshot): BidKingBoxInfoDataSnapshot {
+  return {
+    ...box,
+    itemType: [...box.itemType]
+  };
+}
+
+function sourceWarehouseBoxId(slot: WarehouseSlot): number {
+  return slot.y * 10 + slot.x;
 }
 
 function uniqueItemTypes(slots: readonly WarehouseSlot[]): number[] {

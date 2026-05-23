@@ -22,26 +22,12 @@ export function bidKingPlayableBidMaps(): BidKingBidMapRow[] {
 
 export function bidKingRandomBidMapCandidates(bidMapId?: number): number[] {
   const bidMap = bidKingBidMapForId(bidMapId);
-  const candidates = bidMap?.map_group
-    .filter((row) => row.length > 0 && (row[0] ?? 0) > 0)
-    .map((row) => row[0]!)
-    ?? [];
-  return candidates.length > 0 ? [...new Set(candidates)] : (bidMapId ? [bidMapId] : []);
+  return bidMap ? [bidMap.id] : (bidMapId ? [bidMapId] : []);
 }
 
 export function bidKingResolveRandomBidMapId(bidMapId: number | undefined, seed: string | number): number | undefined {
-  const bidMap = bidKingBidMapForId(bidMapId);
-  if (!bidMap) {
-    return bidMapId;
-  }
-  const weighted = bidMap.map_group
-    .map(([id = 0, weight = 0]) => ({ item: id, weight: Math.max(0, weight) }))
-    .filter((candidate) => bidKingBidMapForId(candidate.item) && candidate.weight > 0);
-  if (weighted.length === 0) {
-    return bidMap.id;
-  }
-  const rng = createRandom(hashSeed(['bidking-random-bidmap', bidMap.id, seed].join(':')));
-  return rng.weighted(weighted);
+  void seed;
+  return bidKingBidMapForId(bidMapId)?.id ?? bidMapId;
 }
 
 export function bidKingBotHeroIdForBidMap(options: Omit<BidKingBotHeroSpawnOptions, 'count'>): number | undefined {

@@ -79,6 +79,7 @@ export interface WarehouseSlot {
   y: number;
   w: number;
   h: number;
+  rotate?: boolean;
 }
 
 export interface RuntimeRound {

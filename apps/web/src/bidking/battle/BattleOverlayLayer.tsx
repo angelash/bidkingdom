@@ -16,7 +16,6 @@ interface BattleOverlayLayerProps {
   currentRound?: CurrentRound;
   liveIntelOpen: boolean;
   liveIntelSeed?: LiveIntelSeed;
-  minimumBid: number;
   previousBid?: number;
   recommendedBid?: number;
   onBackspaceBid: () => void;
@@ -46,7 +45,6 @@ export function BattleOverlayLayer({
   currentRound,
   liveIntelOpen,
   liveIntelSeed,
-  minimumBid,
   previousBid,
   recommendedBid,
   onBackspaceBid,
@@ -73,7 +71,6 @@ export function BattleOverlayLayer({
           availableCash={availableCash}
           canConfirm={bidDraftValid}
           error={bidDraftError}
-          minimumBid={minimumBid}
           previousBid={previousBid}
           recommendedBid={recommendedBid}
           round={currentRound}

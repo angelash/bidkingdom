@@ -86,8 +86,8 @@ export function assertBattleItemPhase(match: MatchRuntimeState, playerId: string
     throw new Error('战斗道具只能在情报或竞价阶段使用');
   }
   const player = match.players.find((candidate) => candidate.id === playerId);
-  if (match.coreMode && round.phase === 'auction' && (player?.hasSubmittedBid || round.bids.some((bid) => bid.playerId === playerId))) {
-    throw new Error('BidKing 战斗道具必须在出价前使用');
+  if (round.phase === 'auction' && (player?.hasSubmittedBid || round.bids.some((bid) => bid.playerId === playerId))) {
+    throw new Error('战斗道具必须在出价前使用');
   }
 }
 
