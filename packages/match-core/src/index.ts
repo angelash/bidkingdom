@@ -161,6 +161,7 @@ export {
   bidKingInitialCashChoices,
   bidKingInitialCashForBidMap,
   bidKingInitialCashForProfileCoins,
+  bidKingIsDefaultUnknownBidMap,
   bidKingItemBudgetChoices,
   bidKingMapDailyEntryCount,
   bidKingMapNextOpenAt,

@@ -21,7 +21,7 @@ export function equipBattleItemsForProfile(
   itemIds: number[],
   recordTransaction: BattleItemTransactionRecorder
 ): void {
-  const uniqueIds = [...new Set(itemIds)].slice(0, 3);
+  const uniqueIds = [...new Set(itemIds)].slice(0, 5);
   const selectedBoxIds = new Set<number>();
   const equipped = uniqueIds.map((itemId) => {
     const row = BattleItem.find((candidate) => candidate.id === itemId);

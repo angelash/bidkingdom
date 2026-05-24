@@ -6,6 +6,7 @@ import type {
   AuctionHouseItemSortModel,
   AuctionHouseLanchItemListSnapshot,
   AuctionHouseTradeInfoListSnapshot,
+  AuctionHouseUnlockLanchSlotResponse,
   AuctionHouseUnlanchItemResponse,
   FinalMatchSummary,
   MarketOrdersSnapshot,
@@ -40,7 +41,8 @@ import {
   createMarketOrderForProfile,
   expireMarketOrdersForProfile,
   settleExpiredAuctionHouseOrderForProfile,
-  settleMarketOrderForProfile
+  settleMarketOrderForProfile,
+  unlockAuctionHouseLanchSlotForProfile
 } from '../domain/economy/profileMarketRuntime';
 import {
   createSendAuctionForProfile,
@@ -528,6 +530,25 @@ export function createProfileService(store: ServerStore): ProfileService {
     };
   }
 
+  function unlockAuctionHouseLanchSlot(
+    playerId: string,
+    unlockCount = 1
+  ): ProfileSnapshot & { sourceAuctionHouseUnlockLanchSlot: AuctionHouseUnlockLanchSlotResponse } {
+    const profile = getOrCreateProfile(playerId);
+    const sourceAuctionHouseUnlockLanchSlot = unlockAuctionHouseLanchSlotForProfile(
+      profile,
+      unlockCount,
+      applyNumberChange
+    );
+    if (sourceAuctionHouseUnlockLanchSlot.errorCode === 0) {
+      store.save();
+    }
+    return {
+      ...getSnapshot(playerId),
+      sourceAuctionHouseUnlockLanchSlot
+    };
+  }
+
   function listMarketOrders(orderType?: 'trade' | 'auction'): MarketOrdersSnapshot {
     let expired = 0;
     for (const profile of Object.values(store.state.profiles)) {
@@ -961,6 +982,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     settleMarketOrder,
     cancelMarketOrder,
     cancelAuctionHouseLanchItem,
+    unlockAuctionHouseLanchSlot,
     listMarketOrders,
     listAuctionHouseLanchItems,
     listAuctionHouseItems,

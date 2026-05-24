@@ -265,8 +265,6 @@ export function BidKingApp(): JSX.Element {
 
       {view === 'play' && !room && (
         <MainHallRoute
-          botCount={botCount}
-          coreAuctionMode={coreAuctionMode}
           defaultBidMapId={defaultBidMapId}
           mapGroups={bidKingBattleMapGroups}
           playerName={playerName}

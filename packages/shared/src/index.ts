@@ -1009,6 +1009,13 @@ export interface AuctionHouseUnlanchItemResponse {
   orderId: string;
 }
 
+export interface AuctionHouseUnlockLanchSlotResponse {
+  errorCode: number;
+  unlockCount: number;
+  cost: number;
+  lanchMax: number;
+}
+
 export interface AuctionHouseTradeInfoSnapshot {
   tradeTime: number;
   itemCid: number;

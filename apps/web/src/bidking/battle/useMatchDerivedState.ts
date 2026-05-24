@@ -92,7 +92,7 @@ export function useMatchDerivedState({
       };
     })
     .filter((entry) => entry.row && entry.inventory > 0)
-    .slice(0, 3);
+    .slice(0, 5);
   const previousSelfBid = useMemo(
     () => snapshot && selfPlayer?.id ? lastSubmittedBidAmount(snapshot, selfPlayer.id) : undefined,
     [selfPlayer?.id, snapshot]

@@ -26,7 +26,6 @@ import { sourcePathForOutgameHub, titleForOutgameHub, type BidKingOutgameHubWind
 import { RechargePanelView, PassPanelView, type ActivityTargetView, type SimPlanView } from '../activity/ActivityPanels';
 import {
   BattlePrevPanelView,
-  type BattlePrevTab,
   type BidKingBattleMapGroup
 } from '../battlePrev/BattlePrevPanelView';
 import { BidderPanelView } from '../bidder/BidderPanelView';
@@ -59,9 +58,7 @@ type HallCatalogItem = (typeof gameConfig.items)[number] & {
 type OutgameHub = BidKingOutgameHubWindowKey;
 
 export function MainHallView({
-  botCount,
   catalogItems,
-  coreAuctionMode,
   defaultBidMapId,
   mapGroups,
   playerName,
@@ -127,9 +124,7 @@ export function MainHallView({
   onSetPlayerName,
   onUpgradeGuestAccount
 }: {
-  botCount: number;
   catalogItems: HallCatalogItem[];
-  coreAuctionMode: CoreAuctionMode;
   defaultBidMapId?: number;
   mapGroups: BidKingBattleMapGroup[];
   playerName: string;
@@ -140,7 +135,7 @@ export function MainHallView({
   serverUrl: string;
   authError?: string;
   resolveModeForBidMapId: (bidMapId?: number) => CoreAuctionMode | undefined;
-  onCreateRoom: (selectedBidMapId?: number) => boolean;
+  onCreateRoom: (selectedBidMapId?: number, roleId?: string) => boolean;
   onSelectBidMap: (bidMapId: number) => void;
   onSelectCoreAuctionMode: (mode: CoreAuctionMode) => void;
   onSelectRole: (roleId: string) => void;
@@ -198,14 +193,13 @@ export function MainHallView({
   const [activeHub, setActiveHub] = useState<OutgameHub>();
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const [battlePrevOpen, setBattlePrevOpen] = useState(false);
-  const [battlePrevTab, setBattlePrevTab] = useState<BattlePrevTab>('map');
   const [selectedBattleBidMapId, setSelectedBattleBidMapId] = useState(
     bidKingBestAvailableBidMapId(profile, selectedBidMapId) ?? selectedBidMapId ?? defaultBidMapId
   );
   const [dismissedStartupNoticeIds, setDismissedStartupNoticeIds] = useState<string[]>([]);
   const selectedRole = gameConfig.roles.find((role) => role.id === selectedRoleId) ?? gameConfig.roles[0]!;
   const startupNotice = bidKingStartupNoticeQueue([...(profile.readNotices ?? []), ...dismissedStartupNoticeIds], 1)[0];
-  const guideTargetWindow = battlePrevOpen ? 'Battle_Main' : activeHub ? sourcePathForOutgameHub(activeHub) : undefined;
+  const guideTargetWindow = !battlePrevOpen && activeHub ? sourcePathForOutgameHub(activeHub) : undefined;
   const guideStep = guideTargetWindow ? nextBidKingGuideStep(profile.completedGuides ?? [], guideTargetWindow) : undefined;
   useEffect(() => {
     if (selectedBidMapId) {
@@ -237,7 +231,6 @@ export function MainHallView({
   }
 
   function openBattlePrev(): void {
-    setBattlePrevTab('map');
     setSelectedBattleBidMapId(
       bidKingBestAvailableBidMapId(profile, selectedBidMapId ?? selectedBattleBidMapId)
         ?? selectedBidMapId
@@ -247,7 +240,13 @@ export function MainHallView({
     setBattlePrevOpen(true);
   }
 
-  function confirmBattlePrev(): void {
+  function confirmBattlePrev(config?: { roleId?: string; itemIds?: number[] }): void {
+    if (config?.roleId) {
+      onSelectRole(config.roleId);
+    }
+    if (config?.itemIds) {
+      onEquipBattleItems(config.itemIds);
+    }
     if (selectedBattleBidMapId) {
       onSelectBidMap(selectedBattleBidMapId);
       const sceneMode = resolveModeForBidMapId(selectedBattleBidMapId);
@@ -255,7 +254,7 @@ export function MainHallView({
         onSelectCoreAuctionMode(sceneMode);
       }
     }
-    if (onCreateRoom(selectedBattleBidMapId)) {
+    if (onCreateRoom(selectedBattleBidMapId, config?.roleId)) {
       setBattlePrevOpen(false);
     }
   }
@@ -288,7 +287,6 @@ export function MainHallView({
         ?? selectedBattleBidMapId
         ?? defaultBidMapId
     );
-    setBattlePrevTab('settings');
     setBattlePrevOpen(true);
   }
 
@@ -566,23 +564,17 @@ export function MainHallView({
       )}
       {battlePrevOpen && (
         <BattlePrevPanelView
-          botCount={botCount}
-          coreAuctionMode={coreAuctionMode}
           mapGroups={mapGroups}
           selectedBidMapId={selectedBattleBidMapId}
           profile={profile}
           selectedRole={selectedRole}
           selectedRoleId={selectedRoleId}
-          tab={battlePrevTab}
           onCancel={() => setBattlePrevOpen(false)}
           onConfirm={confirmBattlePrev}
-          onSelectCoreAuctionMode={onSelectCoreAuctionMode}
           onSelectBidMap={selectBattleBidMap}
           onSelectRole={onSelectRole}
           onReportException={onReportException}
           onEquipBattleItems={onEquipBattleItems}
-          onSetBotCount={onSetBotCount}
-          onSetTab={setBattlePrevTab}
         />
       )}
     </section>

@@ -9,6 +9,7 @@ import type {
   AuctionHouseItemInfoSnapshot,
   AuctionHouseItemPriceInfoListSnapshot,
   AuctionHouseLanchItemListSnapshot,
+  AuctionHouseUnlockLanchSlotResponse,
   AuctionHouseTradeInfoListSnapshot,
   AuctionHouseUnlanchItemResponse,
   PlayerProfile,
@@ -528,6 +529,29 @@ describe('server routes', () => {
         startPrice: 1500,
         count: 1
       }));
+
+      const auctionSlotUnlock = await app.inject({
+        method: 'POST',
+        url: '/api/auction-house/unlock-lanch-slot',
+        headers: auth.headers,
+        payload: { playerId, unlockCount: 1 }
+      });
+      const auctionSlotUnlockPayload = JSON.parse(auctionSlotUnlock.payload) as ProfileSnapshot & { sourceAuctionHouseUnlockLanchSlot: AuctionHouseUnlockLanchSlotResponse };
+      expect(auctionSlotUnlock.statusCode).toBe(200);
+      expect(auctionSlotUnlockPayload.sourceAuctionHouseUnlockLanchSlot).toEqual({
+        errorCode: 0,
+        unlockCount: 1,
+        cost: 50,
+        lanchMax: auctionLanchListPayload.lanchMax + 1
+      });
+
+      const invalidAuctionSlotUnlock = await app.inject({
+        method: 'POST',
+        url: '/api/auction-house/unlock-lanch-slot',
+        headers: auth.headers,
+        payload: { playerId, unlockCount: 0 }
+      });
+      expect(invalidAuctionSlotUnlock.statusCode).toBe(400);
 
       const auctionItems = await app.inject({
         method: 'GET',

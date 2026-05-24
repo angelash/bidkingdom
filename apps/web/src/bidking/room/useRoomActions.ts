@@ -45,7 +45,7 @@ interface UseRoomActionsArgs {
 }
 
 export interface RoomActions {
-  createRoom: (nextBidMapId?: number) => boolean;
+  createRoom: (nextBidMapId?: number, roleId?: string) => boolean;
   selectBidMap: (bidMapId: number) => void;
   selectCoreAuctionMode: (mode: CoreAuctionMode) => void;
   selectRole: (roleId: string) => void;
@@ -72,7 +72,7 @@ export function useRoomActions({
   snapshot,
   socket
 }: UseRoomActionsArgs): RoomActions {
-  const createRoom = useCallback((nextBidMapId?: number): boolean => {
+  const createRoom = useCallback((nextBidMapId?: number, roleId?: string): boolean => {
     if (!socket) {
       setToast('正在连接拍场，请稍候');
       return false;
@@ -91,6 +91,10 @@ export function useRoomActions({
     if (bidMapId !== selectedBidMapId) {
       setSelectedBidMapId(bidMapId);
     }
+    const requestedRoleId = roleId ?? selectedRoleId;
+    if (requestedRoleId !== selectedRoleId) {
+      setSelectedRoleId(requestedRoleId);
+    }
     const sceneMode = modeForBidMapId(bidMapId) ?? coreAuctionMode;
     localStorage.setItem('bk_player_name', playerName);
     saveCoreAuctionMode(sceneMode);
@@ -101,7 +105,7 @@ export function useRoomActions({
     socket.emit('createRoom', {
       playerName,
       profileId,
-      roleId: selectedRoleId,
+      roleId: requestedRoleId,
       botCount,
       coreAuctionMode: sceneMode,
       selectedBidMapId: bidMapId,
@@ -125,6 +129,7 @@ export function useRoomActions({
     selectedRoleId,
     setCoreAuctionMode,
     setSelectedBidMapId,
+    setSelectedRoleId,
     setRoom,
     setSelfPlayerId,
     setToast,

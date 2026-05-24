@@ -55,7 +55,8 @@ describe('BidKing initial cash runtime', () => {
   it('uses account balance to gate maps while keeping cash fixed by the selected room', () => {
     expect(bidKingBidMapRequiredCoins(2401)).toBe(2_000_000);
     expect(bidKingBidMapEntryCostCoins(2401)).toBe(10_000);
-    expect(bidKingBidMapEntryCosts(2101)).toEqual([{ refId: 101, quantity: 1 }]);
+    expect(bidKingBidMapEntryCosts(2101)).toEqual([]);
+    expect(bidKingBidMapEntryCosts(2102)).toEqual([{ refId: 102, quantity: 1 }]);
     expect(bidKingWorldProcessRows()[0]).toEqual(expect.objectContaining({
       statusCid: 1,
       requiredValue: 2_000_000,
@@ -66,14 +67,15 @@ describe('BidKing initial cash runtime', () => {
       coins: 2_090_000,
       auctionStats: { highestWinningItemTotalValue: 2_000_000 }
     }, 2401).canEnter).toBe(true);
-    expect(bidKingBidMapAccess({ coins: 20_000, inventory: [{ refId: 101, quantity: 1 }] }, 2101).canEnter).toBe(true);
-    expect(bidKingBidMapAccess({ coins: 20_000, inventory: [] }, 2101).canEnter).toBe(false);
+    expect(bidKingBidMapAccess({ coins: 20_000, inventory: [] }, 2101).canEnter).toBe(true);
+    expect(bidKingBidMapAccess({ coins: 20_000, inventory: [{ refId: 102, quantity: 1 }] }, 2102).canEnter).toBe(true);
+    expect(bidKingBidMapAccess({ coins: 20_000, inventory: [] }, 2102).canEnter).toBe(false);
     expect(bidKingBidMapAccess({ coins: 1_999_999 }, 2401).canEnter).toBe(false);
     expect(bidKingBidMapAccess({ coins: 2_090_000 }, 2501).canEnter).toBe(false);
     const now = new Date(2026, 4, 22, 12, 0, 0).getTime();
     expect(bidKingBidMapAccess({
       coins: 20_000,
-      inventory: [{ refId: 101, quantity: 1 }],
+      inventory: [],
       dailyMapEntries: { [bidKingDailyMapEntryKey(101, now)]: 100 }
     }, 2101, now).reasons).toContain('今日次数 100/100');
     expect(bidKingBestAvailableBidMapId({ coins: 2_090_000 }, 2201)).toBe(2201);
@@ -82,7 +84,7 @@ describe('BidKing initial cash runtime', () => {
       coins: 2_090_000,
       auctionStats: { highestWinningItemTotalValue: 2_000_000 }
     })).toBe(2401);
-    expect(bidKingBestAvailableBidMapId({ coins: 20_000, inventory: [{ refId: 101, quantity: 1 }] })).toBe(2101);
+    expect(bidKingBestAvailableBidMapId({ coins: 20_000, inventory: [] })).toBe(2101);
     expect(bidKingInitialCashForProfileCoins(2_090_000, 2201)).toBe(500_000);
     expect(bidKingInitialCashForProfileCoins(2_090_000, 2601)).toBe(3_000_000);
   });

@@ -1,4 +1,4 @@
-import type { CoreAuctionMode, PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
+import type { PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
 import { bidKingHeroIdForRoleId } from '@bitkingdom/match-core';
 import { gameConfig } from '@bitkingdom/config';
 import { modeForBidMapId } from '../battlePrev/bidMapRuntime';
@@ -10,8 +10,6 @@ import { MainHallView } from './MainHallView';
 import type { GameExceptionInput } from '../system/gameExceptionRuntime';
 
 interface MainHallRouteProps {
-  botCount: number;
-  coreAuctionMode: CoreAuctionMode;
   defaultBidMapId?: number;
   mapGroups: BidKingBattleMapGroup[];
   playerName: string;
@@ -33,8 +31,6 @@ interface MainHallRouteProps {
 }
 
 export function MainHallRoute({
-  botCount,
-  coreAuctionMode,
   defaultBidMapId,
   mapGroups,
   playerName,
@@ -56,9 +52,7 @@ export function MainHallRoute({
 }: MainHallRouteProps): JSX.Element {
   return (
     <MainHallView
-      botCount={botCount}
       catalogItems={codexCatalogItems}
-      coreAuctionMode={coreAuctionMode}
       defaultBidMapId={defaultBidMapId}
       mapGroups={mapGroups}
       playerName={playerName}

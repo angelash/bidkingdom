@@ -98,15 +98,15 @@ describe('profile service', () => {
     itemCostProfile.stockContainers = [];
     itemCostProfile.stockState = { nextBoxId: 1, nextItemNo: 1 };
     itemCostProfile.settings.bidkingStockContainersV1 = true;
-    addInventory(itemCostProfile, 'warehouse', '101', 1, 'test:bidmap:item_cost');
+    addInventory(itemCostProfile, 'warehouse', '102', 1, 'test:bidmap:item_cost');
 
-    profiles.consumeBidMapEntryCost(itemCostProfile.playerId, 2101, 'match_start:entry_item');
-    profiles.consumeBidMapEntryCost(itemCostProfile.playerId, 2101, 'match_start:entry_item');
+    profiles.consumeBidMapEntryCost(itemCostProfile.playerId, 2102, 'match_start:entry_item');
+    profiles.consumeBidMapEntryCost(itemCostProfile.playerId, 2102, 'match_start:entry_item');
     const afterItemCost = profiles.getSnapshot(itemCostProfile.playerId);
 
-    expect(inventoryQuantity(afterItemCost.profile, '101')).toBe(0);
+    expect(inventoryQuantity(afterItemCost.profile, '102')).toBe(0);
     expect(afterItemCost.profile.dailyMapEntries?.[bidKingDailyMapEntryKey(101)]).toBe(1);
-    expect(afterItemCost.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.item.cid === 101)).toBe(false);
+    expect(afterItemCost.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.item.cid === 102)).toBe(false);
     expect(afterItemCost.transactions.map((transaction) => transaction.reason)).toEqual(expect.arrayContaining([
       'bidmap_entry_cost_item',
       'bidmap_entry_cost'
@@ -799,6 +799,24 @@ describe('profile service', () => {
         count: 1
       })
     ]);
+    const coinsBeforeSlotUnlock = profiles.getSnapshot('p_market_actions').profile.coins;
+    const slotUnlock = profiles.unlockAuctionHouseLanchSlot('p_market_actions', 1);
+    expect(slotUnlock.sourceAuctionHouseUnlockLanchSlot).toEqual({
+      errorCode: 0,
+      unlockCount: 1,
+      cost: 50,
+      lanchMax: sourceLanchList.lanchMax + 1
+    });
+    expect(slotUnlock.profile.settings.bidkingMarketSlotUnlocks).toBe(1);
+    expect(slotUnlock.profile.coins).toBe(coinsBeforeSlotUnlock - 50);
+    expect(profiles.listAuctionHouseLanchItems('p_market_actions').lanchMax).toBe(sourceLanchList.lanchMax + 1);
+    expect(() => profiles.unlockAuctionHouseLanchSlot('p_market_actions', 0)).toThrow('解锁数量需为正整数');
+    const maxSlotProfile = profiles.getOrCreateProfile('p_market_max_slot', '槽位上限');
+    maxSlotProfile.settings.bidkingMarketSlotUnlocks = 5;
+    expect(() => profiles.unlockAuctionHouseLanchSlot('p_market_max_slot', 1)).toThrow('拍卖上架槽位已达上限');
+    const brokeSlotProfile = profiles.getOrCreateProfile('p_market_broke_slot', '槽位余额不足');
+    brokeSlotProfile.coins = 49;
+    expect(() => profiles.unlockAuctionHouseLanchSlot('p_market_broke_slot', 1)).toThrow('铜钱不足，无法解锁拍卖上架槽位');
     const sourceItemInfo = profiles.listAuctionHouseItems({ itemCid: 100102, sortType: 'StartPrice', page: 1, pageSize: 5 });
     expect(sourceItemInfo).toEqual(expect.objectContaining({
       errorCode: 0,
@@ -866,6 +884,8 @@ describe('profile service', () => {
     expect(inventoryQuantity(cancelled, '100102')).toBe(1);
     expect(cancelled.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.boxId === lockedBoxId)).toBe(true);
     expect(profiles.getSnapshot('p_market_bidder_b').profile.coins).toBe(bidderBBefore);
+    expect(profiles.listAuctionHouseBidLogs('p_market_bidder').bidLogList).toEqual([]);
+    expect(profiles.listAuctionHouseBidLogs('p_market_bidder_b').bidLogList).toEqual([]);
   });
 
   it('settles expired auction bids through source unlanch without charging the winner twice', () => {
@@ -920,6 +940,40 @@ describe('profile service', () => {
     ]);
   });
 
+  it('keeps no-bid expired auctions in the seller lanch list until source unlanch', () => {
+    const profiles = createProfileService(createMemoryStore());
+    const seller = profiles.getOrCreateProfile('p_market_expired_no_bid', '无人出价过期卖家');
+    grantInventory(seller, '100102', 1);
+    const listed = profiles.createMarketOrder('p_market_expired_no_bid', '100102', 1, 1500, 'auction').profile;
+    const order = listed.marketOrders[0]!;
+    const lockedBoxId = order.lockedStockBoxes?.[0]?.boxId;
+    seller.marketOrders[0]!.expiresAt = Date.now() - 1;
+
+    expect(profiles.listAuctionHouseItems({ itemCid: 100102 }).itemInfoList).toEqual([]);
+    const lanchList = profiles.listAuctionHouseLanchItems('p_market_expired_no_bid');
+    expect(lanchList.lanchItemList).toEqual([
+      expect.objectContaining({
+        lanchItemUid: order.sourceAuctionHouseLanchItemUid,
+        itemCid: 100102,
+        maxPrice: 0,
+        endLanchTime: Math.floor((seller.marketOrders[0]?.expiresAt ?? 0) / 1000)
+      })
+    ]);
+    expect(profiles.getSnapshot('p_market_expired_no_bid').profile.marketOrders[0]).toEqual(expect.objectContaining({ status: 'listed' }));
+    expect(inventoryQuantity(profiles.getSnapshot('p_market_expired_no_bid').profile, '100102')).toBe(0);
+
+    const unlanchSnapshot = profiles.cancelAuctionHouseLanchItem('p_market_expired_no_bid', order.sourceAuctionHouseLanchItemUid!);
+
+    expect(unlanchSnapshot.sourceAuctionHouseUnlanchItem).toEqual(expect.objectContaining({
+      errorCode: 0,
+      itemUid: order.sourceAuctionHouseLanchItemUid
+    }));
+    expect(unlanchSnapshot.profile.marketOrders[0]).toEqual(expect.objectContaining({ status: 'expired' }));
+    expect(inventoryQuantity(unlanchSnapshot.profile, '100102')).toBe(1);
+    expect(unlanchSnapshot.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.boxId === lockedBoxId)).toBe(true);
+    expect(unlanchSnapshot.transactions.some((entry) => entry.reason === 'market_order_expired_return')).toBe(true);
+  });
+
   it('settles expired auction bids during auction list refresh', () => {
     const profiles = createProfileService(createMemoryStore());
     const seller = profiles.getOrCreateProfile('p_market_expired_auction_seller', '过期拍卖卖家');
@@ -939,6 +993,15 @@ describe('profile service', () => {
     ]);
 
     profiles.bidAuctionHousePrice('p_market_expired_auction_bidder', order.sourceAuctionHouseLanchItemUid!, 2_500);
+    expect(profiles.listAuctionHouseBidLogs('p_market_expired_auction_bidder').bidLogList).toEqual([
+      expect.objectContaining({
+        bidPrice: 2_500,
+        lanchItem: expect.objectContaining({
+          lanchItemUid: order.sourceAuctionHouseLanchItemUid,
+          maxPrice: 2_500
+        })
+      })
+    ]);
     seller.marketOrders[0]!.expiresAt = Date.now() - 1;
 
     const auctionItems = profiles.listAuctionHouseItems({ itemCid: 100102 });
@@ -966,6 +1029,7 @@ describe('profile service', () => {
       itemCid: 100102,
       price: 2_500
     }));
+    expect(profiles.listAuctionHouseBidLogs('p_market_expired_auction_bidder').bidLogList).toEqual([]);
     expect(profiles.listAuctionHouseItemPriceInfo().allAuctionHouseItemPriceInfo).toEqual([
       {
         itemCid: 100102,

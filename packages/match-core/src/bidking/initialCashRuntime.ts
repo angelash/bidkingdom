@@ -113,7 +113,10 @@ export function bidKingBidMapEntryCosts(bidMapId?: number): BidKingBidMapEntryCo
     return [];
   }
   const costs = new Map<number, number>();
-  for (const row of bidMapCostRows([bidMap.currency_cost, ...bidMap.item_cost])) {
+  const rows = bidKingIsDefaultUnknownBidMap(bidMap.id)
+    ? [bidMap.currency_cost]
+    : [bidMap.currency_cost, ...bidMap.item_cost];
+  for (const row of bidMapCostRows(rows)) {
     const refId = row[1] ?? 0;
     const quantity = row[2] ?? 0;
     if (refId <= 0 || quantity <= 0) {
@@ -122,6 +125,21 @@ export function bidKingBidMapEntryCosts(bidMapId?: number): BidKingBidMapEntryCo
     costs.set(refId, (costs.get(refId) ?? 0) + quantity);
   }
   return [...costs.entries()].map(([refId, quantity]) => ({ refId, quantity }));
+}
+
+export function bidKingIsDefaultUnknownBidMap(bidMapId?: number): boolean {
+  const bidMap = bidMapForId(bidMapId);
+  if (!bidMap) {
+    return false;
+  }
+  const defaultBidMap = BidMap
+    .filter((candidate) => (
+      candidate.parent_map_id === bidMap.parent_map_id
+      && candidate.is_visiable === 1
+      && candidate.auction_rounds_rate.some((rate) => rate > 0)
+    ))
+    .sort((left, right) => left.id - right.id)[0];
+  return defaultBidMap?.id === bidMap.id;
 }
 
 export function bidKingBidMapAccess(

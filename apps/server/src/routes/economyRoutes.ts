@@ -264,6 +264,26 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
   });
 
   app.post<{
+    Body: { playerId?: string; unlockCount?: number };
+  }>('/api/auction-house/unlock-lanch-slot', async (request, reply) => {
+    const { playerId, unlockCount } = request.body;
+    if (!playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    if (unlockCount !== undefined && (typeof unlockCount !== 'number' || !Number.isFinite(unlockCount) || unlockCount < 1)) {
+      reply.code(400);
+      return { error: 'unlockCount must be a positive number' };
+    }
+    try {
+      return profiles.unlockAuctionHouseLanchSlot(playerId, unlockCount ?? 1);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'auction house slot unlock failed' };
+    }
+  });
+
+  app.post<{
     Body: { playerId?: string; orderId?: string; action?: 'settle' | 'cancel' };
   }>('/api/market/order/action', async (request, reply) => {
     const { playerId, orderId, action } = request.body;

@@ -6,6 +6,7 @@ import type {
   AuctionHouseItemSortModel,
   AuctionHouseLanchItemListSnapshot,
   AuctionHouseTradeInfoListSnapshot,
+  AuctionHouseUnlockLanchSlotResponse,
   AuctionHouseUnlanchItemResponse,
   FinalMatchSummary,
   MarketOrdersSnapshot,
@@ -76,6 +77,7 @@ export interface ProfileService {
   listAuctionHouseItemPriceInfo(): AuctionHouseItemPriceInfoListSnapshot;
   bidAuctionHousePrice(playerId: string, itemUid: number, price: number): ProfileSnapshot & { sourceAuctionHouseBidPrice: AuctionHouseBidPriceResponse };
   cancelAuctionHouseLanchItem(playerId: string, itemUid: number): ProfileSnapshot & { sourceAuctionHouseUnlanchItem: AuctionHouseUnlanchItemResponse };
+  unlockAuctionHouseLanchSlot(playerId: string, unlockCount?: number): ProfileSnapshot & { sourceAuctionHouseUnlockLanchSlot: AuctionHouseUnlockLanchSlotResponse };
   listAuctionHouseBidLogs(playerId: string): AuctionHouseBidLogListSnapshot;
   listAuctionHouseTradeInfo(playerId: string): AuctionHouseTradeInfoListSnapshot;
   createSendAuction(playerId: string, mapCid: number, itemSelections: SendAuctionItemSelectionInput[]): ProfileSnapshot;

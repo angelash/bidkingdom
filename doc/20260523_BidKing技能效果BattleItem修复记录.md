@@ -305,9 +305,16 @@
 
 追加验证：拍卖行 `C2S_284/S2C_285` 源形交易记录修复后，`npm run typecheck -w @bitkingdom/shared`、`npm run typecheck -w @bitkingdom/server`、`npm run test -w @bitkingdom/server -- tests/profileService.test.ts`、`npm run test -w @bitkingdom/server -- tests/routes.test.ts` 均通过；当前 profileService 为 68 个测试通过，routes 为 7 个测试通过。源码证据为 `AuctionPlaceSupPanel3` 将 `TradeInfoInList` 包装成 `isBuy=true`、`TradeInfoOutList` 包装成 `isBuy=false`，`TradingInfoItem.SetData2` 展示 `ItemCid/No/Price/TradeTime` 且数量固定 `x1`。本地新增 `/api/auction-house/trade-info`，按玩家输出 `AuctionHouseTradeInfoSnapshot { tradeTime, itemCid, numberCid, no, price }` 的买入/卖出列表。
 
+追加验证：拍卖行 `C2S_292/S2C_293` 平均价/在售数量修复后，`npm run typecheck -w @bitkingdom/shared`、`npm run typecheck -w @bitkingdom/server`、`npm run test -w @bitkingdom/server -- tests/profileService.test.ts`、`npm run test -w @bitkingdom/server -- tests/routes.test.ts` 均通过；当前 profileService 为 68 个测试通过，routes 为 7 个测试通过。源码证据为 `AuctionhouseReflection.cs` 中 `AuctionHouseItemPriceInfo(ItemCid/AvgPrice/Count)`、`C2S_292(Token)`、`S2C_293(ErrorCode/AllAuctionHouseItemPriceInfo)` 字段列表，`PlayerManager.GetAuctionHouseItemPriceInfo` 消费该列表，`AuctionPlaceItem.SetBuild` 展示 `AvgPrice` 并把 `Count` 放在 `zaishouRoot` 在售数量区域。当前新增 `/api/auction-house/item-price-info`，按 sold auction order 聚合 `avgPrice`，按活跃上架聚合 `count`。
+
+追加验证：拍卖行 `C2S_302/S2C_303` 上架槽解锁修复后，`npm run typecheck -w @bitkingdom/shared`、`npm run typecheck -w @bitkingdom/server`、`npm run test -w @bitkingdom/server -- tests/profileService.test.ts`、`npm run test -w @bitkingdom/server -- tests/routes.test.ts` 均通过；当前 profileService 为 68 个测试通过，routes 为 7 个测试通过。源码证据为 `AuctionhouseReflection.cs` 中 `C2S_302(Token/UnlockCount)`、`S2C_303(ErrorCode)` 字段列表，`PlayerManager.UnlockAuctionHouseLanchSlot` 发送 `UnlockCount`，`AuctionPlaceSupPanel2.AddBoxClick` 固定传 `1`，并按 `auction_slot_price[my_shangjiaBoxCount - item_bid_slot_base]` 校验费用，成功后刷新 `GetAuctionHouseLanchItemList`。当前新增 `/api/auction-house/unlock-lanch-slot`，成功后扣 `coins`、增加 `bidkingMarketSlotUnlocks`，并让后续 `lanchMax` 增加；同时补正 `UnlockCount` 必须为正数、满槽和余额不足边界。
+
+追加验证：拍卖行无出价过期列表态修复后，`npm run typecheck -w @bitkingdom/server`、`npm run test -w @bitkingdom/server -- tests/profileService.test.ts` 均通过；当前 profileService 为 69 个测试通过。源码证据为 `AuctionPlaceSaleItem.SetData` 根据 `EndLanchTime` 与服务器时间切换 `reexchangeGo/expiredGo`，`OnTimeEnd` 只派发刷新事件，`OnXiajiaClick` 调用 `UnAuctionlanchItem(lunchData.LanchItemUid)`；`AuctionPlaceSupPanel2.RefreshSaleItems` 直接展示 `GetAuctionHouseLanchItemList` 返回列表并用列表数量占槽。本地改为：无出价拍卖到期后保留在卖家上架列表、继续占用槽位，不进入公共竞拍列表，直到卖家下架才返还实体库存；`AuctionPlaceSaleItem.OnReExchangeClick` 在客户端为空方法，当前不凭空实现重上架。
+
+追加验证：拍卖行 `C2S_304/S2C_305` 竞价日志结束态复核后，源码证据显示 bid log 是未结束拍卖的个人出价展示列表：`AuctionPlacePanel_Main` 和 `AuctionPlaceSupPanel5.RefreshView` 调 `PlayerManager.GetAuctionHouseBidLog()` 刷新列表，`AuctionPlaceSupPanel5.OnAuctionSaleRefresh` 在拍品结束事件中按 `LanchItemUid` 从 `auctionHouseBidLogs` 移除，`AuctionPlaceItem.SetBuild2` 用 `BidPrice` 与 `LanchItem.MaxPrice` 展示是否被超价；成交记录另由 `C2S_284/S2C_285` 承载。当前将 `/api/auction-house/bid-logs` 显式限定为未过期、活跃拍卖，并补测撤拍和到期成交后竞拍人 bid log 清空，避免把已结束拍卖误当作竞价日志历史。
+
 ## 下一步
 
-下一轮建议继续处理技能目标与信息状态的剩余差距：
+下一轮建议继续处理拍卖行剩余协议差距：
 
-- 下一轮继续训练/遗物状态机：`GameWinItemList` 的 `Sim.simdorp -> Drop 801` 候选池已补到源码可证层，下一步需要继续追服务端如何抽取最终候选数量/权重/去重，以及真实服务端 `GameSkillData` 生成算法。
-- 继续把服务器生成 `GameSkillData` 与本地推导命中的差距收窄，下一步优先审 `HitBoxList` 字段对直接显示类、文本类、轮廓类在客户端 `BattleGridItemData.Parse/Sync` 中的合并行为。
+- 继续对 `AuctionPlace* / Trading* / SendAuction*` 协议按覆盖矩阵收口字段和状态。

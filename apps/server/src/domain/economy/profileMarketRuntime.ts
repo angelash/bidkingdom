@@ -11,6 +11,7 @@ import type {
   AuctionHouseLanchItemSnapshot,
   AuctionHouseTradeInfoListSnapshot,
   AuctionHouseTradeInfoSnapshot,
+  AuctionHouseUnlockLanchSlotResponse,
   AuctionHouseUnlanchItemResponse,
   MarketOrderAuctionHouseBidState,
   MarketOrderSourceAuctionHouseLaunch,
@@ -28,6 +29,7 @@ import {
   bidKingMarketOrderDurationHours,
   bidKingMarketOrderDurationMs,
   bidKingMarketPublicDelayMs,
+  bidKingMarketRuleRuntime,
   bidKingMarketSnapshotLimit
 } from '@bitkingdom/match-core';
 import { randomUUID } from 'node:crypto';
@@ -286,6 +288,9 @@ export function expireMarketOrdersForProfile(
   let expired = 0;
   for (const order of profile.marketOrders) {
     if (order.status === 'listed' && isMarketOrderExpired(order, now)) {
+      if (isExpiredAuctionHouseOrderAwaitingUnlanch(order)) {
+        continue;
+      }
       expireMarketOrder(profile, order, recordTransaction, now, refundAuctionHouseBidEscrow, settleExpiredAuctionHouseOrder);
       expired += 1;
     }
@@ -383,6 +388,45 @@ export function cancelAuctionHouseLanchItemForProfile(
     errorCode: 0,
     itemUid: safeItemUid,
     orderId: order.id
+  };
+}
+
+export function unlockAuctionHouseLanchSlotForProfile(
+  profile: PlayerProfile,
+  unlockCount: number,
+  applyNumberChange: ProfileNumberChangeApplier,
+  now = Date.now()
+): AuctionHouseUnlockLanchSlotResponse {
+  ensureProfileShape(profile);
+  const safeUnlockCount = Math.floor(unlockCount);
+  if (!Number.isFinite(unlockCount) || safeUnlockCount < 1) {
+    throw new Error('解锁数量需为正整数');
+  }
+  const currentLanchMax = marketListingSlotLimit(profile);
+  const nextLanchMax = currentLanchMax + safeUnlockCount;
+  const maxLanch = auctionHouseLanchSlotUnlockMax();
+  if (currentLanchMax >= maxLanch || nextLanchMax > maxLanch) {
+    throw new Error('拍卖上架槽位已达上限');
+  }
+  const cost = auctionHouseLanchSlotUnlockCost(currentLanchMax, safeUnlockCount);
+  if (profile.coins < cost) {
+    throw new Error('铜钱不足，无法解锁拍卖上架槽位');
+  }
+  const currentUnlocks = marketListingSlotUnlockCount(profile);
+  applyNumberChange(
+    profile,
+    `auction_house:${profile.playerId}:${now}:unlock_lanch_slot:${currentUnlocks}:${safeUnlockCount}`,
+    'auction_house_unlock_lanch_slot',
+    'coins',
+    -cost
+  );
+  profile.settings.bidkingMarketSlotUnlocks = currentUnlocks + safeUnlockCount;
+  profile.updatedAt = now;
+  return {
+    errorCode: 0,
+    unlockCount: safeUnlockCount,
+    cost,
+    lanchMax: marketListingSlotLimit(profile)
   };
 }
 
@@ -486,6 +530,7 @@ export function buildAuctionHouseBidLogListSnapshot(
       ensureProfileShape(sellerProfile);
       return sellerProfile.marketOrders
         .filter(isActiveAuctionHouseOrder)
+        .filter((order) => !isMarketOrderExpired(order, now))
         .map((order) => {
           const bid = latestAuctionHouseBidForPlayer(order, profile.playerId);
           return bid ? buildAuctionHouseBidLogSnapshot(order, bid) : undefined;
@@ -628,8 +673,34 @@ function activeMarketOrderCount(profile: PlayerProfile): number {
 }
 
 function marketListingSlotLimit(profile: PlayerProfile): number {
-  const unlocked = Math.max(0, Math.floor(Number(profile.settings?.bidkingMarketSlotUnlocks ?? 0) || 0));
-  return Math.min(bidKingMarketListingSlotMax(), bidKingMarketListingSlotBase() + unlocked);
+  return Math.min(auctionHouseLanchSlotUnlockMax(), bidKingMarketListingSlotBase() + marketListingSlotUnlockCount(profile));
+}
+
+function marketListingSlotUnlockCount(profile: PlayerProfile): number {
+  return Math.max(0, Math.floor(Number(profile.settings?.bidkingMarketSlotUnlocks ?? 0) || 0));
+}
+
+function auctionHouseLanchSlotUnlockMax(): number {
+  const rules = bidKingMarketRuleRuntime();
+  return Math.min(bidKingMarketListingSlotMax(), bidKingMarketListingSlotBase() + rules.auctionSlotPrices.length);
+}
+
+function auctionHouseLanchSlotUnlockCost(currentLanchMax: number, unlockCount: number): number {
+  const rules = bidKingMarketRuleRuntime();
+  const base = bidKingMarketListingSlotBase();
+  const safeUnlockCount = Math.floor(unlockCount);
+  if (!Number.isFinite(unlockCount) || safeUnlockCount < 1) {
+    throw new Error('解锁数量需为正整数');
+  }
+  let cost = 0;
+  for (let offset = 0; offset < safeUnlockCount; offset += 1) {
+    const price = rules.auctionSlotPrices[Math.max(0, currentLanchMax - base) + offset];
+    if (price === undefined) {
+      throw new Error('拍卖上架槽位已达上限');
+    }
+    cost += Math.max(0, Math.floor(price));
+  }
+  return cost;
 }
 
 function marketOrderTotalPrice(order: PlayerProfile['marketOrders'][number]): number {
@@ -644,6 +715,10 @@ function incrementTradeConditionStat(profile: PlayerProfile, key: 'tradeBoughtCo
 
 function isMarketOrderExpired(order: PlayerProfile['marketOrders'][number], now: number): boolean {
   return typeof order.expiresAt === 'number' && order.expiresAt <= now;
+}
+
+function isExpiredAuctionHouseOrderAwaitingUnlanch(order: PlayerProfile['marketOrders'][number]): boolean {
+  return order.orderType === 'auction' && highestAuctionHouseBidPrice(order) <= 0;
 }
 
 function expireMarketOrder(
@@ -726,6 +801,7 @@ function buildAuctionHouseItemInfoSnapshotFromOrders(
   const page = Math.max(1, Math.floor(Number(options.page ?? 1)) || 1);
   const items = orders
     .filter(isActiveAuctionHouseOrder)
+    .filter((order) => !isMarketOrderExpired(order, now))
     .map((order) => order.sourceAuctionHouseLanchItem ?? buildAuctionHouseLanchItem(order))
     .filter((item) => itemCid === undefined || item.itemCid === itemCid)
     .filter((item) => {

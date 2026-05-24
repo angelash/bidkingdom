@@ -108,7 +108,8 @@ function isProtectedProfileRoute(method: string, rawUrl: string): boolean {
     path === '/api/auction-house/bid' ||
     path === '/api/auction-house/bid-logs' ||
     path === '/api/auction-house/trade-info' ||
-    path === '/api/auction-house/unlanch-item'
+    path === '/api/auction-house/unlanch-item' ||
+    path === '/api/auction-house/unlock-lanch-slot'
   ) {
     return true;
   }
