@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { AuctionHouseItemSortModel } from '@bitkingdom/shared';
 import type { ProfileService } from '../services/profileService';
 
 export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileService): void {
@@ -178,6 +179,90 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
     return profiles.listMarketOrders(orderType);
   });
 
+  app.get<{
+    Querystring: { playerId?: string };
+  }>('/api/auction-house/lanch-items', async (request, reply) => {
+    if (!request.query.playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    return profiles.listAuctionHouseLanchItems(request.query.playerId);
+  });
+
+  app.get<{
+    Querystring: { itemCid?: string; isDisplayPeriod?: string; sortType?: string; page?: string; pageSize?: string; reverse?: string };
+  }>('/api/auction-house/items', async (request, reply) => {
+    const sortType = parseAuctionHouseSortType(request.query.sortType);
+    if (request.query.sortType !== undefined && !sortType) {
+      reply.code(400);
+      return { error: 'sortType must be LanchTime, Price, MaxPrice or StartPrice' };
+    }
+    return profiles.listAuctionHouseItems({
+      itemCid: optionalNumber(request.query.itemCid),
+      isDisplayPeriod: optionalNumber(request.query.isDisplayPeriod),
+      sortType,
+      page: optionalNumber(request.query.page),
+      pageSize: optionalNumber(request.query.pageSize),
+      reverse: optionalBoolean(request.query.reverse)
+    });
+  });
+
+  app.get('/api/auction-house/item-price-info', async () => {
+    return profiles.listAuctionHouseItemPriceInfo();
+  });
+
+  app.post<{
+    Body: { playerId?: string; itemUid?: number; price?: number };
+  }>('/api/auction-house/bid', async (request, reply) => {
+    const { itemUid, playerId, price } = request.body;
+    if (!playerId || typeof itemUid !== 'number' || typeof price !== 'number') {
+      reply.code(400);
+      return { error: 'playerId, itemUid and price are required' };
+    }
+    try {
+      return profiles.bidAuctionHousePrice(playerId, itemUid, price);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'auction house bid failed' };
+    }
+  });
+
+  app.get<{
+    Querystring: { playerId?: string };
+  }>('/api/auction-house/bid-logs', async (request, reply) => {
+    if (!request.query.playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    return profiles.listAuctionHouseBidLogs(request.query.playerId);
+  });
+
+  app.get<{
+    Querystring: { playerId?: string };
+  }>('/api/auction-house/trade-info', async (request, reply) => {
+    if (!request.query.playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    return profiles.listAuctionHouseTradeInfo(request.query.playerId);
+  });
+
+  app.post<{
+    Body: { playerId?: string; itemUid?: number };
+  }>('/api/auction-house/unlanch-item', async (request, reply) => {
+    const { itemUid, playerId } = request.body;
+    if (!playerId || typeof itemUid !== 'number') {
+      reply.code(400);
+      return { error: 'playerId and itemUid are required' };
+    }
+    try {
+      return profiles.cancelAuctionHouseLanchItem(playerId, itemUid);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'auction house unlanch failed' };
+    }
+  });
+
   app.post<{
     Body: { playerId?: string; orderId?: string; action?: 'settle' | 'cancel' };
   }>('/api/market/order/action', async (request, reply) => {
@@ -298,4 +383,28 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
       return { error: error instanceof Error ? error.message : 'activity claim failed' };
     }
   });
+}
+
+function optionalNumber(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function optionalBoolean(value: string | undefined): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return value === 'true' || value === '1';
+}
+
+function parseAuctionHouseSortType(value: string | undefined): AuctionHouseItemSortModel | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return value === 'LanchTime' || value === 'Price' || value === 'MaxPrice' || value === 'StartPrice'
+    ? value
+    : undefined;
 }

@@ -20,6 +20,11 @@
 - `20260520_BidKing100最终验收包.md`：最终复审包，集中记录 review snapshot 契约、后台入口、最终复审清单、验证命令、clean-room 表级边界和剩余处理口径。
 - `20260521_BidKing最终Playwright截图证据清单.md`：最终 Playwright 截图证据索引，记录后台、首页、15 个局外窗口、战前、房间/局内和局外动作流的桌面/移动截图输出路径。
 - `20260521_BidKing结算阶段独立界面还原记录.md`：记录最终成交后 `EndPrevPanel / BattleRoomEnd` 独立结算仪式的反编译依据、实现范围和桌面/移动 Playwright 真实局内流验证。
+- `20260523_BidKing源码工程全模块整理.md`：按源码资产整理反编译代码、协议、配置表、资源索引和原流程模块边界。
+- `20260523_BidKing当前实现全模块整理.md`：按当前工程整理 packages/apps/tools 的实现模块、文件规模和责任边界。
+- `20260523_BidKing源码实现逐模块还原度审计.md`：基于两份模块整理逐模块给出还原度百分比、代码细节差距和 P0/P1/P2 缺口。
+- `20260523_BidKing协议覆盖矩阵.md`：按 Game/Stock/Shop/Sendauction/Warehouse 源码协议逐项对照当前 Socket、REST、快照和事件追踪出口，记录覆盖状态、明拍金额可见性结论和剩余协议差距。
+- `20260523_BidKing技能效果BattleItem修复记录.md`：记录 BattleItem 直接 `itemName_<id>` 技能映射、`skill_count=0 -> 999`、源形 hitBoxList、`skilltarget=6/7` 修复和剩余 `skilltarget=10` 差距。
 - `20260519_BidKingDemo还原完整度审查报告.md`：当前 Demo 对照 BidKing reverse 类群、52 张表和现有代码后的完整度审查；结论是核心竞拍可演示，但未达到 100% 功能/结构复刻。
 - `20260518_竞拍核心复刻Demo当前实现设计文档.md`：当前 Demo 的模块、交互、数据流和实现镜像。
 - `20260518_竞拍核心规则重校准需求分析.md`：当前规则校准依据，包含 BidKing 式成交线与随机仓方向。
@@ -110,6 +115,7 @@
 - 2026-05-20 E3 BattleItem 局内状态补齐：match-core 已新增道具冷却私有状态、每轮递减、冷却阻断、目标玩家 payload 入口；前端局内道具按钮展示原表目标、冷却/持续、禁用原因和实现状态，Web 单测覆盖 action state。
 - 2026-05-20 E3 BattleItem 后台回放补齐：后台事件时间线已把 `battle_item_used` 的 `BattleItemEffectPlan` 解释成 Skill/Effect/Category、揭示类型、目标模式、冷却、目标玩家和实际线索文本。
 - 2026-05-20 E3 BattleItem Playwright 证据补齐：桌面 Playwright 已覆盖真实档案创建、商店购买、装备道具、进局开拍、前端点击 BattleItem 和后台 `battle_item_used` 事件确认。
+- 2026-05-23 P1 BattleItem/SkillEffect 源码复核修复：BattleItem 入口已改为 64 个 `itemName_<BattleItemId>` 直接 Skill 映射，`skill_count=0` 按源码作为全量 `999`，道具战报输出源形 `hitBoxList`，聚合类 SkillEffect 不再泄漏完整 BoxInfo，并补 `skilltarget=6` 四元组排序和 `skilltarget=7` 占格筛选测试。
 - 2026-05-20 E4 Bot 决策审计首批补齐：Bot action 现在携带 `BotActionAudit`，记录 `RankAi` 行 id、风险/诈唬/溢价/加价参数、估值、最高可出价和下一口价；房间 Bot 执行写入 `bot_action_chosen / bot_action_failed` 事件供后台回放审计。
 - 2026-05-20 E4 成交线审计补齐：`RoundBidFeedback.decision` 现在按 `BidMap.auction_rounds_rate` 输出结构化成交/继续/平价加赛/无人出价原因，后台事件时间线可直接展示决策解释。
 - 2026-05-20 E4 断线重连审计补齐：房间生命周期新增统一重连恢复 helper，断线/重连会写入 `player_disconnected / player_rejoined` match event，并带当前 round/phase 快照供后台追踪。

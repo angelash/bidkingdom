@@ -1,5 +1,5 @@
 import { Hero, Item, Map as BidKingMap, RankAi, bidKingMapDisplayName, itemFootprint } from '@bitkingdom/bidking-compat';
-import { bidKingBotHeroIdsForBidMap, bidKingEntrustSlotBase } from '@bitkingdom/match-core';
+import { bidKingBaseGameDataSystemLimits, bidKingBotHeroIdsForBidMap, bidKingEntrustSlotBase } from '@bitkingdom/match-core';
 import type {
   BidKingGameDataSnapshot,
   BidKingGameUserDataSnapshot,
@@ -17,6 +17,11 @@ import { randomUUID } from 'node:crypto';
 import { inventoryQuantity } from '../profile/profileInventory';
 import { addCustomMailToProfile } from '../profile/profileMailRuntime';
 import { ensureProfileShape } from '../profile/profileShape';
+import {
+  bidKingSourceBoxIdForProfileStockBox,
+  bidKingSourceBoxPositionDataForProfilePosition,
+  bidKingSourceBoxPositionForProfilePosition
+} from '../profile/profileStockRuntime';
 
 type BidKingMapRow = (typeof BidKingMap)[number];
 type BidKingItemRow = (typeof Item)[number];
@@ -25,6 +30,8 @@ export interface SendAuctionItemSelectionInput {
   stockId: number;
   boxId: number;
 }
+
+type SendAuctionSelectionMode = 'runtime' | 'source';
 
 export type SendAuctionTransactionRecorder = (
   profile: PlayerProfile,
@@ -70,7 +77,8 @@ export function createSendAuctionForProfile(
     throw new Error(`委托件数需在 ${minCount}-${maxCount} 件之间`);
   }
 
-  const selected = uniqueSelections.map((selection) => selectedBoxForSendAuction(profile, selection));
+  const selectionMode = inferSendAuctionSelectionMode(profile, uniqueSelections);
+  const selected = uniqueSelections.map((selection) => selectedBoxForSendAuction(profile, selection, selectionMode));
   const itemStates = selected.map(({ box, container }) => {
     const item = Item.find((candidate) => candidate.id === box.item.cid);
     if (!item) {
@@ -118,7 +126,7 @@ export function createSendAuctionForProfile(
     recordTransaction(profile, `send_auction:${profile.playerId}:${now}:slot:${slotId}:item:${item.boxId}`, 'send_auction_item_lock', 'item', beforeQuantity, -1);
   }
 
-  const stockContainer = sendAuctionStockContainer(slotId, map, selected.map(({ box }) => cloneStockBox(box)), now);
+  const stockContainer = sendAuctionStockContainer(slotId, map, selected.map(({ box }) => cloneStockBox(box, true)), now);
   const auction: SendAuctionState = {
     id: `send_auction_${randomUUID()}`,
     playerId: profile.playerId,
@@ -226,8 +234,9 @@ function buildSendAuctionGameState(
   now: number
 ): SendAuctionGameState {
   const stockContainer = toBidKingStockContainer(auction.stockContainer);
-  const userLog = buildSendAuctionUserLog(auction, finalPrice, now);
+  const userLog = buildSendAuctionUserLog(auction, finalPrice);
   const ownerUid = stableNumericId(profile.playerId);
+  const systemLimits = bidKingBaseGameDataSystemLimits();
   const gameData: BidKingGameDataSnapshot = {
     uid: `${auction.id}:game:${now}`,
     mapId: auction.bidMapId,
@@ -239,9 +248,9 @@ function buildSendAuctionGameState(
     itemSkillLog: [],
     nextRoundTime: now,
     selectItemCount: 0,
-    roundCanUseItemCount: 1,
-    gameCarryItemMax: 3,
-    gameGoldRateMax: 0,
+    roundCanUseItemCount: systemLimits.roundCanUseItemCount,
+    gameCarryItemMax: systemLimits.gameCarryItemMax,
+    gameGoldRateMax: systemLimits.gameGoldRateMax,
     gameType: 1,
     sendAuctionUserUid: ownerUid,
     sendAuctionUserName: profile.name,
@@ -284,19 +293,18 @@ function toBidKingStockContainer(container: ProfileStockContainerState): BidKing
 function toBidKingStockBox(container: ProfileStockContainerState, box: ProfileStockBoxState): BidKingStockBoxDataSnapshot {
   const item = Item.find((candidate) => candidate.id === box.item.cid);
   const footprint = item ? itemFootprint(item.slot_type) : { w: 1, h: 1 };
-  const x = Math.max(0, box.position % Math.max(1, container.width));
-  const y = Math.max(0, Math.floor(box.position / Math.max(1, container.width)));
-  const positions = [];
-  for (let offsetY = 0; offsetY < footprint.h; offsetY += 1) {
-    for (let offsetX = 0; offsetX < footprint.w; offsetX += 1) {
-      positions.push({ x: x + offsetX, y: y + offsetY });
-    }
-  }
+  const positions = (box.item.boxPositionData ?? []).length > 0
+    ? box.item.boxPositionData.map((position) => ({ ...position }))
+    : bidKingSourceBoxPositionDataForProfilePosition(
+        box.position,
+        container.width,
+        box.item.rotate ? { w: footprint.h, h: footprint.w } : footprint
+      );
   return {
-    boxId: box.boxId,
-    position: { x, y },
+    boxId: bidKingSourceBoxIdForProfileStockBox(box),
+    position: bidKingSourceBoxPositionForProfilePosition(box.position, container.width),
     item: {
-      uid: stableNumericId(box.item.uid),
+      uid: box.item.sourceUid ?? stableNumericId(box.item.uid),
       cid: box.item.cid,
       count: box.item.count,
       boxPositionData: positions,
@@ -310,7 +318,7 @@ function toBidKingStockBox(container: ProfileStockContainerState, box: ProfileSt
   };
 }
 
-function buildSendAuctionUserLog(auction: SendAuctionState, finalPrice: number, now: number): BidKingGameUserDataSnapshot[] {
+function buildSendAuctionUserLog(auction: SendAuctionState, finalPrice: number): BidKingGameUserDataSnapshot[] {
   const heroIds = bidKingBotHeroIdsForBidMap({
     bidMapId: auction.bidMapId,
     seed: auction.id,
@@ -346,12 +354,14 @@ function buildSendAuctionUserLog(auction: SendAuctionState, finalPrice: number, 
       heroCid: hero?.id ?? heroId,
       useItemLog: [],
       priceLog: amount > 0
-        ? [{ round: 1, itemCidOrPrice: amount, createdAt: now - (sorted.length - index) * 1000 }]
+        ? [{ round: 1, itemCidOrPrice: amount }]
         : [],
       isStandDown: amount <= 0,
       isQuit: false,
       headCid: 0,
       heroSkinCid: 0,
+      simSelectItemList: [],
+      simBuffItemList: [],
       selectItemList: [],
       headBoxCid: 0,
       titleCid: 0,
@@ -453,14 +463,46 @@ function normalizeSelections(itemSelections: readonly SendAuctionItemSelectionIn
 
 function selectedBoxForSendAuction(
   profile: PlayerProfile,
-  selection: SendAuctionItemSelectionInput
+  selection: SendAuctionItemSelectionInput,
+  mode: SendAuctionSelectionMode
 ): { container: ProfileStockContainerState; box: ProfileStockBoxState } {
   const container = profile.stockContainers?.find((candidate) => candidate.stockId === selection.stockId);
-  const box = container?.boxes.find((candidate) => candidate.boxId === selection.boxId);
+  const box = container ? findSendAuctionBox(container, selection.boxId, mode) : undefined;
   if (!container || !box) {
     throw new Error(`委托藏品不存在：${selection.stockId}/${selection.boxId}`);
   }
   return { container, box };
+}
+
+function inferSendAuctionSelectionMode(
+  profile: PlayerProfile,
+  selections: readonly SendAuctionItemSelectionInput[]
+): SendAuctionSelectionMode {
+  const sourceMatches = selections.every((selection) => {
+    const container = profile.stockContainers?.find((candidate) => candidate.stockId === selection.stockId);
+    return Boolean(container && findSendAuctionBox(container, selection.boxId, 'source'));
+  });
+  const runtimeMatches = selections.every((selection) => {
+    const container = profile.stockContainers?.find((candidate) => candidate.stockId === selection.stockId);
+    return Boolean(container && findSendAuctionBox(container, selection.boxId, 'runtime'));
+  });
+  if (sourceMatches && !runtimeMatches) {
+    return 'source';
+  }
+  if (runtimeMatches && !sourceMatches) {
+    return 'runtime';
+  }
+  return runtimeMatches ? 'runtime' : 'source';
+}
+
+function findSendAuctionBox(
+  container: ProfileStockContainerState,
+  boxId: number,
+  mode: SendAuctionSelectionMode
+): ProfileStockBoxState | undefined {
+  return mode === 'source'
+    ? container.boxes.find((candidate) => bidKingSourceBoxIdForProfileStockBox(candidate) === boxId)
+    : container.boxes.find((candidate) => candidate.boxId === boxId);
 }
 
 function canSendAuctionItem(item: BidKingItemRow, box: ProfileStockBoxState): boolean {
@@ -472,7 +514,7 @@ function canSendAuctionItem(item: BidKingItemRow, box: ProfileStockBoxState): bo
 function sendAuctionItemState(stockId: number, box: ProfileStockBoxState, item: BidKingItemRow): SendAuctionItemState {
   return {
     stockId,
-    boxId: box.boxId,
+    boxId: bidKingSourceBoxIdForProfileStockBox(box),
     itemCid: item.id,
     itemUid: box.item.uid,
     itemNo: box.item.no,
@@ -492,7 +534,11 @@ function requiredInventoryCounts(items: readonly SendAuctionItemState[]): Map<st
 
 function removeStockBoxBySelection(profile: PlayerProfile, item: SendAuctionItemState, now: number): void {
   const container = profile.stockContainers?.find((candidate) => candidate.stockId === item.stockId);
-  const index = container?.boxes.findIndex((candidate) => candidate.boxId === item.boxId && candidate.item.cid === item.itemCid) ?? -1;
+  const index = container?.boxes.findIndex((candidate) => (
+    (bidKingSourceBoxIdForProfileStockBox(candidate) === item.boxId || candidate.boxId === item.boxId) &&
+    candidate.position === item.position &&
+    candidate.item.cid === item.itemCid
+  )) ?? -1;
   if (!container || index < 0) {
     throw new Error(`委托藏品不存在：${item.stockId}/${item.boxId}`);
   }
@@ -536,11 +582,15 @@ function sendAuctionStockContainer(
   };
 }
 
-function cloneStockBox(box: ProfileStockBoxState): ProfileStockBoxState {
+function cloneStockBox(box: ProfileStockBoxState, locked = box.item.isLock): ProfileStockBoxState {
   return {
     boxId: box.boxId,
     position: box.position,
-    item: { ...box.item }
+    item: {
+      ...box.item,
+      boxPositionData: (box.item.boxPositionData ?? []).map((position) => ({ ...position })),
+      isLock: locked
+    }
   };
 }
 

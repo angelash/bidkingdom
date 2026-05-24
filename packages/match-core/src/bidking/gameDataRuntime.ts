@@ -8,12 +8,30 @@ import type {
   BidKingGameUserDataSnapshot,
   BidKingStockBoxDataSnapshot,
   BidKingStockContainerDataSnapshot,
+  BidKingUserSelectItemDataSnapshot,
   RevealedItem,
   RoundHistoryEntry,
   SkillFeedEntry
 } from '@bitkingdom/shared';
 import type { MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } from '../types';
 import { bidKingHeroIdForRoleId } from './heroRuntime';
+import { bidKingGameDataSystemLimitsForSkillIds } from './systemEffectRuntime';
+
+type BidKingGameSkillDataSnapshotWithMetadata = BidKingGameSkillDataSnapshot & {
+  sourceFeedId?: string;
+  sourceEventId?: string;
+};
+
+interface SkillLogHitStats {
+  hitItemIndex: number;
+  allHitItemAvgPrice: number;
+  allHitBoxAvgPrice: number;
+  allHitItemAvgBoxIndex: number;
+  hitItemTotalPrice: number;
+  totalHitBoxIndex: number;
+  hitItemTypeList: number[];
+  hitItemQuilityList: number[];
+}
 
 export function buildBidKingGameDataSnapshot(
   state: MatchRuntimeState,
@@ -25,6 +43,7 @@ export function buildBidKingGameDataSnapshot(
   const leader = userLog.find((user) => user.playerId === round.bidFeedback?.leaderPlayerId);
   const skillLogs = buildSkillLogs(state, round, previousRounds);
   const now = state.updatedAt || Date.now();
+  const systemLimits = bidKingGameDataSystemLimitsForSkillIds(state.bidKingActiveSystemSkillIds);
 
   return {
     uid: `${state.id}:${round.id}`,
@@ -37,9 +56,9 @@ export function buildBidKingGameDataSnapshot(
     itemSkillLog: skillLogs.item,
     nextRoundTime: round.phaseEndsAt,
     selectItemCount: selectedItemCount(userLog),
-    roundCanUseItemCount: 1,
-    gameCarryItemMax: 3,
-    gameGoldRateMax: 0,
+    roundCanUseItemCount: systemLimits.roundCanUseItemCount,
+    gameCarryItemMax: systemLimits.gameCarryItemMax,
+    gameGoldRateMax: systemLimits.gameGoldRateMax,
     gameType: state.coreMode ? 1 : 0,
     sendAuctionUserUid: leader?.userUid ?? 0,
     sendAuctionUserName: leader?.name ?? '',
@@ -57,15 +76,17 @@ function buildGameUserLog(
   player: RuntimePlayer
 ): BidKingGameUserDataSnapshot {
   const hero = heroForPlayer(state, player);
+  const useItemLog = battleItemUseLogs(state, player.id);
   const priceLog = [
-    ...previousRounds.map((history) => history.bids.find((bid) => bid.playerId === player.id)),
-    round.bids.find((bid) => bid.playerId === player.id)
+    ...previousRounds.map((history): BidKingGameUseItemOrPriceDataSnapshot | undefined => {
+      const bid = history.bids.find((entry) => entry.playerId === player.id);
+      return bid ? { round: history.index + 1, itemCidOrPrice: bid.amount } : undefined;
+    }),
+    (() => {
+      const bid = round.bids.find((entry) => entry.playerId === player.id);
+      return bid ? { round: round.index + 1, itemCidOrPrice: bid.amount } : undefined;
+    })()
   ]
-    .map((bid, index): BidKingGameUseItemOrPriceDataSnapshot | undefined => (
-      bid
-        ? { round: index + 1, itemCidOrPrice: bid.amount, createdAt: bid.createdAt }
-        : undefined
-    ))
     .filter((entry): entry is BidKingGameUseItemOrPriceDataSnapshot => Boolean(entry));
 
   return {
@@ -73,17 +94,41 @@ function buildGameUserLog(
     playerId: player.id,
     name: player.name,
     heroCid: hero?.id ?? 0,
-    useItemLog: battleItemUseLogs(state, player.id),
+    useItemLog,
     priceLog,
     isStandDown: player.passed,
     isQuit: player.status === 'disconnected',
     headCid: 0,
     heroSkinCid: player.heroSkinCid ?? 0,
-    selectItemList: player.selectedItemList?.map((entry) => ({ ...entry })) ?? [],
+    simSelectItemList: (player.simSelectItemList ?? []).map((entry) => ({ ...entry })),
+    simBuffItemList: (player.simBuffItemList ?? []).map((entry) => ({ ...entry })),
+    selectItemList: buildUserSelectItemList(player, useItemLog),
     headBoxCid: 0,
     titleCid: 0,
     remark: ''
   };
+}
+
+function buildUserSelectItemList(
+  player: RuntimePlayer,
+  useItemLog: readonly BidKingGameUseItemOrPriceDataSnapshot[]
+): BidKingUserSelectItemDataSnapshot[] {
+  const usedCountByItemCid = new Map<number, number>();
+  for (const entry of useItemLog) {
+    usedCountByItemCid.set(entry.itemCidOrPrice, (usedCountByItemCid.get(entry.itemCidOrPrice) ?? 0) + 1);
+  }
+  return (player.selectedItemList ?? []).map((entry) => {
+    const itemCid = Math.max(0, Math.floor(entry.itemCid));
+    const usedCount = usedCountByItemCid.get(itemCid) ?? 0;
+    const isUsed = entry.isUsed || usedCount > 0;
+    if (usedCount > 0) {
+      usedCountByItemCid.set(itemCid, usedCount - 1);
+    }
+    return {
+      itemCid,
+      isUsed
+    };
+  });
 }
 
 function battleItemUseLogs(state: MatchRuntimeState, playerId: string): BidKingGameUseItemOrPriceDataSnapshot[] {
@@ -97,9 +142,7 @@ function battleItemUseLogs(state: MatchRuntimeState, playerId: string): BidKingG
       }
       return {
         round: roundNumberForEvent(state, event.roundId),
-        itemCidOrPrice: itemId,
-        createdAt: event.createdAt,
-        sourceEventId: event.id
+        itemCidOrPrice: itemId
       };
     })
     .filter((entry): entry is BidKingGameUseItemOrPriceDataSnapshot => Boolean(entry));
@@ -108,8 +151,8 @@ function battleItemUseLogs(state: MatchRuntimeState, playerId: string): BidKingG
 function buildStockContainer(state: MatchRuntimeState, round: RuntimeRound): BidKingStockContainerDataSnapshot {
   const stockBoxes = round.container.warehouseSlots.map((slot, index): BidKingStockBoxDataSnapshot => {
     const itemCid = itemCidFromRevealedItem(slot.item);
-    const boxId = sourceWarehouseBoxId(slot);
-    const position = { x: slot.x, y: slot.y };
+    const boxId = bidKingSourceBoxIdForSlot(slot);
+    const position = bidKingSourceBoxPositionForCell(slot.x, slot.y);
     return {
       boxId,
       position,
@@ -143,7 +186,7 @@ function footprintPositions(slot: WarehouseSlot): BidKingBoxPositionDataSnapshot
   const positions: BidKingBoxPositionDataSnapshot[] = [];
   for (let y = 0; y < slot.h; y += 1) {
     for (let x = 0; x < slot.w; x += 1) {
-      positions.push({ x: slot.x + x, y: slot.y + y });
+      positions.push(bidKingSourceBoxPositionForCell(slot.x + x, slot.y + y));
     }
   }
   return positions;
@@ -162,13 +205,13 @@ function buildSkillLogs(
   const eventItemLogs = battleItemEventSkillLogs(state, round);
   const eventFeedIds = new Set(eventItemLogs.map((entry) => entry.sourceFeedId).filter(Boolean));
   return {
-    hero: logs.filter((entry) => entry.kind === 'hero').map((entry) => entry.log),
-    map: logs.filter((entry) => entry.kind === 'map').map((entry) => entry.log),
+    hero: logs.filter((entry) => entry.kind === 'hero').map((entry) => stripSkillLogMetadata(entry.log)),
+    map: logs.filter((entry) => entry.kind === 'map').map((entry) => stripSkillLogMetadata(entry.log)),
     item: [
       ...logs
         .filter((entry) => entry.kind === 'item' && !eventFeedIds.has(entry.log.sourceFeedId))
-        .map((entry) => entry.log),
-      ...eventItemLogs
+        .map((entry) => stripSkillLogMetadata(entry.log)),
+      ...eventItemLogs.map(stripSkillLogMetadata)
     ]
   };
 }
@@ -178,46 +221,37 @@ function skillFeedToGameSkillLog(
   round: RuntimeRound,
   entry: SkillFeedEntry,
   uidSalt: number
-): { kind: 'hero' | 'item' | 'map'; log: BidKingGameSkillDataSnapshot } {
+): { kind: 'hero' | 'item' | 'map'; log: BidKingGameSkillDataSnapshotWithMetadata } {
   const player = entry.playerId ? state.players.find((candidate) => candidate.id === entry.playerId) : undefined;
   const hero = player ? heroForPlayer(state, player) : undefined;
   const hitSlots = hitSlotsForEntry(round, entry);
   const hitBoxList = entry.hitBoxList?.map(cloneBoxInfo)
     ?? hitSlots.map((slot, index) => boxInfoForSlot(slot, round, index));
-  const hitItemTotalPrice = hitSlots.reduce((sum, slot) => sum + slot.item.value, 0);
-  const boxCellCount = hitSlots.reduce((sum, slot) => sum + Math.max(1, slot.w * slot.h), 0);
-  const itemQualities = [...new Set(hitSlots.map((slot) => qualityFromItem(slot.item)))];
+  const hitStats = skillLogHitStatsForSlots(hitSlots);
 
-  const log: BidKingGameSkillDataSnapshot = {
+  const log: BidKingGameSkillDataSnapshotWithMetadata = {
     skillCid: entry.skillCid ?? stableNumericId(entry.skillName) % 1_000_000,
     heroCid: hero?.id ?? 0,
     mapCid: entry.source === 'map' ? bidMapIdForState(state, round) : 0,
     itemCid: entry.source === 'item' ? stableNumericId(entry.sourceName) % 1_000_000 : 0,
     castTime: entry.createdAt,
     castRound: entry.round,
-    hitItemIndex: hitSlots[0] ? round.container.warehouseSlots.indexOf(hitSlots[0]) + 1 : 0,
     hitBoxList,
-    allHitItemAvgPrice: hitSlots.length > 0 ? hitItemTotalPrice / hitSlots.length : 0,
-    allHitBoxAvgPrice: boxCellCount > 0 ? hitItemTotalPrice / boxCellCount : 0,
-    allHitItemAvgBoxIndex: hitSlots.length > 0 ? boxCellCount / hitSlots.length : 0,
-    hitItemTotalPrice,
     uid: stableNumericId(`${entry.id}:${uidSalt}`),
-    totalHitBoxIndex: boxCellCount,
-    hitItemTypeList: uniqueItemTypes(hitSlots),
-    hitItemQuilityList: itemQualities,
+    ...hitStats,
     sourceFeedId: entry.id
   };
   return { kind: entry.source === 'item' ? 'item' : entry.source === 'map' ? 'map' : 'hero', log };
 }
 
-function battleItemEventSkillLogs(state: MatchRuntimeState, round: RuntimeRound): BidKingGameSkillDataSnapshot[] {
+function battleItemEventSkillLogs(state: MatchRuntimeState, round: RuntimeRound): BidKingGameSkillDataSnapshotWithMetadata[] {
   return state.events
     .filter((event) => event.type === 'battle_item_used')
-    .map((event, index): BidKingGameSkillDataSnapshot | undefined => {
+    .map((event, index): BidKingGameSkillDataSnapshotWithMetadata | undefined => {
       const payload = event.payload as {
         itemId?: unknown;
         effectPlan?: { skillId?: unknown; targetCount?: unknown };
-        entry?: { id?: unknown; targetItemIds?: unknown };
+        entry?: { id?: unknown; targetItemIds?: unknown; hitBoxList?: unknown };
       } | undefined;
       const itemId = typeof payload?.itemId === 'number' ? payload.itemId : 0;
       if (itemId <= 0) {
@@ -230,8 +264,9 @@ function battleItemEventSkillLogs(state: MatchRuntimeState, round: RuntimeRound)
       const hitSlots = targetItemIds.length > 0
         ? slotsForTargetItemIds(round, targetItemIds)
         : round.container.warehouseSlots.slice(0, Math.max(1, Math.min(targetCount, round.container.warehouseSlots.length)));
-      const hitItemTotalPrice = hitSlots.reduce((sum, slot) => sum + slot.item.value, 0);
-      const boxCellCount = hitSlots.reduce((sum, slot) => sum + Math.max(1, slot.w * slot.h), 0);
+      const hitBoxList = eventHitBoxList(payload?.entry)
+        ?? hitSlots.map((slot, slotIndex) => boxInfoForSlot(slot, round, slotIndex));
+      const hitStats = skillLogHitStatsForSlots(hitSlots);
       return {
         skillCid: typeof payload?.effectPlan?.skillId === 'number' ? payload.effectPlan.skillId : 0,
         heroCid: hero?.id ?? 0,
@@ -239,21 +274,35 @@ function battleItemEventSkillLogs(state: MatchRuntimeState, round: RuntimeRound)
         itemCid: itemId,
         castTime: event.createdAt,
         castRound: roundNumberForEvent(state, event.roundId),
-        hitItemIndex: hitSlots[0] ? round.container.warehouseSlots.indexOf(hitSlots[0]) + 1 : 0,
-        hitBoxList: hitSlots.map((slot, slotIndex) => boxInfoForSlot(slot, round, slotIndex)),
-        allHitItemAvgPrice: hitSlots.length > 0 ? hitItemTotalPrice / hitSlots.length : 0,
-        allHitBoxAvgPrice: boxCellCount > 0 ? hitItemTotalPrice / boxCellCount : 0,
-        allHitItemAvgBoxIndex: hitSlots.length > 0 ? boxCellCount / hitSlots.length : 0,
-        hitItemTotalPrice,
+        hitBoxList,
         uid: stableNumericId(`${event.id}:${index}`),
-        totalHitBoxIndex: boxCellCount,
-        hitItemTypeList: uniqueItemTypes(hitSlots),
-        hitItemQuilityList: [...new Set(hitSlots.map((slot) => qualityFromItem(slot.item)))],
+        ...hitStats,
         sourceFeedId: typeof payload?.entry?.id === 'string' ? payload.entry.id : undefined,
         sourceEventId: event.id
       };
     })
-    .filter((entry): entry is BidKingGameSkillDataSnapshot => Boolean(entry));
+    .filter((entry): entry is BidKingGameSkillDataSnapshotWithMetadata => Boolean(entry));
+}
+
+function stripSkillLogMetadata(log: BidKingGameSkillDataSnapshotWithMetadata): BidKingGameSkillDataSnapshot {
+  return {
+    skillCid: log.skillCid,
+    heroCid: log.heroCid,
+    mapCid: log.mapCid,
+    itemCid: log.itemCid,
+    castTime: log.castTime,
+    castRound: log.castRound,
+    hitItemIndex: log.hitItemIndex,
+    hitBoxList: log.hitBoxList,
+    allHitItemAvgPrice: log.allHitItemAvgPrice,
+    allHitBoxAvgPrice: log.allHitBoxAvgPrice,
+    allHitItemAvgBoxIndex: log.allHitItemAvgBoxIndex,
+    hitItemTotalPrice: log.hitItemTotalPrice,
+    uid: log.uid,
+    totalHitBoxIndex: log.totalHitBoxIndex,
+    hitItemTypeList: log.hitItemTypeList,
+    hitItemQuilityList: log.hitItemQuilityList
+  };
 }
 
 function hitSlotsForEntry(round: RuntimeRound, entry: SkillFeedEntry): WarehouseSlot[] {
@@ -268,10 +317,40 @@ function slotsForTargetItemIds(round: RuntimeRound, targetItemIds: readonly stri
   return round.container.warehouseSlots.filter((slot) => targetIds.has(slot.item.id));
 }
 
+function skillLogHitStatsForSlots(hitSlots: readonly WarehouseSlot[]): SkillLogHitStats {
+  const hitItemTotalPrice = hitSlots.reduce((sum, slot) => sum + slot.item.value, 0);
+  const totalHitBoxIndex = hitSlots.reduce((sum, slot) => sum + Math.max(1, slot.w * slot.h), 0);
+  return {
+    hitItemIndex: hitSlots.length,
+    allHitItemAvgPrice: hitSlots.length > 0 ? hitItemTotalPrice / hitSlots.length : 0,
+    allHitBoxAvgPrice: totalHitBoxIndex > 0 ? hitItemTotalPrice / totalHitBoxIndex : 0,
+    allHitItemAvgBoxIndex: hitSlots.length > 0 ? totalHitBoxIndex / hitSlots.length : 0,
+    hitItemTotalPrice,
+    totalHitBoxIndex,
+    hitItemTypeList: uniqueItemTypes(hitSlots),
+    hitItemQuilityList: [...new Set(hitSlots.map((slot) => qualityFromItem(slot.item)))]
+  };
+}
+
 function eventTargetItemIds(entry: { targetItemIds?: unknown } | undefined): string[] {
   return Array.isArray(entry?.targetItemIds)
     ? entry.targetItemIds.filter((id): id is string => typeof id === 'string')
     : [];
+}
+
+function eventHitBoxList(entry: { hitBoxList?: unknown } | undefined): BidKingBoxInfoDataSnapshot[] | undefined {
+  if (!Array.isArray(entry?.hitBoxList)) {
+    return undefined;
+  }
+  return entry.hitBoxList
+    .filter((box): box is BidKingBoxInfoDataSnapshot => (
+      typeof box === 'object' &&
+      box !== null &&
+      typeof (box as BidKingBoxInfoDataSnapshot).boxId === 'number' &&
+      typeof (box as BidKingBoxInfoDataSnapshot).itemUid === 'number' &&
+      Array.isArray((box as BidKingBoxInfoDataSnapshot).itemType)
+    ))
+    .map(cloneBoxInfo);
 }
 
 function heroForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
@@ -283,7 +362,7 @@ function boxInfoForSlot(slot: WarehouseSlot, round: RuntimeRound, _index: number
   const itemCid = itemCidFromRevealedItem(slot.item);
   const item = itemById(itemCid);
   return {
-    boxId: sourceWarehouseBoxId(slot),
+    boxId: bidKingSourceBoxIdForSlot(slot),
     itemUid: stableNumericId(`${round.id}:${slot.item.id}`),
     itemCid,
     itemSlotType: item?.slot_type ?? Math.max(1, slot.w * 10 + slot.h),
@@ -304,7 +383,7 @@ export function bidKingSourceBoxInfoForSlot(
   const itemSlotType = item?.slot_type ?? Math.max(1, slot.w * 10 + slot.h);
   const itemBoxIndex = Math.max(1, item ? Math.floor(item.slot_type / 10) * (item.slot_type % 10) : slot.w * slot.h);
   const base: BidKingBoxInfoDataSnapshot = {
-    boxId: sourceWarehouseBoxId(slot),
+    boxId: bidKingSourceBoxIdForSlot(slot),
     itemUid: stableNumericId(`${roundId}:${slot.item.id}`),
     itemCid: 0,
     itemSlotType: 0,
@@ -345,8 +424,15 @@ function cloneBoxInfo(box: BidKingBoxInfoDataSnapshot): BidKingBoxInfoDataSnapsh
   };
 }
 
-function sourceWarehouseBoxId(slot: WarehouseSlot): number {
+export function bidKingSourceBoxIdForSlot(slot: WarehouseSlot): number {
   return slot.y * 10 + slot.x;
+}
+
+function bidKingSourceBoxPositionForCell(column: number, row: number): BidKingBoxPositionDataSnapshot {
+  return {
+    x: row,
+    y: column
+  };
 }
 
 function uniqueItemTypes(slots: readonly WarehouseSlot[]): number[] {

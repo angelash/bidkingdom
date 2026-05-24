@@ -1,5 +1,24 @@
 import { Item } from '@bitkingdom/bidking-compat';
-import type { MarketOrdersSnapshot, PlayerProfile, ProfileStockBoxState, ProfileTransaction } from '@bitkingdom/shared';
+import type {
+  AuctionHouseBidLogListSnapshot,
+  AuctionHouseBidLogSnapshot,
+  AuctionHouseBidPriceResponse,
+  AuctionHouseItemInfoSnapshot,
+  AuctionHouseItemPriceInfoListSnapshot,
+  AuctionHouseItemPriceInfoSnapshot,
+  AuctionHouseItemSortModel,
+  AuctionHouseLanchItemListSnapshot,
+  AuctionHouseLanchItemSnapshot,
+  AuctionHouseTradeInfoListSnapshot,
+  AuctionHouseTradeInfoSnapshot,
+  AuctionHouseUnlanchItemResponse,
+  MarketOrderAuctionHouseBidState,
+  MarketOrderSourceAuctionHouseLaunch,
+  MarketOrdersSnapshot,
+  PlayerProfile,
+  ProfileStockBoxState,
+  ProfileTransaction
+} from '@bitkingdom/shared';
 import {
   bidKingMailMaxCount,
   bidKingMarketBidIncrement,
@@ -15,8 +34,10 @@ import { randomUUID } from 'node:crypto';
 import { addInventory, consumeInventory, inventoryQuantity } from '../profile/profileInventory';
 import { ensureProfileShape } from '../profile/profileShape';
 import {
+  bidKingSourceBoxIdForProfileStockBox,
   extractStockItemsForInventoryRef,
   isStockBackedInventoryRef,
+  MAIN_WAREHOUSE_STOCK_ID,
   returnStockBoxesToWarehouse
 } from '../profile/profileStockRuntime';
 import { sanitizeText } from '../system/textGuard';
@@ -26,6 +47,16 @@ export const MARKET_ORDER_DURATION_MS: Record<'trade' | 'auction', number> = {
   trade: bidKingMarketOrderDurationMs('trade'),
   auction: bidKingMarketOrderDurationMs('auction')
 };
+
+export interface AuctionHouseItemListOptions {
+  itemCid?: number;
+  isDisplayPeriod?: number;
+  sortType?: AuctionHouseItemSortModel;
+  page?: number;
+  pageSize?: number;
+  reverse?: boolean;
+  now?: number;
+}
 
 export type ProfileTransactionRecorder = (
   profile: PlayerProfile,
@@ -43,6 +74,17 @@ export type ProfileNumberChangeApplier = (
   resource: Extract<ProfileTransaction['resource'], 'coins' | 'rankPoints' | 'xp'>,
   amountChange: number
 ) => void;
+
+export type AuctionHouseBidEscrowRefundApplier = (
+  order: PlayerProfile['marketOrders'][number],
+  now: number
+) => void;
+
+export type AuctionHouseExpiredSettlementApplier = (
+  sellerProfile: PlayerProfile,
+  order: PlayerProfile['marketOrders'][number],
+  now: number
+) => boolean;
 
 export function createMarketOrderForProfile(
   profile: PlayerProfile,
@@ -104,8 +146,15 @@ export function createMarketOrderForProfile(
     consumeInventory(profile, refId, safeQuantity);
   }
   const itemMetadata = marketOrderItemMetadata(refId, lockedStockBoxes);
+  const sourceAuctionHouseLaunches = marketOrderSourceAuctionHouseLaunches(
+    lockedStockBoxes,
+    breakdown.unitPrice,
+    durationHours,
+    orderType
+  );
+  const orderId = `order_${randomUUID()}`;
   const order = {
-    id: `order_${randomUUID()}`,
+    id: orderId,
     orderType,
     refId,
     quantity: breakdown.quantity,
@@ -118,6 +167,8 @@ export function createMarketOrderForProfile(
     netPrice: breakdown.netPrice,
     ...itemMetadata,
     ...(lockedStockBoxes.length > 0 ? { lockedStockBoxes } : {}),
+    ...(sourceAuctionHouseLaunches.length > 0 ? { sourceAuctionHouseLaunches } : {}),
+    sourceAuctionHouseLanchItemUid: bidKingAuctionHouseLanchItemUidForOrderId(orderId),
     ...(safeNote ? { note: safeNote } : {}),
     status: 'listed' as const,
     createdAt: now,
@@ -197,7 +248,9 @@ export function settleMarketOrderForProfile(
 export function cancelMarketOrderForProfile(
   profile: PlayerProfile,
   orderId: string,
-  recordTransaction: ProfileTransactionRecorder
+  recordTransaction: ProfileTransactionRecorder,
+  refundAuctionHouseBidEscrow?: AuctionHouseBidEscrowRefundApplier,
+  settleExpiredAuctionHouseOrder?: AuctionHouseExpiredSettlementApplier
 ): boolean {
   const order = profile.marketOrders.find((candidate) => candidate.id === orderId);
   if (!order) {
@@ -208,10 +261,11 @@ export function cancelMarketOrderForProfile(
   }
   const now = Date.now();
   if (isMarketOrderExpired(order, now)) {
-    expireMarketOrder(profile, order, recordTransaction, now);
+    expireMarketOrder(profile, order, recordTransaction, now, refundAuctionHouseBidEscrow, settleExpiredAuctionHouseOrder);
     return true;
   }
   const before = inventoryQuantity(profile, order.refId);
+  refundAuctionHouseBidEscrow?.(order, now);
   returnMarketOrderInventory(profile, order, now, `market:${profile.playerId}:${order.id}:cancel`);
   recordTransaction(profile, `market:${profile.playerId}:${order.id}:cancel`, 'market_order_cancel', 'item', before, order.quantity);
   order.status = 'cancelled';
@@ -224,13 +278,15 @@ export function cancelMarketOrderForProfile(
 export function expireMarketOrdersForProfile(
   profile: PlayerProfile,
   recordTransaction: ProfileTransactionRecorder,
-  now = Date.now()
+  now = Date.now(),
+  refundAuctionHouseBidEscrow?: AuctionHouseBidEscrowRefundApplier,
+  settleExpiredAuctionHouseOrder?: AuctionHouseExpiredSettlementApplier
 ): number {
   ensureProfileShape(profile);
   let expired = 0;
   for (const order of profile.marketOrders) {
     if (order.status === 'listed' && isMarketOrderExpired(order, now)) {
-      expireMarketOrder(profile, order, recordTransaction, now);
+      expireMarketOrder(profile, order, recordTransaction, now, refundAuctionHouseBidEscrow, settleExpiredAuctionHouseOrder);
       expired += 1;
     }
   }
@@ -241,6 +297,7 @@ export function buildMarketOrdersSnapshot(
   profiles: Iterable<PlayerProfile>,
   orderType?: 'trade' | 'auction'
 ): MarketOrdersSnapshot {
+  const now = Date.now();
   const orders = [...profiles]
     .flatMap((profile) => {
       ensureProfileShape(profile);
@@ -249,14 +306,320 @@ export function buildMarketOrdersSnapshot(
         .map((order) => ({
           ...order,
           playerId: profile.playerId,
-          playerName: profile.name
+          playerName: profile.name,
+          ...(order.orderType === 'auction' ? { sourceAuctionHouseLanchItem: buildAuctionHouseLanchItem(order) } : {})
         }));
     })
     .sort((left, right) => right.createdAt - left.createdAt);
   return {
-    generatedAt: Date.now(),
-    orders: orders.slice(0, bidKingMarketSnapshotLimit())
+    generatedAt: now,
+    orders: orders.slice(0, bidKingMarketSnapshotLimit()),
+    ...(orderType === 'auction' ? {
+      sourceAuctionHouseItemInfo: buildAuctionHouseItemInfoSnapshotFromOrders(
+        orders.filter((order) => order.orderType === 'auction'),
+        { now, pageSize: bidKingMarketSnapshotLimit() }
+      )
+    } : {})
   };
+}
+
+export function buildAuctionHouseLanchItemListSnapshot(
+  profile: PlayerProfile,
+  now = Date.now()
+): AuctionHouseLanchItemListSnapshot {
+  ensureProfileShape(profile);
+  const lanchItemList = profile.marketOrders
+    .filter(isActiveAuctionHouseOrder)
+    .map((order) => buildAuctionHouseLanchItem(order));
+  return {
+    generatedAt: now,
+    errorCode: 0,
+    lanchItemList,
+    lanchMax: marketListingSlotLimit(profile)
+  };
+}
+
+export function buildAuctionHouseItemInfoSnapshot(
+  profiles: Iterable<PlayerProfile>,
+  options: AuctionHouseItemListOptions = {}
+): AuctionHouseItemInfoSnapshot {
+  const now = options.now ?? Date.now();
+  const orders = [...profiles]
+    .flatMap((profile) => {
+      ensureProfileShape(profile);
+      return profile.marketOrders
+        .filter(isActiveAuctionHouseOrder)
+        .map((order) => ({
+          ...order,
+          playerId: profile.playerId,
+          playerName: profile.name,
+          sourceAuctionHouseLanchItem: buildAuctionHouseLanchItem(order)
+        }));
+    });
+  return buildAuctionHouseItemInfoSnapshotFromOrders(orders, { ...options, now });
+}
+
+export function cancelAuctionHouseLanchItemForProfile(
+  profile: PlayerProfile,
+  itemUid: number,
+  recordTransaction: ProfileTransactionRecorder,
+  refundAuctionHouseBidEscrow?: AuctionHouseBidEscrowRefundApplier,
+  settleExpiredAuctionHouseOrder?: AuctionHouseExpiredSettlementApplier
+): AuctionHouseUnlanchItemResponse {
+  ensureProfileShape(profile);
+  const safeItemUid = Math.max(1, Math.floor(itemUid));
+  const order = profile.marketOrders.find((candidate) => (
+    isActiveAuctionHouseOrder(candidate) &&
+    (candidate.sourceAuctionHouseLanchItemUid ?? bidKingAuctionHouseLanchItemUidForOrderId(candidate.id)) === safeItemUid
+  ));
+  if (!order) {
+    throw new Error('拍卖品不存在');
+  }
+  const changed = cancelMarketOrderForProfile(profile, order.id, recordTransaction, refundAuctionHouseBidEscrow, settleExpiredAuctionHouseOrder);
+  if (!changed && order.status !== 'cancelled' && order.status !== 'expired') {
+    throw new Error('拍卖品无法下架');
+  }
+  return {
+    errorCode: 0,
+    itemUid: safeItemUid,
+    orderId: order.id
+  };
+}
+
+export function bidAuctionHousePriceForProfiles(
+  profiles: Iterable<PlayerProfile>,
+  bidderProfile: PlayerProfile,
+  itemUid: number,
+  price: number,
+  applyNumberChange: ProfileNumberChangeApplier,
+  recordTransaction: ProfileTransactionRecorder,
+  now = Date.now()
+): AuctionHouseBidPriceResponse {
+  ensureProfileShape(bidderProfile);
+  const profileList = [...profiles];
+  const safeItemUid = Math.max(1, Math.floor(itemUid));
+  const safePrice = Math.max(1, Math.floor(price));
+  const orderRef = findAuctionHouseOrderByUid(profileList, safeItemUid);
+  if (!orderRef) {
+    throw new Error('拍卖品不存在');
+  }
+  const { order, profile: sellerProfile } = orderRef;
+  if (!isActiveAuctionHouseOrder(order) || isMarketOrderExpired(order, now)) {
+    throw new Error('拍卖品已结束');
+  }
+  if (sellerProfile.playerId === bidderProfile.playerId) {
+    throw new Error('不能竞拍自己的拍卖品');
+  }
+  const minBidPrice = minimumAuctionHouseBidPrice(order);
+  if (safePrice < minBidPrice) {
+    throw new Error(`出价需不低于 ${minBidPrice}`);
+  }
+  const previousTopBidderId = order.sourceAuctionHouseMaxBidderId;
+  const previousTopBidderPrice = Math.max(0, Math.floor(order.sourceAuctionHouseMaxPrice ?? highestAuctionHouseBidPrice(order)));
+  const existingBid = latestAuctionHouseBidForPlayer(order, bidderProfile.playerId);
+  const existingBidPrice = existingBid?.bidPrice ?? 0;
+  const bidderIsTop = previousTopBidderId === bidderProfile.playerId;
+  const requiredCoins = bidderIsTop ? Math.max(0, safePrice - existingBidPrice) : safePrice;
+  if (bidderProfile.coins < requiredCoins) {
+    throw new Error('竞拍铜钱不足');
+  }
+  if (previousTopBidderId && previousTopBidderId !== bidderProfile.playerId && previousTopBidderPrice > 0) {
+    const previousTopProfile = profileList.find((profile) => profile.playerId === previousTopBidderId);
+    if (previousTopProfile) {
+      applyNumberChange(
+        previousTopProfile,
+        `auction_house:${order.id}:${previousTopBidderId}:${now}:refund`,
+        'auction_house_bid_refund',
+        'coins',
+        previousTopBidderPrice
+      );
+    }
+  }
+  if (requiredCoins > 0) {
+    applyNumberChange(
+      bidderProfile,
+      `auction_house:${order.id}:${bidderProfile.playerId}:${now}:bid`,
+      'auction_house_bid_price',
+      'coins',
+      -requiredCoins
+    );
+  }
+  const bidState: MarketOrderAuctionHouseBidState = {
+    playerId: bidderProfile.playerId,
+    playerName: bidderProfile.name,
+    bidTime: toSourceUnixSeconds(now),
+    bidPrice: safePrice
+  };
+  order.sourceAuctionHouseBidLogs = upsertAuctionHouseBidLog(order.sourceAuctionHouseBidLogs ?? [], bidState);
+  order.sourceAuctionHouseMaxPrice = safePrice;
+  order.sourceAuctionHouseMaxBidderId = bidderProfile.playerId;
+  order.sourceAuctionHouseMaxBidderName = bidderProfile.name;
+  order.sourceAuctionHouseMaxBidAt = now;
+  order.updatedAt = now;
+  recordTransaction(
+    bidderProfile,
+    `auction_house:${order.id}:${bidderProfile.playerId}:${now}:log`,
+    'auction_house_bid_log',
+    'task',
+    existingBidPrice,
+    safePrice - existingBidPrice
+  );
+  sellerProfile.updatedAt = now;
+  bidderProfile.updatedAt = now;
+  const bidLog = buildAuctionHouseBidLogSnapshot(order, bidState);
+  return {
+    errorCode: 0,
+    itemUid: safeItemUid,
+    price: safePrice,
+    bidLog
+  };
+}
+
+export function buildAuctionHouseBidLogListSnapshot(
+  profile: PlayerProfile,
+  profiles: Iterable<PlayerProfile>,
+  now = Date.now()
+): AuctionHouseBidLogListSnapshot {
+  ensureProfileShape(profile);
+  const bidLogList = [...profiles]
+    .flatMap((sellerProfile) => {
+      ensureProfileShape(sellerProfile);
+      return sellerProfile.marketOrders
+        .filter(isActiveAuctionHouseOrder)
+        .map((order) => {
+          const bid = latestAuctionHouseBidForPlayer(order, profile.playerId);
+          return bid ? buildAuctionHouseBidLogSnapshot(order, bid) : undefined;
+        })
+        .filter((log): log is AuctionHouseBidLogSnapshot => Boolean(log));
+    })
+    .sort((left, right) => right.bidTime - left.bidTime);
+  return {
+    generatedAt: now,
+    errorCode: 0,
+    bidLogList
+  };
+}
+
+export function buildAuctionHouseTradeInfoListSnapshot(
+  profile: PlayerProfile,
+  profiles: Iterable<PlayerProfile>,
+  now = Date.now()
+): AuctionHouseTradeInfoListSnapshot {
+  ensureProfileShape(profile);
+  const soldAuctionOrders = [...profiles]
+    .flatMap((sellerProfile) => {
+      ensureProfileShape(sellerProfile);
+      return sellerProfile.marketOrders
+        .filter((order) => order.orderType === 'auction' && order.status === 'sold')
+        .map((order) => ({ order, sellerProfile }));
+    });
+  const tradeInfoInList = soldAuctionOrders
+    .filter(({ order }) => order.buyerId === profile.playerId)
+    .map(({ order }) => buildAuctionHouseTradeInfoSnapshot(order))
+    .sort(compareAuctionHouseTradeInfoByTime);
+  const tradeInfoOutList = soldAuctionOrders
+    .filter(({ sellerProfile }) => sellerProfile.playerId === profile.playerId)
+    .map(({ order }) => buildAuctionHouseTradeInfoSnapshot(order))
+    .sort(compareAuctionHouseTradeInfoByTime);
+  return {
+    generatedAt: now,
+    errorCode: 0,
+    tradeInfoInList,
+    tradeInfoOutList
+  };
+}
+
+export function buildAuctionHouseItemPriceInfoListSnapshot(
+  profiles: Iterable<PlayerProfile>,
+  now = Date.now()
+): AuctionHouseItemPriceInfoListSnapshot {
+  const aggregates = new Map<number, { activeCount: number; tradeCount: number; tradeTotal: number }>();
+  for (const profile of profiles) {
+    ensureProfileShape(profile);
+    for (const order of profile.marketOrders) {
+      if (order.orderType !== 'auction') {
+        continue;
+      }
+      const itemCid = auctionHouseOrderItemCid(order);
+      if (itemCid <= 0) {
+        continue;
+      }
+      const aggregate = aggregates.get(itemCid) ?? { activeCount: 0, tradeCount: 0, tradeTotal: 0 };
+      if (isActiveAuctionHouseOrder(order) && !isMarketOrderExpired(order, now)) {
+        aggregate.activeCount += buildAuctionHouseLanchItem(order).count;
+      }
+      if (order.status === 'sold') {
+        const tradePrice = Math.max(0, Math.floor(order.sourceAuctionHouseTradePrice ?? order.totalPrice ?? order.sourceAuctionHouseMaxPrice ?? order.price));
+        if (tradePrice > 0) {
+          aggregate.tradeCount += 1;
+          aggregate.tradeTotal += tradePrice;
+        }
+      }
+      aggregates.set(itemCid, aggregate);
+    }
+  }
+  const allAuctionHouseItemPriceInfo: AuctionHouseItemPriceInfoSnapshot[] = [...aggregates.entries()]
+    .filter(([, aggregate]) => aggregate.activeCount > 0 || aggregate.tradeCount > 0)
+    .map(([itemCid, aggregate]) => ({
+      itemCid,
+      avgPrice: aggregate.tradeCount > 0 ? Math.floor(aggregate.tradeTotal / aggregate.tradeCount) : 0,
+      count: aggregate.activeCount
+    }))
+    .sort((left, right) => right.itemCid - left.itemCid);
+  return {
+    generatedAt: now,
+    errorCode: 0,
+    allAuctionHouseItemPriceInfo
+  };
+}
+
+export function settleExpiredAuctionHouseOrderForProfile(
+  sellerProfile: PlayerProfile,
+  order: PlayerProfile['marketOrders'][number],
+  bidderProfile: PlayerProfile,
+  applyNumberChange: ProfileNumberChangeApplier,
+  recordTransaction: ProfileTransactionRecorder,
+  now = Date.now()
+): boolean {
+  ensureProfileShape(sellerProfile);
+  ensureProfileShape(bidderProfile);
+  if (order.orderType !== 'auction' || order.status !== 'listed') {
+    return false;
+  }
+  const bidderId = order.sourceAuctionHouseMaxBidderId;
+  const settlementPrice = Math.max(0, Math.floor(order.sourceAuctionHouseMaxPrice ?? highestAuctionHouseBidPrice(order)));
+  if (!bidderId || bidderId !== bidderProfile.playerId || settlementPrice <= 0) {
+    return false;
+  }
+  const lockedStockBoxes = order.lockedStockBoxes ?? [];
+  const buyerSource = `auction_house:${sellerProfile.playerId}:${order.id}:buyer:${bidderProfile.playerId}`;
+  const buyerBefore = inventoryQuantity(bidderProfile, order.refId);
+  if (lockedStockBoxes.length > 0) {
+    returnStockBoxesToWarehouse(bidderProfile, lockedStockBoxes, now, { preserveBoxIds: false });
+    incrementInventoryCounter(bidderProfile, 'warehouse', order.refId, order.quantity, now);
+  } else {
+    addInventory(bidderProfile, 'auction', order.refId, order.quantity, `${buyerSource}:item`);
+  }
+  recordTransaction(bidderProfile, `${buyerSource}:item`, 'auction_house_bought_item', 'item', buyerBefore, order.quantity);
+  order.fee = marketOrderFee(order.refId, settlementPrice);
+  order.totalPrice = settlementPrice;
+  order.netPrice = Math.max(0, settlementPrice - order.fee);
+  order.buyerId = bidderProfile.playerId;
+  order.buyerName = bidderProfile.name;
+  order.status = 'sold';
+  order.soldAt = now;
+  order.updatedAt = now;
+  order.sourceAuctionHouseTradeTime = toSourceUnixSeconds(now);
+  order.sourceAuctionHouseTradePrice = settlementPrice;
+  applyNumberChange(sellerProfile, `auction_house:${sellerProfile.playerId}:${order.id}:sold`, 'auction_house_order_sold', 'coins', settlementPrice);
+  if (order.fee > 0) {
+    applyNumberChange(sellerProfile, `auction_house:${sellerProfile.playerId}:${order.id}:fee`, 'auction_house_order_fee', 'coins', -order.fee);
+  }
+  incrementTradeConditionStat(bidderProfile, 'tradeBoughtCount');
+  incrementTradeConditionStat(sellerProfile, 'tradeSoldCount');
+  bidderProfile.updatedAt = now;
+  sellerProfile.updatedAt = now;
+  return true;
 }
 
 function activeMarketOrderCount(profile: PlayerProfile): number {
@@ -287,9 +650,15 @@ function expireMarketOrder(
   profile: PlayerProfile,
   order: PlayerProfile['marketOrders'][number],
   recordTransaction: ProfileTransactionRecorder,
-  now: number
+  now: number,
+  refundAuctionHouseBidEscrow?: AuctionHouseBidEscrowRefundApplier,
+  settleExpiredAuctionHouseOrder?: AuctionHouseExpiredSettlementApplier
 ): void {
+  if (settleExpiredAuctionHouseOrder?.(profile, order, now)) {
+    return;
+  }
   const before = inventoryQuantity(profile, order.refId);
+  refundAuctionHouseBidEscrow?.(order, now);
   returnMarketOrderInventory(profile, order, now, `market:${profile.playerId}:${order.id}:expire`);
   recordTransaction(profile, `market:${profile.playerId}:${order.id}:expire`, 'market_order_expired_return', 'item', before, order.quantity);
   order.status = 'expired';
@@ -325,6 +694,233 @@ function marketOrderItemMetadata(
     numberCid: item?.number?.[1] ?? 0,
     itemNo: firstBox?.item.no
   };
+}
+
+function marketOrderSourceAuctionHouseLaunches(
+  lockedStockBoxes: readonly ProfileStockBoxState[],
+  unitPrice: number,
+  durationHours: number,
+  orderType: 'trade' | 'auction'
+): MarketOrderSourceAuctionHouseLaunch[] {
+  const safeUnitPrice = Math.max(1, Math.floor(unitPrice));
+  const lanchTime = Math.max(0, Math.floor(durationHours * 3600));
+  return lockedStockBoxes.map((box) => ({
+    stockId: MAIN_WAREHOUSE_STOCK_ID,
+    boxId: bidKingSourceBoxIdForProfileStockBox(box),
+    price: orderType === 'auction' ? 0 : safeUnitPrice,
+    lanchTime,
+    startPrice: safeUnitPrice,
+    itemCount: Math.max(1, Math.floor(box.item.count || 1)),
+    bagItemCid: 0
+  }));
+}
+
+function buildAuctionHouseItemInfoSnapshotFromOrders(
+  orders: ReadonlyArray<PlayerProfile['marketOrders'][number] & { sourceAuctionHouseLanchItem?: AuctionHouseLanchItemSnapshot }>,
+  options: AuctionHouseItemListOptions = {}
+): AuctionHouseItemInfoSnapshot {
+  const now = options.now ?? Date.now();
+  const nowSeconds = toSourceUnixSeconds(now);
+  const itemCid = Number.isFinite(options.itemCid) && Number(options.itemCid) > 0 ? Math.floor(Number(options.itemCid)) : undefined;
+  const pageSize = Math.max(1, Math.floor(Number(options.pageSize ?? 20)) || 20);
+  const page = Math.max(1, Math.floor(Number(options.page ?? 1)) || 1);
+  const items = orders
+    .filter(isActiveAuctionHouseOrder)
+    .map((order) => order.sourceAuctionHouseLanchItem ?? buildAuctionHouseLanchItem(order))
+    .filter((item) => itemCid === undefined || item.itemCid === itemCid)
+    .filter((item) => {
+      if (options.isDisplayPeriod === undefined) {
+        return true;
+      }
+      const inDisplayPeriod = item.displayPeriodEndTime > nowSeconds;
+      return Number(options.isDisplayPeriod) > 0 ? inDisplayPeriod : !inDisplayPeriod;
+    })
+    .sort((left, right) => compareAuctionHouseLanchItems(left, right, options.sortType ?? 'MaxPrice', Boolean(options.reverse)));
+  const totalPage = Math.max(1, Math.ceil(items.length / pageSize));
+  const safePage = Math.min(page, totalPage);
+  return {
+    generatedAt: now,
+    errorCode: 0,
+    itemInfoList: items.slice((safePage - 1) * pageSize, safePage * pageSize),
+    currentPage: safePage,
+    totalPage
+  };
+}
+
+function buildAuctionHouseLanchItem(
+  order: PlayerProfile['marketOrders'][number]
+): AuctionHouseLanchItemSnapshot {
+  const item = Item.find((row) => String(row.id) === String(order.refId) || `compat_${row.id}` === String(order.refId));
+  const launch = order.sourceAuctionHouseLaunches?.[0];
+  const startPrice = Math.max(1, Math.floor(order.price || launch?.startPrice || 1));
+  return {
+    lanchItemUid: order.sourceAuctionHouseLanchItemUid ?? bidKingAuctionHouseLanchItemUidForOrderId(order.id),
+    itemCid: order.itemCid ?? item?.id ?? (Number(order.refId) || 0),
+    numberCid: order.numberCid ?? item?.number?.[1] ?? 0,
+    no: Math.max(0, Math.floor(order.itemNo ?? order.lockedStockBoxes?.[0]?.item.no ?? 0)),
+    startLanchTime: toSourceUnixSeconds(order.createdAt),
+    endLanchTime: toSourceUnixSeconds(order.expiresAt ?? order.createdAt + bidKingMarketOrderDurationMs(order.orderType)),
+    displayPeriodEndTime: toDisplayPeriodEndTime(order),
+    price: Math.max(0, Math.floor(launch?.price ?? (order.orderType === 'auction' ? 0 : order.price))),
+    maxPrice: Math.max(0, Math.floor(order.orderType === 'auction' ? highestAuctionHouseBidPrice(order) : order.price)),
+    startPrice,
+    count: Math.max(1, Math.floor(launch?.itemCount ?? order.quantity ?? 1))
+  };
+}
+
+function auctionHouseOrderItemCid(order: PlayerProfile['marketOrders'][number]): number {
+  const item = Item.find((row) => String(row.id) === String(order.refId) || `compat_${row.id}` === String(order.refId));
+  return order.itemCid ?? item?.id ?? (Number(order.refId) || 0);
+}
+
+function findAuctionHouseOrderByUid(
+  profiles: Iterable<PlayerProfile>,
+  itemUid: number
+): { profile: PlayerProfile; order: PlayerProfile['marketOrders'][number] } | undefined {
+  for (const profile of profiles) {
+    ensureProfileShape(profile);
+    const order = profile.marketOrders.find((candidate) => (
+      isActiveAuctionHouseOrder(candidate) &&
+      (candidate.sourceAuctionHouseLanchItemUid ?? bidKingAuctionHouseLanchItemUidForOrderId(candidate.id)) === itemUid
+    ));
+    if (order) {
+      return { profile, order };
+    }
+  }
+  return undefined;
+}
+
+function isActiveAuctionHouseOrder(order: Pick<PlayerProfile['marketOrders'][number], 'orderType' | 'status'>): boolean {
+  return order.orderType === 'auction' && (order.status === 'listed' || order.status === 'locked');
+}
+
+function minimumAuctionHouseBidPrice(order: PlayerProfile['marketOrders'][number]): number {
+  const currentMaxPrice = highestAuctionHouseBidPrice(order);
+  if (currentMaxPrice > 0) {
+    return currentMaxPrice + auctionHouseBidIncrement(order);
+  }
+  return buildAuctionHouseLanchItem(order).startPrice;
+}
+
+function auctionHouseBidIncrement(order: PlayerProfile['marketOrders'][number]): number {
+  const item = Item.find((row) => String(row.id) === String(order.refId) || `compat_${row.id}` === String(order.refId));
+  return Math.max(1, Math.floor(item?.auction_baseprice?.[1] ?? bidKingMarketBidIncrement(order.price)));
+}
+
+function highestAuctionHouseBidPrice(order: PlayerProfile['marketOrders'][number]): number {
+  return Math.max(
+    0,
+    Math.floor(order.sourceAuctionHouseMaxPrice ?? 0),
+    ...(order.sourceAuctionHouseBidLogs ?? []).map((bid) => Math.max(0, Math.floor(bid.bidPrice)))
+  );
+}
+
+function latestAuctionHouseBidForPlayer(
+  order: PlayerProfile['marketOrders'][number],
+  playerId: string
+): MarketOrderAuctionHouseBidState | undefined {
+  return (order.sourceAuctionHouseBidLogs ?? [])
+    .filter((bid) => bid.playerId === playerId)
+    .sort((left, right) => right.bidTime - left.bidTime)[0];
+}
+
+function upsertAuctionHouseBidLog(
+  logs: readonly MarketOrderAuctionHouseBidState[],
+  next: MarketOrderAuctionHouseBidState
+): MarketOrderAuctionHouseBidState[] {
+  return [
+    ...logs.filter((log) => log.playerId !== next.playerId),
+    next
+  ];
+}
+
+function buildAuctionHouseBidLogSnapshot(
+  order: PlayerProfile['marketOrders'][number],
+  bid: MarketOrderAuctionHouseBidState
+): AuctionHouseBidLogSnapshot {
+  return {
+    bidTime: bid.bidTime,
+    bidPrice: bid.bidPrice,
+    lanchItem: buildAuctionHouseLanchItem(order)
+  };
+}
+
+function buildAuctionHouseTradeInfoSnapshot(
+  order: PlayerProfile['marketOrders'][number]
+): AuctionHouseTradeInfoSnapshot {
+  const item = Item.find((row) => String(row.id) === String(order.refId) || `compat_${row.id}` === String(order.refId));
+  return {
+    tradeTime: Math.max(0, Math.floor(order.sourceAuctionHouseTradeTime ?? toSourceUnixSeconds(order.soldAt ?? order.updatedAt ?? order.createdAt))),
+    itemCid: order.itemCid ?? item?.id ?? (Number(order.refId) || 0),
+    numberCid: order.numberCid ?? item?.number?.[1] ?? 0,
+    no: Math.max(0, Math.floor(order.itemNo ?? order.lockedStockBoxes?.[0]?.item.no ?? 0)),
+    price: Math.max(0, Math.floor(order.sourceAuctionHouseTradePrice ?? order.totalPrice ?? order.sourceAuctionHouseMaxPrice ?? order.price))
+  };
+}
+
+function compareAuctionHouseTradeInfoByTime(
+  left: AuctionHouseTradeInfoSnapshot,
+  right: AuctionHouseTradeInfoSnapshot
+): number {
+  if (left.tradeTime !== right.tradeTime) {
+    return right.tradeTime - left.tradeTime;
+  }
+  return right.price - left.price;
+}
+
+function compareAuctionHouseLanchItems(
+  left: AuctionHouseLanchItemSnapshot,
+  right: AuctionHouseLanchItemSnapshot,
+  sortType: AuctionHouseItemSortModel,
+  reverse: boolean
+): number {
+  const direction = reverse ? -1 : 1;
+  const leftValue = auctionHouseSortValue(left, sortType);
+  const rightValue = auctionHouseSortValue(right, sortType);
+  if (leftValue !== rightValue) {
+    return (leftValue - rightValue) * direction;
+  }
+  return (right.startLanchTime - left.startLanchTime) * direction;
+}
+
+function auctionHouseSortValue(item: AuctionHouseLanchItemSnapshot, sortType: AuctionHouseItemSortModel): number {
+  switch (sortType) {
+    case 'Price':
+      return item.price;
+    case 'StartPrice':
+      return item.startPrice;
+    case 'LanchTime':
+      return item.endLanchTime;
+    case 'MaxPrice':
+    default:
+      return item.maxPrice;
+  }
+}
+
+function toDisplayPeriodEndTime(order: PlayerProfile['marketOrders'][number]): number {
+  const end = toSourceUnixSeconds(order.expiresAt ?? order.createdAt + bidKingMarketOrderDurationMs(order.orderType));
+  const publicAt = toSourceUnixSeconds(order.publicAt ?? order.createdAt);
+  return Math.min(end, Math.max(toSourceUnixSeconds(order.createdAt), publicAt));
+}
+
+function toSourceUnixSeconds(value: number): number {
+  return Math.max(0, Math.floor(value / 1000));
+}
+
+function bidKingAuctionHouseLanchItemUidForOrderId(orderId: string): number {
+  const high = stableHash(`${orderId}:hi`) & 0x1fffff;
+  const low = stableHash(`${orderId}:lo`);
+  const uid = high * 0x100000000 + low;
+  return Math.max(1, Math.min(Number.MAX_SAFE_INTEGER, uid));
+}
+
+function stableHash(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
 function decrementInventoryCounter(profile: PlayerProfile, refId: string, quantity: number, now: number): void {
@@ -369,6 +965,7 @@ function unlockedStockBoxes(boxes: readonly ProfileStockBoxState[]): ProfileStoc
     position: box.position,
     item: {
       ...box.item,
+      boxPositionData: (box.item.boxPositionData ?? []).map((position) => ({ ...position })),
       isLock: false
     }
   }));

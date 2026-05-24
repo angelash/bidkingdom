@@ -5,13 +5,14 @@ import {
   itemFootprint
 } from '@bitkingdom/bidking-compat';
 import type {
+  BidKingBoxPositionDataSnapshot,
   PlayerProfile,
   ProfileStockBoxState,
   ProfileStockContainerKind,
   ProfileStockContainerState
 } from '@bitkingdom/shared';
 
-const MAIN_WAREHOUSE_STOCK_ID = 5001;
+export const MAIN_WAREHOUSE_STOCK_ID = 5001;
 const MAIN_WAREHOUSE_CID = 5001;
 const WAREHOUSE_WIDTH = 10;
 const WAREHOUSE_HEIGHT = 40;
@@ -23,6 +24,38 @@ export interface StockCabinetIncomeSnapshot {
   baseClaimableCoins: number;
   hasCabinetItems: boolean;
   hourlyCoins: number;
+}
+
+export function bidKingSourceBoxIdForProfileStockBox(box: Pick<ProfileStockBoxState, 'position'>): number {
+  return Math.max(0, Math.floor(box.position));
+}
+
+export function bidKingSourceBoxPositionForProfilePosition(
+  position: number,
+  containerWidth: number
+): BidKingBoxPositionDataSnapshot {
+  const width = Math.max(1, containerWidth);
+  return {
+    x: Math.max(0, Math.floor(position / width)),
+    y: Math.max(0, position % width)
+  };
+}
+
+export function bidKingSourceBoxPositionDataForProfilePosition(
+  position: number,
+  containerWidth: number,
+  footprint: { w: number; h: number }
+): BidKingBoxPositionDataSnapshot[] {
+  const width = Math.max(1, containerWidth);
+  const startColumn = Math.max(0, position % width);
+  const startRow = Math.max(0, Math.floor(position / width));
+  const positions: BidKingBoxPositionDataSnapshot[] = [];
+  for (let rowOffset = 0; rowOffset < footprint.h; rowOffset += 1) {
+    for (let columnOffset = 0; columnOffset < footprint.w; columnOffset += 1) {
+      positions.push({ x: startRow + rowOffset, y: startColumn + columnOffset });
+    }
+  }
+  return positions;
 }
 
 export function ensureProfileStockState(profile: PlayerProfile, now = Date.now()): void {
@@ -43,6 +76,7 @@ export function ensureProfileStockState(profile: PlayerProfile, now = Date.now()
     profile.settings.bidkingStockContainersV1 = true;
   }
 
+  normalizeProfileStockContainers(profile, now);
   refreshProfileStockCabinetRewards(profile, now);
   syncCabinetItemIdsFromStock(profile);
 }
@@ -58,21 +92,24 @@ export function addStockItemsForInventoryRef(
   quantity: number,
   sourceId: string,
   now = Date.now()
-): number {
+): ProfileStockBoxState[] {
   const item = bidKingItemByInventoryRef(refId);
   const safeQuantity = Math.max(0, Math.floor(quantity));
   if (!item || item.slot_type <= 0 || safeQuantity <= 0) {
-    return 0;
+    return [];
   }
 
   ensureProfileStockState(profile, now);
   const warehouse = ensureWarehouseContainer(profile, now);
+  const createdBoxes: ProfileStockBoxState[] = [];
   for (let index = 0; index < safeQuantity; index += 1) {
-    warehouse.boxes.push(createStockBox(profile, item, warehouse, sourceId, now));
+    const box = createStockBox(profile, item, warehouse, `${sourceId}:${index}`, now);
+    warehouse.boxes.push(box);
+    createdBoxes.push(cloneStockBoxForTransfer(box, false));
   }
   warehouse.updatedAt = now;
   profile.updatedAt = now;
-  return safeQuantity;
+  return createdBoxes;
 }
 
 export function consumeStockItemsForInventoryRef(
@@ -168,13 +205,13 @@ export function returnStockBoxesToWarehouse(
   boxes: readonly ProfileStockBoxState[],
   now = Date.now(),
   options: { preserveBoxIds?: boolean } = {}
-): number {
+): ProfileStockBoxState[] {
   if (boxes.length === 0) {
-    return 0;
+    return [];
   }
   ensureProfileStockState(profile, now);
   const warehouse = ensureWarehouseContainer(profile, now);
-  let restored = 0;
+  const restoredBoxes: ProfileStockBoxState[] = [];
   for (const box of boxes) {
     const item = Item.find((candidate) => candidate.id === box.item.cid);
     const restoredBox = cloneStockBoxForTransfer(box, false);
@@ -192,15 +229,16 @@ export function returnStockBoxesToWarehouse(
       }
       restoredBox.position = position;
       restoredBox.item.rotate = false;
+      restoredBox.item.boxPositionData = boxPositionDataForItem(position, warehouse.width, item, false);
     }
     warehouse.boxes.push(restoredBox);
-    restored += 1;
+    restoredBoxes.push(cloneStockBoxForTransfer(restoredBox, false));
   }
   warehouse.updatedAt = now;
   profile.stockState!.nextBoxId = Math.max(profile.stockState!.nextBoxId, nextBoxIdFromContainers(profile.stockContainers ?? []));
   profile.stockState!.nextItemNo = Math.max(profile.stockState!.nextItemNo, nextItemNoFromContainers(profile.stockContainers ?? []));
   profile.updatedAt = now;
-  return restored;
+  return restoredBoxes;
 }
 
 export interface ProfileStockItemSelection {
@@ -229,12 +267,12 @@ export function selectStockItemForInventoryRef(
       const box = container.boxes.find((candidate) => (
         candidate.item.cid === item.id &&
         !candidate.item.isLock &&
-        !excludedBoxIds.has(candidate.boxId)
+        !excludedBoxIds.has(bidKingSourceBoxIdForProfileStockBox(candidate))
       ));
       if (box) {
         return {
           stockId: container.stockId,
-          boxId: box.boxId,
+          boxId: bidKingSourceBoxIdForProfileStockBox(box),
           itemCid: box.item.cid
         };
       }
@@ -253,7 +291,11 @@ export function consumeStockItemBySelection(
     if (container.stockId !== selection.stockId) {
       continue;
     }
-    const index = container.boxes.findIndex((box) => box.boxId === selection.boxId && box.item.cid === selection.itemCid && !box.item.isLock);
+    const index = container.boxes.findIndex((box) => (
+      (bidKingSourceBoxIdForProfileStockBox(box) === selection.boxId || box.boxId === selection.boxId) &&
+      box.item.cid === selection.itemCid &&
+      !box.item.isLock
+    ));
     if (index < 0) {
       return false;
     }
@@ -303,6 +345,7 @@ export function placeStockItemInCabinet(profile: PlayerProfile, itemId: string, 
   warehouse.boxes.splice(sourceIndex, 1);
   sourceBox.position = position;
   sourceBox.item.rotate = false;
+  sourceBox.item.boxPositionData = boxPositionDataForItem(position, cabinetContainer.width, item, false);
   cabinetContainer.boxes.push(sourceBox);
   warehouse.updatedAt = now;
   cabinetContainer.updatedAt = now;
@@ -335,6 +378,8 @@ export function clearStockItemFromCabinet(profile: PlayerProfile, itemId: string
     }
     container.boxes.splice(index, 1);
     box.position = position;
+    box.item.rotate = false;
+    box.item.boxPositionData = boxPositionDataForItem(position, warehouse.width, item, false);
     warehouse.boxes.push(box);
     container.updatedAt = now;
     warehouse.updatedAt = now;
@@ -461,6 +506,8 @@ function migrateLegacyCabinetEntries(profile: PlayerProfile, now: number): void 
       });
     }
     box.position = position;
+    box.item.rotate = false;
+    box.item.boxPositionData = boxPositionDataForItem(position, cabinetContainer.width, item, false);
     cabinetContainer.boxes.push(box);
     cabinetContainer.updatedAt = now;
   }
@@ -478,13 +525,20 @@ function createStockBox(
     nextItemNo: nextItemNoFromContainers(profile.stockContainers ?? [])
   };
   const no = profile.stockState.nextItemNo++;
+  const position = firstAvailablePosition(container, item);
+  if (position < 0) {
+    throw new Error('仓库空间不足，无法放入实体藏品');
+  }
+  const uid = `${profile.playerId}:${item.id}:${no}`;
   return {
     boxId: profile.stockState.nextBoxId++,
-    position: firstAvailablePosition(container, item),
+    position,
     item: {
-      uid: `${profile.playerId}:${item.id}:${no}`,
+      uid,
+      sourceUid: stableNumericId(uid),
       cid: item.id,
       count: 1,
+      boxPositionData: boxPositionDataForItem(position, container.width, item, false),
       rotate: false,
       canTrade: bidKingItemRuntimeFlags(item).tradable,
       no,
@@ -517,6 +571,41 @@ function ensureWarehouseContainer(profile: PlayerProfile, now: number): ProfileS
   container.height ||= WAREHOUSE_HEIGHT;
   container.boxes ??= [];
   return container;
+}
+
+function normalizeProfileStockContainers(profile: PlayerProfile, now: number): void {
+  profile.stockState ??= {
+    nextBoxId: nextBoxIdFromContainers(profile.stockContainers ?? []),
+    nextItemNo: nextItemNoFromContainers(profile.stockContainers ?? [])
+  };
+  for (const container of profile.stockContainers ?? []) {
+    container.boxes ??= [];
+    for (const box of container.boxes) {
+      const item = Item.find((candidate) => candidate.id === box.item.cid);
+      if (!box.item.uid) {
+        box.item.uid = `${profile.playerId}:${box.item.cid}:${box.item.no || profile.stockState.nextItemNo}`;
+      }
+      if (!Number.isFinite(box.item.no) || box.item.no <= 0) {
+        box.item.no = profile.stockState.nextItemNo++;
+      }
+      box.item.sourceUid = Number.isFinite(box.item.sourceUid) && box.item.sourceUid > 0
+        ? Math.floor(box.item.sourceUid)
+        : stableNumericId(box.item.uid);
+      box.item.count = Math.max(1, Math.floor(box.item.count || 1));
+      box.item.rotate = Boolean(box.item.rotate);
+      box.item.canTrade = typeof box.item.canTrade === 'boolean'
+        ? box.item.canTrade
+        : item ? bidKingItemRuntimeFlags(item).tradable : true;
+      box.item.isLock = Boolean(box.item.isLock);
+      box.item.quality = Number.isFinite(box.item.quality) && box.item.quality > 0
+        ? Math.floor(box.item.quality)
+        : item?.item_quality ?? 1;
+      box.item.createdAt = box.item.createdAt || now;
+      box.item.boxPositionData = item
+        ? boxPositionDataForItem(box.position, container.width, item, box.item.rotate)
+        : sourceBoxPositionData(box.position, container.width, { w: 1, h: 1 });
+    }
+  }
 }
 
 function ensureCabinetContainer(profile: PlayerProfile, cabinet: BidKingCabinetRow, now: number): ProfileStockContainerState {
@@ -580,12 +669,9 @@ function firstAvailablePosition(container: ProfileStockContainerState, item: Bid
   const height = Math.max(1, container.height);
   const occupied = new Set<number>();
   for (const box of container.boxes) {
-    const boxItem = Item.find((candidate) => candidate.id === box.item.cid);
-    const boxFootprint = boxItem ? itemFootprint(boxItem.slot_type) : { w: 1, h: 1 };
-    for (let y = 0; y < boxFootprint.h; y += 1) {
-      for (let x = 0; x < boxFootprint.w; x += 1) {
-        occupied.add(box.position + x + y * width);
-      }
+    const positions = stockBoxPositionData(container, box);
+    for (const position of positions) {
+      occupied.add(sourceBoxPositionToLinear(position, width));
     }
   }
   for (let y = 0; y <= height - footprint.h; y += 1) {
@@ -683,9 +769,46 @@ function cloneStockBoxForTransfer(box: ProfileStockBoxState, locked: boolean): P
     position: box.position,
     item: {
       ...box.item,
+      boxPositionData: (box.item.boxPositionData ?? []).map((position) => ({ ...position })),
       isLock: locked
     }
   };
+}
+
+function stockBoxPositionData(
+  container: ProfileStockContainerState,
+  box: ProfileStockBoxState
+): BidKingBoxPositionDataSnapshot[] {
+  if ((box.item.boxPositionData ?? []).length > 0) {
+    return box.item.boxPositionData;
+  }
+  const item = Item.find((candidate) => candidate.id === box.item.cid);
+  return item
+    ? boxPositionDataForItem(box.position, container.width, item, box.item.rotate)
+    : sourceBoxPositionData(box.position, container.width, { w: 1, h: 1 });
+}
+
+function boxPositionDataForItem(
+  position: number,
+  containerWidth: number,
+  item: BidKingItemRow,
+  rotate: boolean
+): BidKingBoxPositionDataSnapshot[] {
+  const footprint = itemFootprint(item.slot_type);
+  return sourceBoxPositionData(position, containerWidth, rotate ? { w: footprint.h, h: footprint.w } : footprint);
+}
+
+function sourceBoxPositionData(
+  position: number,
+  containerWidth: number,
+  footprint: { w: number; h: number }
+): BidKingBoxPositionDataSnapshot[] {
+  return bidKingSourceBoxPositionDataForProfilePosition(position, containerWidth, footprint);
+}
+
+function sourceBoxPositionToLinear(position: BidKingBoxPositionDataSnapshot, containerWidth: number): number {
+  const width = Math.max(1, containerWidth);
+  return Math.max(0, Math.floor(position.y)) + Math.max(0, Math.floor(position.x)) * width;
 }
 
 function inventoryRefMatches(left: number | string, right: number | string): boolean {
@@ -717,4 +840,13 @@ function canonicalInventoryRef(itemId: number): string {
 
 function positiveLimit(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && value > 0 ? value : fallback;
+}
+
+function stableNumericId(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.max(1, hash >>> 0);
 }

@@ -67,7 +67,8 @@ export function useMatchDerivedState({
   const canUseBattleItem = Boolean(
     currentRound &&
     ['intel', 'auction'].includes(currentRound.phase) &&
-    !(currentRound.phase === 'auction' && selfAlreadyActed)
+    !(currentRound.phase === 'auction' && selfAlreadyActed) &&
+    (snapshot?.private?.battleItemUsesRemainingThisRound ?? 1) > 0
   );
   const recommendedBid = snapshot ? calculateRecommendedBid(snapshot) : undefined;
   const skillTargets = snapshot?.public.players.filter((player) => player.id !== selfPlayer?.id) ?? [];

@@ -98,12 +98,19 @@ function battleItemDisabledReason({
 function battleItemBadges(effectPlan: BattleItemEffectPlan, cooldownRemaining: number): string[] {
   return [
     revealKindLabel(effectPlan.revealKind),
-    `${effectPlan.targetCount}目标`,
+    battleItemTargetCountLabel(effectPlan),
     targetModeLabel(effectPlan.targetMode),
     effectPlan.durationRounds > 0 ? `持续${effectPlan.durationRounds}` : '即时',
     cooldownRemaining > 0 ? `冷却${cooldownRemaining}` : cooldownLabel(effectPlan.cooldownRounds),
     effectPlan.implementationStatus === 'implemented' ? '已落实' : '简化等价'
   ];
+}
+
+function battleItemTargetCountLabel(effectPlan: BattleItemEffectPlan): string {
+  if (effectPlan.revealKind === 'system') {
+    return '无仓库目标';
+  }
+  return effectPlan.requestedTargetCount === 999 ? '全量目标' : `${effectPlan.targetCount}目标`;
 }
 
 function targetValuesText(effectPlan: BattleItemEffectPlan): string {
@@ -127,6 +134,7 @@ function revealKindLabel(kind: BattleItemEffectPlan['revealKind']): string {
     quality: '品质',
     quantity: '数量',
     risk: '风险',
+    system: '系统',
     value: '估值'
   };
   return labels[kind];
@@ -137,7 +145,8 @@ function targetModeLabel(mode: BattleItemEffectPlan['targetMode']): string {
     highest_value: '高价值',
     largest_slots: '大格位',
     risk_first: '风险优先',
-    skill_target: '指定目标'
+    skill_target: '指定目标',
+    system_effect: '系统效果'
   };
   return labels[mode];
 }

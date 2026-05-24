@@ -1,4 +1,4 @@
-import type { PlayerInventoryEntry, PlayerProfile } from '@bitkingdom/shared';
+import type { PlayerInventoryEntry, PlayerProfile, ProfileStockBoxState } from '@bitkingdom/shared';
 import {
   addStockItemsForInventoryRef,
   consumeStockItemsForInventoryRef,
@@ -19,7 +19,13 @@ export function canonicalCodexItemId(itemId: string): string {
   return compatMatch?.[1] ? `compat_${compatMatch[1]}` : itemId;
 }
 
-export function addInventory(profile: PlayerProfile, type: string, refId: string, quantity: number, sourceId: string): void {
+export function addInventory(
+  profile: PlayerProfile,
+  type: string,
+  refId: string,
+  quantity: number,
+  sourceId: string
+): ProfileStockBoxState[] {
   if (isStockBackedInventoryRef(refId)) {
     ensureProfileStockState(profile);
   }
@@ -38,11 +44,12 @@ export function addInventory(profile: PlayerProfile, type: string, refId: string
   const before = entry.quantity;
   entry.quantity += quantity;
   entry.updatedAt = Date.now();
-  addStockItemsForInventoryRef(profile, refId, quantity, sourceId, entry.updatedAt);
+  const createdStockBoxes = addStockItemsForInventoryRef(profile, refId, quantity, sourceId, entry.updatedAt);
   // Inventory transactions use the quantity counter for audit readability.
   profile.updatedAt = Date.now();
   void before;
   void sourceId;
+  return createdStockBoxes;
 }
 
 export function inventoryQuantity(profile: PlayerProfile, itemId: number | string): number {

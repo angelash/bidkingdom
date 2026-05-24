@@ -461,6 +461,52 @@ describe('match core', () => {
     }));
   });
 
+  it('keeps visible slot estimates from multiplying one high-value slot across the warehouse', () => {
+    const match = makeCoreMatch();
+    const round = match.currentRound!;
+    round.auctionMode = 'open';
+    round.auctioneerClue = undefined;
+    round.container.publicInfo.estimateMin = 580_000;
+    round.container.publicInfo.estimateMax = 640_000;
+    round.container.publicInfo.risk = 'low';
+    round.container.minimumBid = 200_000;
+    round.container.publicClues = [];
+    round.container.privateCluesByPlayerId = {};
+    round.warehouseSlots = [
+      {
+        slotId: 'slot_1',
+        itemId: 'item_1',
+        x: 0,
+        y: 0,
+        w: 2,
+        h: 2,
+        visibleShape: true,
+        visibleRarity: 'legendary',
+        visibleValueRange: { min: 600_000, max: 650_000 }
+      },
+      { slotId: 'slot_2', x: 2, y: 0, w: 1, h: 1, visibleShape: true },
+      { slotId: 'slot_3', x: 3, y: 0, w: 1, h: 1, visibleShape: false },
+      { slotId: 'slot_4', x: 4, y: 0, w: 1, h: 1, visibleShape: false }
+    ];
+    setRoundPhase(match, 'auction', 30000, 3000);
+
+    const bot = match.players.find((player) => player.id === 'b1')!;
+    bot.privateClues = [];
+    bot.skillCooldown = 99;
+    bot.skillUsesRemaining = 0;
+    bot.battleItemCooldowns = {};
+    for (const item of BattleItem) {
+      bot.battleItemCooldowns[String(item.id)] = 99;
+    }
+
+    const action = chooseBotAction(match, 'b1', 'aggressive');
+
+    expect(action.type).toBe('bid');
+    expect(action.audit?.slotEstimate).toBeLessThanOrEqual(760_000);
+    expect(action.audit?.estimate).toBeLessThanOrEqual(700_000);
+    expect(action.amount ?? 0).toBeLessThanOrEqual(700_000);
+  });
+
   it('uses RankAi min and pk pools to chase final-round core bids', () => {
     const match = createMatch({
       id: 'rank-ai-pk-pool',

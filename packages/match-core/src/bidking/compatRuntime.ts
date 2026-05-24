@@ -21,7 +21,7 @@ import {
   type BidKingSkillEffectRow,
   type BidKingSkillRow
 } from '@bitkingdom/bidking-compat';
-import type { BidKingBoxInfoDataSnapshot, Clue, PublicContainerInfo, RevealedItem, Rarity, SkillFeedEntry } from '@bitkingdom/shared';
+import type { Clue, PublicContainerInfo, RevealedItem, Rarity, SkillFeedEntry } from '@bitkingdom/shared';
 import { buildPrivateClues, buildPublicClues } from '../clues';
 import { sumItemValue } from '../scoring';
 import type { ContainerInstance, MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } from '../types';
@@ -30,7 +30,12 @@ import {
   bidKingInitialCashForBidMap
 } from './initialCashRuntime';
 import { bidKingHeroIdForRoleId } from './heroRuntime';
-import { bidKingSourceBoxInfoForSlot } from './gameDataRuntime';
+import {
+  bidKingKnowledgeByItemIdFromSkillFeed,
+  bidKingSourceHitBoxList,
+  bidKingSourceTargetCount,
+  selectBidKingSlotsBySkill
+} from './skillTargeting';
 
 export { getBidKingCloseThreshold };
 
@@ -82,12 +87,11 @@ export function buildBidKingAutoSkillClues(
   core: ContainerInstance,
   state: MatchRuntimeState,
   player: RuntimePlayer,
-  roundIndex: number
+  roundIndex: number,
+  extraSkillFeed: readonly SkillFeedEntry[] = []
 ): Clue[] {
-  if (roundIndex !== 0) {
-    return [];
-  }
-  return [buildBidKingSkillClue(core, state, player, roundIndex, 'auto')].filter((clue): clue is Clue => Boolean(clue));
+  return [buildBidKingSkillClue(core, state, player, roundIndex, 'auto', undefined, extraSkillFeed)]
+    .filter((clue): clue is Clue => Boolean(clue));
 }
 
 export function buildBidKingRoundStartSkillFeed(
@@ -104,7 +108,7 @@ export function buildBidKingRoundStartSkillFeed(
       const bidMapName = bidKingBidMapDisplayName(bidMap);
       const mapSkillName = bidKingSkillDisplayName(mapSkill);
       const mapEffect = effectForSkill(mapSkill);
-      const hitSlots = selectSlotsBySkill(round.container, state, mapSkill);
+      const hitSlots = selectSlotsBySkill(round.container, state, mapSkill, 'map', undefined, entries);
       const targetItemIds = slotItemIds(hitSlots);
       entries.push({
         id: `${round.id}_map_skill_${mapSkill.id}`,
@@ -117,42 +121,41 @@ export function buildBidKingRoundStartSkillFeed(
         iconKey: mapSkill.skill_icon || bidMap.art_key,
         visibility: 'public',
         targetItemIds,
-        hitBoxList: sourceHitBoxList(round, hitSlots, mapSkill),
+        hitBoxList: bidKingSourceHitBoxList(round, hitSlots, mapSkill),
         createdAt: now
       });
     }
   }
 
-  if (round.index === 0) {
-    for (const player of state.players) {
-      const hero = heroForPlayer(player, state);
-      const skill = skillForHero(hero, round.index);
-      if (!skill) {
-        continue;
-      }
-      const effect = effectForSkill(skill);
-      const skillName = bidKingSkillDisplayName(skill);
-      const clue = player.privateClues.find((candidate) => (
-        candidate.id.includes(`_auto_${player.id}_${roundNumber}_${hero.id}_${skill.id}`)
-      ));
-      const targetItemIds = clueTargetItemIds(clue);
-      const hitSlots = slotsForTargetItemIds(round.container.warehouseSlots, targetItemIds);
-      entries.push({
-        id: `${round.id}_hero_skill_${player.id}_${skill.id}`,
-        round: roundNumber,
-        playerId: player.id,
-        source: 'hero',
-        sourceName: hero.packaged_name,
-        skillName,
-        ...skillFeedEffectMetadata(skill, effect, targetItemIds),
-        text: clue?.text ?? `${hero.packaged_name}触发${skillName}，获得一条专属情报。`,
-        iconKey: skill.skill_icon,
-        visibility: 'private',
-        targetItemIds,
-        hitBoxList: sourceHitBoxList(round, hitSlots, skill),
-        createdAt: now
-      });
+  for (const player of state.players) {
+    const hero = heroForPlayer(player, state);
+    const skill = skillForHero(hero, round.index);
+    if (!skill) {
+      continue;
     }
+    const effect = effectForSkill(skill);
+    const skillName = bidKingSkillDisplayName(skill);
+    const clue = buildBidKingSkillClue(round.container, state, player, round.index, 'auto', undefined, entries);
+    if (clue) {
+      upsertRoundPrivateClue(round, player, clue);
+    }
+    const targetItemIds = clueTargetItemIds(clue);
+    const hitSlots = slotsForTargetItemIds(round.container.warehouseSlots, targetItemIds);
+    entries.push({
+      id: `${round.id}_hero_skill_${player.id}_${skill.id}`,
+      round: roundNumber,
+      playerId: player.id,
+      source: 'hero',
+      sourceName: hero.packaged_name,
+      skillName,
+      ...skillFeedEffectMetadata(skill, effect, targetItemIds),
+      text: clue?.text ?? `${hero.packaged_name}触发${skillName}，获得一条专属情报。`,
+      iconKey: skill.skill_icon,
+      visibility: 'private',
+      targetItemIds,
+      hitBoxList: bidKingSourceHitBoxList(round, hitSlots, skill),
+      createdAt: now
+    });
   }
 
   return entries;
@@ -524,7 +527,8 @@ function buildBidKingSkillClue(
   player: RuntimePlayer,
   roundIndex: number,
   trigger: 'auto' | 'manual',
-  _targetPlayerId?: string
+  _targetPlayerId?: string,
+  extraSkillFeed: readonly SkillFeedEntry[] = []
 ): Clue | undefined {
   const hero = heroForPlayer(player, state);
   const skill = skillForHero(hero, roundIndex);
@@ -533,10 +537,22 @@ function buildBidKingSkillClue(
   }
   const effect = effectForSkill(skill);
   const clueId = `${core.id}_${trigger}_${player.id}_${roundIndex + 1}_${hero.id}_${skill.id}`;
-  const selectedSlots = selectSlotsBySkill(core, state, skill, trigger);
+  const selectedSlots = selectSlotsBySkill(core, state, skill, trigger, player.id, extraSkillFeed);
   const scanSlots = selectedSlots.slice(0, trigger === 'manual' ? 3 : 2);
   const selectedItemIds = slotItemIds(selectedSlots);
   const skillName = bidKingSkillDisplayName(skill);
+
+  if (selectedSlots.length === 0 && skillUsesKnowledgeStateTarget(skill)) {
+    return {
+      id: clueId,
+      kind: 'category',
+      text: `${hero.packaged_name}·${skillName}：未命中符合条件的藏品。`,
+      accuracy: 1,
+      targetItemIds: [],
+      source: 'skill',
+      isTruthful: true
+    };
+  }
 
   if ([8, 9, 10].includes(effect.Category)) {
     const targetItems = selectedSlots.length > 0 ? selectedSlots.map((slot) => slot.item) : core.hiddenItems;
@@ -625,7 +641,7 @@ function buildBidKingSkillClue(
     };
   }
 
-  if ([7, 12].includes(effect.Category)) {
+  if (effect.Category === 7) {
     const target = selectedSlots[0] ?? scanSlots[0];
     if (!target) {
       return undefined;
@@ -634,6 +650,23 @@ function buildBidKingSkillClue(
       id: clueId,
       kind: 'category',
       text: `${hero.packaged_name}·${skillName}：揭示一个命中格的品质，接近${rarityNameForText(target.item.rarity)}。`,
+      accuracy: 0.86,
+      targetItemId: target.item.id,
+      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
+      source: 'skill',
+      isTruthful: true
+    };
+  }
+
+  if (effect.Category === 12) {
+    const target = selectedSlots[0] ?? scanSlots[0];
+    if (!target) {
+      return undefined;
+    }
+    return {
+      id: clueId,
+      kind: 'category',
+      text: `${hero.packaged_name}·${skillName}：本场竞拍最高品质为${rarityNameForText(target.item.rarity)}。`,
       accuracy: 0.86,
       targetItemId: target.item.id,
       targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
@@ -685,7 +718,7 @@ function buildBidKingSkillClue(
     return {
       id: clueId,
       kind: 'category',
-      text: `${hero.packaged_name}·${skillName}：揭示一个命中格的品类，属于${target.item.category}。`,
+      text: `${hero.packaged_name}·${skillName}：目标品类为${target.item.category}。`,
       accuracy: 0.86,
       targetItemId: target.item.id,
       targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
@@ -748,7 +781,7 @@ function buildBidKingSkillEffectPlan(
   cooldownRounds = Math.max(0, skill.skill_CD)
 ): BidKingSkillEffectPlan {
   const targetItemIds = clueTargetItemIds(clue);
-  const requestedTargetCount = skill.skill_count === 0 ? 999 : skill.skill_count;
+  const requestedTargetCount = bidKingSourceTargetCount(skill);
   const skillName = bidKingSkillDisplayName(skill);
   return {
     skillId: skill.id,
@@ -792,185 +825,41 @@ function slotsForTargetItemIds(slots: readonly WarehouseSlot[], targetItemIds: r
   return slots.filter((slot) => ids.has(slot.item.id));
 }
 
-function sourceHitBoxList(
-  round: RuntimeRound,
-  slots: readonly WarehouseSlot[],
-  skill: BidKingSkillRow
-): BidKingBoxInfoDataSnapshot[] {
-  const categories = skill.skilleffect_position
-    .map((effectId) => skillEffectById(effectId)?.Category)
-    .filter((category): category is number => typeof category === 'number' && category > 0);
-  const effectiveCategories = categories.length > 0 ? categories : [effectForSkill(skill).Category];
-  return slots.map((slot) => mergeSourceBoxInfo(
-    effectiveCategories.map((category) => bidKingSourceBoxInfoForSlot(slot, round.id, category))
-  ));
+function upsertRoundPrivateClue(round: RuntimeRound, player: RuntimePlayer, clue: Clue): void {
+  const nextClues = upsertClue(player.privateClues, clue);
+  player.privateClues = nextClues;
+  round.container.privateCluesByPlayerId[player.id] = nextClues;
 }
 
-function mergeSourceBoxInfo(boxes: readonly BidKingBoxInfoDataSnapshot[]): BidKingBoxInfoDataSnapshot {
-  const first = boxes[0] ?? {
-    boxId: 0,
-    itemUid: 0,
-    itemCid: 0,
-    itemSlotType: 0,
-    itemType: [],
-    itemQuility: 0,
-    itemPrice: 0,
-    itemBoxIndex: 0
-  };
-  return boxes.reduce((merged, box) => ({
-    boxId: merged.boxId || box.boxId,
-    itemUid: merged.itemUid || box.itemUid,
-    itemCid: merged.itemCid || box.itemCid,
-    itemSlotType: merged.itemSlotType || box.itemSlotType,
-    itemType: [...new Set([...merged.itemType, ...box.itemType])],
-    itemQuility: merged.itemQuility || box.itemQuility,
-    itemPrice: merged.itemPrice || box.itemPrice,
-    itemBoxIndex: merged.itemBoxIndex || box.itemBoxIndex
-  }), { ...first, itemType: [...first.itemType] });
+function upsertClue(clues: readonly Clue[], clue: Clue): Clue[] {
+  const index = clues.findIndex((candidate) => candidate.id === clue.id);
+  if (index < 0) {
+    return [...clues, clue];
+  }
+  return clues.map((candidate, candidateIndex) => candidateIndex === index ? clue : candidate);
 }
 
 function selectSlotsBySkill(
   core: ContainerInstance,
   state: MatchRuntimeState,
   skill: BidKingSkillRow,
-  _trigger: 'auto' | 'manual' | 'map' = 'auto'
+  trigger: 'auto' | 'manual' | 'map' = 'auto',
+  playerId?: string,
+  extraSkillFeed: readonly SkillFeedEntry[] = []
 ): WarehouseSlot[] {
-  const targetCount = skill.skill_count === 0 ? 999 : skill.skill_count;
-  let slots = slotsByTarget(core.warehouseSlots, state, skill.skilltarget, skill.skilltargetvalue, targetCount);
-  if (slots.length === 0) {
-    slots = shuffleByRng(core.warehouseSlots, state);
-  }
-  const limit = targetCount === 999 ? slots.length : targetCount;
-  return slots.slice(0, Math.max(1, limit));
-}
-
-function slotsByTarget(
-  slots: readonly WarehouseSlot[],
-  state: MatchRuntimeState,
-  targetType: number,
-  values: readonly number[],
-  targetCount: number
-): WarehouseSlot[] {
-  if (targetType === 0) {
-    return shuffleByRng(slots, state);
-  }
-  if (targetType === 1) {
-    return slots.filter((slot) => {
-      const row = itemRowForSlot(slot);
-      return row ? values.includes(row.item_type_id) : false;
-    });
-  }
-  if (targetType === 2) {
-    return slots.filter((slot) => {
-      const row = itemRowForSlot(slot);
-      return row ? values.includes(row.item_quality) : false;
-    });
-  }
-  if (targetType === 3) {
-    return slots.filter((slot) => {
-      const row = itemRowForSlot(slot);
-      return row ? values.includes(row.id) : false;
-    });
-  }
-  if (targetType === 4) {
-    const typeId = weightedTargetValue(values, state, [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]);
-    return slots.filter((slot) => itemRowForSlot(slot)?.item_type_id === typeId);
-  }
-  if (targetType === 5) {
-    const quality = weightedTargetValue(values, state, [1, 2, 3, 4, 5, 6]);
-    return slots.filter((slot) => itemRowForSlot(slot)?.item_quality === quality);
-  }
-  if (targetType === 6) {
-    const filterType = values[0] ?? 3;
-    const isMax = values[1] === 1;
-    const sorted = [...slots].sort((left, right) => {
-      const leftValue = filterValueForSlot(left, slots, filterType);
-      const rightValue = filterValueForSlot(right, slots, filterType);
-      if (leftValue !== rightValue) {
-        return isMax ? rightValue - leftValue : leftValue - rightValue;
-      }
-      const leftItemId = itemRowForSlot(left)?.id ?? 0;
-      const rightItemId = itemRowForSlot(right)?.id ?? 0;
-      if (leftItemId !== rightItemId) {
-        return isMax ? rightItemId - leftItemId : leftItemId - rightItemId;
-      }
-      return sourceItemUidOrder(left) - sourceItemUidOrder(right);
-    });
-    if (targetCount === 999 && sorted[0]) {
-      const best = filterValueForSlot(sorted[0], slots, filterType);
-      return sorted.filter((slot) => filterValueForSlot(slot, slots, filterType) === best);
-    }
-    return sorted;
-  }
-  if (targetType === 10) {
-    return filterSlotsByShape(slots, values);
-  }
-  return shuffleByRng(slots, state);
-}
-
-function filterSlotsByShape(slots: readonly WarehouseSlot[], values: readonly number[]): WarehouseSlot[] {
-  const [w, h, area] = values;
-  return slots.filter((slot) => {
-    const footprintArea = slot.item.footprint.w * slot.item.footprint.h;
-    return (w === undefined || w === 0 || slot.item.footprint.w === w)
-      && (h === undefined || h === 0 || slot.item.footprint.h === h)
-      && (area === undefined || area === 0 || footprintArea === area);
+  const historicalSkillFeed = state.roundHistory.flatMap((history) => history.skillFeed ?? []);
+  const currentRoundFeed = state.currentRound?.container.id === core.id
+    ? state.currentRound.skillFeed
+    : [];
+  const skillFeed = [...historicalSkillFeed, ...currentRoundFeed, ...extraSkillFeed];
+  const visiblePlayerId = trigger === 'map' ? undefined : playerId;
+  return selectBidKingSlotsBySkill(core.warehouseSlots, state, skill, {
+    knownInfoByItemId: bidKingKnowledgeByItemIdFromSkillFeed(core.warehouseSlots, skillFeed, visiblePlayerId)
   });
 }
 
-function weightedTargetValue(values: readonly number[], state: MatchRuntimeState, fallback: readonly number[]): number {
-  if (values.length <= 1 && (values[0] ?? 0) === 0) {
-    return state.rng.pick([...fallback]);
-  }
-  const pairs: Array<{ item: number; weight: number }> = [];
-  for (let index = 0; index < values.length; index += 2) {
-    const value = values[index];
-    const weight = values[index + 1] ?? 1;
-    if (value && weight > 0) {
-      pairs.push({ item: value, weight });
-    }
-  }
-  return pairs.length > 0 ? state.rng.weighted(pairs) : state.rng.pick([...fallback]);
-}
-
-function filterValueForSlot(slot: WarehouseSlot, allSlots: readonly WarehouseSlot[], filterType: number): number {
-  const row = itemRowForSlot(slot);
-  if (!row) {
-    return 0;
-  }
-  if (filterType === 1) {
-    return row.item_quality;
-  }
-  if (filterType === 2) {
-    return slot.item.footprint.w * slot.item.footprint.h;
-  }
-  if (filterType === 3) {
-    return row.base_value;
-  }
-  if (filterType === 4) {
-    return Math.round(row.base_value / Math.max(1, slot.item.footprint.w * slot.item.footprint.h));
-  }
-  if (filterType === 5) {
-    return allSlots.filter((candidate) => itemRowForSlot(candidate)?.id === row.id).length;
-  }
-  if (filterType === 6) {
-    return allSlots.filter((candidate) => itemRowForSlot(candidate)?.item_type_id === row.item_type_id).length;
-  }
-  if (filterType === 7) {
-    return allSlots.filter((candidate) => itemRowForSlot(candidate)?.item_quality === row.item_quality).length;
-  }
-  return row.base_value;
-}
-
-function itemRowForSlot(slot: WarehouseSlot): BidKingItemRow | undefined {
-  const match = /^compat_(\d+)_/.exec(slot.item.id);
-  const itemId = match?.[1] ? Number(match[1]) : undefined;
-  return itemId ? itemById(itemId) : undefined;
-}
-
-function sourceItemUidOrder(slot: WarehouseSlot): number {
-  const match = /^compat_\d+_(\d+)$/.exec(slot.item.id);
-  return match?.[1] ? Number(match[1]) : slot.y * 10 + slot.x;
+function skillUsesKnowledgeStateTarget(skill: BidKingSkillRow): boolean {
+  return skill.skilltarget === 10 || skill.skilltarget2 === 10 || skill.skilltarget3 === 10;
 }
 
 function rarityFromQuality(row: BidKingItemRow): Rarity {

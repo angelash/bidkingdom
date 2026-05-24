@@ -1,4 +1,12 @@
 import type {
+  AuctionHouseBidLogListSnapshot,
+  AuctionHouseBidPriceResponse,
+  AuctionHouseItemInfoSnapshot,
+  AuctionHouseItemPriceInfoListSnapshot,
+  AuctionHouseItemSortModel,
+  AuctionHouseLanchItemListSnapshot,
+  AuctionHouseTradeInfoListSnapshot,
+  AuctionHouseUnlanchItemResponse,
   FinalMatchSummary,
   MarketOrdersSnapshot,
   PlayerProfile,
@@ -20,10 +28,18 @@ import {
   setShopItemCollectionForProfile
 } from '../domain/economy/profileCommerceRuntime';
 import {
+  bidAuctionHousePriceForProfiles,
+  buildAuctionHouseBidLogListSnapshot,
+  buildAuctionHouseItemInfoSnapshot,
+  buildAuctionHouseItemPriceInfoListSnapshot,
+  buildAuctionHouseLanchItemListSnapshot,
+  buildAuctionHouseTradeInfoListSnapshot,
   buildMarketOrdersSnapshot,
+  cancelAuctionHouseLanchItemForProfile,
   cancelMarketOrderForProfile,
   createMarketOrderForProfile,
   expireMarketOrdersForProfile,
+  settleExpiredAuctionHouseOrderForProfile,
   settleMarketOrderForProfile
 } from '../domain/economy/profileMarketRuntime';
 import {
@@ -143,7 +159,7 @@ export function createProfileService(store: ServerStore): ProfileService {
 
   function getSnapshot(playerId: string, name?: string): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId, name);
-    if (expireMarketOrdersForProfile(profile, recordTransaction) > 0) {
+    if (expireProfileMarketOrders(profile) > 0) {
       store.save();
     }
     return buildProfileSnapshot(profile, transactionsFor(profile.playerId));
@@ -464,7 +480,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     note?: string
   ): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
-    expireMarketOrdersForProfile(profile, recordTransaction);
+    expireProfileMarketOrders(profile);
     createMarketOrderForProfile(profile, refId, quantity, price, orderType, recordTransaction, note, applyNumberChange);
     store.save();
     return getSnapshot(playerId);
@@ -474,7 +490,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     const buyerProfile = getOrCreateProfile(playerId);
     const sellerProfile = Object.values(store.state.profiles)
       .find((profile) => profile.marketOrders.some((order) => order.id === orderId)) ?? buyerProfile;
-    const expired = expireMarketOrdersForProfile(sellerProfile, recordTransaction);
+    const expired = expireProfileMarketOrders(sellerProfile);
     const buyer = sellerProfile.playerId === buyerProfile.playerId ? undefined : buyerProfile;
     if (settleMarketOrderForProfile(sellerProfile, orderId, applyNumberChange, recordTransaction, buyer) || expired > 0) {
       store.save();
@@ -484,22 +500,125 @@ export function createProfileService(store: ServerStore): ProfileService {
 
   function cancelMarketOrder(playerId: string, orderId: string): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
-    const expired = expireMarketOrdersForProfile(profile, recordTransaction);
-    if (cancelMarketOrderForProfile(profile, orderId, recordTransaction) || expired > 0) {
+    const expired = expireProfileMarketOrders(profile);
+    if (cancelMarketOrderForProfile(profile, orderId, recordTransaction, refundAuctionHouseBidEscrow, settleExpiredAuctionHouseOrder) || expired > 0) {
       store.save();
     }
     return getSnapshot(playerId);
   }
 
+  function cancelAuctionHouseLanchItem(
+    playerId: string,
+    itemUid: number
+  ): ProfileSnapshot & { sourceAuctionHouseUnlanchItem: AuctionHouseUnlanchItemResponse } {
+    const profile = getOrCreateProfile(playerId);
+    const sourceAuctionHouseUnlanchItem = cancelAuctionHouseLanchItemForProfile(
+      profile,
+      itemUid,
+      recordTransaction,
+      refundAuctionHouseBidEscrow,
+      settleExpiredAuctionHouseOrder
+    );
+    if (sourceAuctionHouseUnlanchItem.errorCode === 0) {
+      store.save();
+    }
+    return {
+      ...getSnapshot(playerId),
+      sourceAuctionHouseUnlanchItem
+    };
+  }
+
   function listMarketOrders(orderType?: 'trade' | 'auction'): MarketOrdersSnapshot {
     let expired = 0;
     for (const profile of Object.values(store.state.profiles)) {
-      expired += expireMarketOrdersForProfile(profile, recordTransaction);
+      expired += expireProfileMarketOrders(profile);
     }
     if (expired > 0) {
       store.save();
     }
     return buildMarketOrdersSnapshot(Object.values(store.state.profiles), orderType);
+  }
+
+  function listAuctionHouseLanchItems(playerId: string): AuctionHouseLanchItemListSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    const expired = expireProfileMarketOrders(profile);
+    if (expired > 0) {
+      store.save();
+    }
+    return buildAuctionHouseLanchItemListSnapshot(profile);
+  }
+
+  function listAuctionHouseItems(options: { itemCid?: number; isDisplayPeriod?: number; sortType?: AuctionHouseItemSortModel; page?: number; pageSize?: number; reverse?: boolean } = {}): AuctionHouseItemInfoSnapshot {
+    let expired = 0;
+    for (const profile of Object.values(store.state.profiles)) {
+      expired += expireProfileMarketOrders(profile);
+    }
+    if (expired > 0) {
+      store.save();
+    }
+    return buildAuctionHouseItemInfoSnapshot(Object.values(store.state.profiles), options);
+  }
+
+  function listAuctionHouseItemPriceInfo(): AuctionHouseItemPriceInfoListSnapshot {
+    let expired = 0;
+    for (const profile of Object.values(store.state.profiles)) {
+      expired += expireProfileMarketOrders(profile);
+    }
+    if (expired > 0) {
+      store.save();
+    }
+    return buildAuctionHouseItemPriceInfoListSnapshot(Object.values(store.state.profiles));
+  }
+
+  function bidAuctionHousePrice(
+    playerId: string,
+    itemUid: number,
+    price: number
+  ): ProfileSnapshot & { sourceAuctionHouseBidPrice: AuctionHouseBidPriceResponse } {
+    let expired = 0;
+    for (const profile of Object.values(store.state.profiles)) {
+      expired += expireProfileMarketOrders(profile);
+    }
+    const bidderProfile = getOrCreateProfile(playerId);
+    const sourceAuctionHouseBidPrice = bidAuctionHousePriceForProfiles(
+      Object.values(store.state.profiles),
+      bidderProfile,
+      itemUid,
+      price,
+      applyNumberChange,
+      recordTransaction
+    );
+    if (expired > 0 || sourceAuctionHouseBidPrice.errorCode === 0) {
+      store.save();
+    }
+    return {
+      ...getSnapshot(playerId),
+      sourceAuctionHouseBidPrice
+    };
+  }
+
+  function listAuctionHouseBidLogs(playerId: string): AuctionHouseBidLogListSnapshot {
+    let expired = 0;
+    for (const profile of Object.values(store.state.profiles)) {
+      expired += expireProfileMarketOrders(profile);
+    }
+    if (expired > 0) {
+      store.save();
+    }
+    const profile = getOrCreateProfile(playerId);
+    return buildAuctionHouseBidLogListSnapshot(profile, Object.values(store.state.profiles));
+  }
+
+  function listAuctionHouseTradeInfo(playerId: string): AuctionHouseTradeInfoListSnapshot {
+    let expired = 0;
+    for (const profile of Object.values(store.state.profiles)) {
+      expired += expireProfileMarketOrders(profile);
+    }
+    if (expired > 0) {
+      store.save();
+    }
+    const profile = getOrCreateProfile(playerId);
+    return buildAuctionHouseTradeInfoListSnapshot(profile, Object.values(store.state.profiles));
   }
 
   function createSendAuction(playerId: string, mapCid: number, itemSelections: SendAuctionItemSelectionInput[]): ProfileSnapshot {
@@ -751,6 +870,52 @@ export function createProfileService(store: ServerStore): ProfileService {
     return economy.hasSource(sourceId);
   }
 
+  function expireProfileMarketOrders(profile: PlayerProfile): number {
+    return expireMarketOrdersForProfile(profile, recordTransaction, Date.now(), refundAuctionHouseBidEscrow, settleExpiredAuctionHouseOrder);
+  }
+
+  function refundAuctionHouseBidEscrow(order: PlayerProfile['marketOrders'][number], now: number): void {
+    const bidderId = order.sourceAuctionHouseMaxBidderId;
+    const refund = Math.max(0, Math.floor(order.sourceAuctionHouseMaxPrice ?? 0));
+    if (!bidderId || refund <= 0) {
+      return;
+    }
+    const bidderProfile = store.state.profiles[bidderId];
+    if (!bidderProfile) {
+      return;
+    }
+    applyNumberChange(
+      bidderProfile,
+      `auction_house:${order.id}:${bidderId}:${now}:refund_closed`,
+      'auction_house_bid_refund',
+      'coins',
+      refund
+    );
+  }
+
+  function settleExpiredAuctionHouseOrder(
+    sellerProfile: PlayerProfile,
+    order: PlayerProfile['marketOrders'][number],
+    now: number
+  ): boolean {
+    const bidderId = order.sourceAuctionHouseMaxBidderId;
+    if (!bidderId) {
+      return false;
+    }
+    const bidderProfile = store.state.profiles[bidderId];
+    if (!bidderProfile) {
+      return false;
+    }
+    return settleExpiredAuctionHouseOrderForProfile(
+      sellerProfile,
+      order,
+      bidderProfile,
+      applyNumberChange,
+      recordTransaction,
+      now
+    );
+  }
+
   function transactionsFor(playerId: string): ProfileTransaction[] {
     return economy.transactionsFor(playerId, MAX_RECENT_PROFILE_TRANSACTIONS);
   }
@@ -795,7 +960,14 @@ export function createProfileService(store: ServerStore): ProfileService {
     createMarketOrder,
     settleMarketOrder,
     cancelMarketOrder,
+    cancelAuctionHouseLanchItem,
     listMarketOrders,
+    listAuctionHouseLanchItems,
+    listAuctionHouseItems,
+    listAuctionHouseItemPriceInfo,
+    bidAuctionHousePrice,
+    listAuctionHouseBidLogs,
+    listAuctionHouseTradeInfo,
     createSendAuction,
     settleSendAuction,
     recycleSendAuction,

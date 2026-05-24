@@ -101,6 +101,17 @@ function isProtectedProfileRoute(method: string, rawUrl: string): boolean {
   if (path === '/api/market/order' || path === '/api/market/order/action') {
     return true;
   }
+  if (
+    path === '/api/auction-house/lanch-items' ||
+    path === '/api/auction-house/items' ||
+    path === '/api/auction-house/item-price-info' ||
+    path === '/api/auction-house/bid' ||
+    path === '/api/auction-house/bid-logs' ||
+    path === '/api/auction-house/trade-info' ||
+    path === '/api/auction-house/unlanch-item'
+  ) {
+    return true;
+  }
   if (path === '/api/send-auction' || path === '/api/send-auction/action' || path === '/api/send-auction/games' || path === '/api/send-auctions') {
     return true;
   }

@@ -222,14 +222,39 @@ export interface BidKingStockContainerDataSnapshot {
 export interface BidKingGameUseItemOrPriceDataSnapshot {
   round: number;
   itemCidOrPrice: number;
-  createdAt?: number;
-  sourceEventId?: string;
 }
 
 export interface BidKingUserSelectItemDataSnapshot {
-  stockId: number;
-  boxId: number;
-  itemCid?: number;
+  itemCid: number;
+  isUsed: boolean;
+  stockId?: number;
+  boxId?: number;
+}
+
+export interface BidKingUserSimSelectGameItemDataSnapshot {
+  itemUid: number;
+  itemCid: number;
+}
+
+export interface BidKingUserSimBuffItemDataSnapshot {
+  itemCid: number;
+  itemCount: number;
+  power: number;
+  cd: number;
+}
+
+export interface BidKingShopItemDataSnapshot {
+  itemUid: number;
+  shopItemCid: number;
+  canBuyCount: number;
+  buyCount: number;
+  discountRate: number;
+}
+
+export interface BidKingShopStatusDataSnapshot {
+  shopCid: number;
+  nextRefreshTime: number;
+  shopItemList: BidKingShopItemDataSnapshot[];
 }
 
 export interface BidKingGameUserDataSnapshot {
@@ -243,6 +268,8 @@ export interface BidKingGameUserDataSnapshot {
   isQuit: boolean;
   headCid: number;
   heroSkinCid: number;
+  simSelectItemList: BidKingUserSimSelectGameItemDataSnapshot[];
+  simBuffItemList: BidKingUserSimBuffItemDataSnapshot[];
   selectItemList: BidKingUserSelectItemDataSnapshot[];
   headBoxCid: number;
   titleCid: number;
@@ -266,8 +293,6 @@ export interface BidKingGameSkillDataSnapshot {
   totalHitBoxIndex: number;
   hitItemTypeList: number[];
   hitItemQuilityList: number[];
-  sourceFeedId?: string;
-  sourceEventId?: string;
 }
 
 export interface BidKingGameDataSnapshot {
@@ -291,6 +316,21 @@ export interface BidKingGameDataSnapshot {
   sendAuctionHeadBox: number;
   sendAuctionUserTitle: number;
   serverTime: number;
+}
+
+export interface BidKingSimGameLogSnapshot {
+  maxWinLevel: number;
+  simGold: number;
+  gameWinItemList: number[];
+  simShopStatus?: BidKingShopStatusDataSnapshot;
+  gameData?: BidKingGameDataSnapshot;
+  level: number;
+  simSelectItemList: BidKingUserSimSelectGameItemDataSnapshot[];
+  simBuffItemList: BidKingUserSimBuffItemDataSnapshot[];
+  selectItemCount: number;
+  roundCanUseItemCount: number;
+  gameCarryItemMax: number;
+  gameGoldRateMax: number;
 }
 
 export interface BidRecord {
@@ -515,7 +555,16 @@ export interface PrivatePlayerState {
   skillUsesRemaining: number;
   skillUsedThisRound: boolean;
   insuranceActive: boolean;
+  battleItemUseLimitThisRound?: number;
+  battleItemUsesThisRound?: number;
+  battleItemUsesRemainingThisRound?: number;
   battleItemCooldowns?: Record<string, number>;
+  simGold?: number;
+  gameWinItemList?: number[];
+  simShopStatus?: BidKingShopStatusDataSnapshot;
+  simGameLog?: BidKingSimGameLogSnapshot;
+  simSelectItemList?: BidKingUserSimSelectGameItemDataSnapshot[];
+  simBuffItemList?: BidKingUserSimBuffItemDataSnapshot[];
 }
 
 export interface PublicMatchState {
@@ -704,7 +753,15 @@ export interface MatchEventLog {
   type: string;
   actorId?: string;
   payload: unknown;
+  sourceProtocols?: BidKingProtocolMessageRef[];
   createdAt: number;
+}
+
+export interface BidKingProtocolMessageRef {
+  id: number;
+  name: string;
+  direction: 'C2S' | 'S2C';
+  fields: string[];
 }
 
 export interface PlayerProfileLastRewards {
@@ -742,8 +799,10 @@ export type ProfileStockContainerKind = 'cabinet' | 'market' | 'match' | 'sendAu
 
 export interface ProfileStockItemState {
   uid: string;
+  sourceUid: number;
   cid: number;
   count: number;
+  boxPositionData: BidKingBoxPositionDataSnapshot[];
   rotate: boolean;
   canTrade: boolean;
   no: number;
@@ -837,6 +896,15 @@ export interface MarketOrderState {
   numberCid?: number;
   itemNo?: number;
   lockedStockBoxes?: ProfileStockBoxState[];
+  sourceAuctionHouseLaunches?: MarketOrderSourceAuctionHouseLaunch[];
+  sourceAuctionHouseLanchItemUid?: number;
+  sourceAuctionHouseMaxPrice?: number;
+  sourceAuctionHouseMaxBidderId?: string;
+  sourceAuctionHouseMaxBidderName?: string;
+  sourceAuctionHouseMaxBidAt?: number;
+  sourceAuctionHouseBidLogs?: MarketOrderAuctionHouseBidState[];
+  sourceAuctionHouseTradeTime?: number;
+  sourceAuctionHouseTradePrice?: number;
   note?: string;
   status: 'listed' | 'locked' | 'sold' | 'cancelled' | 'expired' | 'failed';
   buyerId?: string;
@@ -856,14 +924,116 @@ export interface MarketOrderState {
   failedAt?: number;
 }
 
+export interface MarketOrderSourceAuctionHouseLaunch {
+  stockId: number;
+  boxId: number;
+  price: number;
+  lanchTime: number;
+  startPrice: number;
+  itemCount: number;
+  bagItemCid: number;
+}
+
+export type AuctionHouseItemSortModel = 'LanchTime' | 'Price' | 'MaxPrice' | 'StartPrice';
+
+export interface AuctionHouseLanchItemSnapshot {
+  lanchItemUid: number;
+  itemCid: number;
+  numberCid: number;
+  no: number;
+  startLanchTime: number;
+  endLanchTime: number;
+  displayPeriodEndTime: number;
+  price: number;
+  maxPrice: number;
+  startPrice: number;
+  count: number;
+}
+
+export interface AuctionHouseLanchItemListSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  lanchItemList: AuctionHouseLanchItemSnapshot[];
+  lanchMax: number;
+}
+
+export interface AuctionHouseItemInfoSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  itemInfoList: AuctionHouseLanchItemSnapshot[];
+  currentPage: number;
+  totalPage: number;
+}
+
+export interface AuctionHouseItemPriceInfoSnapshot {
+  itemCid: number;
+  avgPrice: number;
+  count: number;
+}
+
+export interface AuctionHouseItemPriceInfoListSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  allAuctionHouseItemPriceInfo: AuctionHouseItemPriceInfoSnapshot[];
+}
+
+export interface MarketOrderAuctionHouseBidState {
+  playerId: string;
+  playerName: string;
+  bidTime: number;
+  bidPrice: number;
+}
+
+export interface AuctionHouseBidLogSnapshot {
+  bidTime: number;
+  bidPrice: number;
+  lanchItem: AuctionHouseLanchItemSnapshot;
+}
+
+export interface AuctionHouseBidLogListSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  bidLogList: AuctionHouseBidLogSnapshot[];
+}
+
+export interface AuctionHouseBidPriceResponse {
+  errorCode: number;
+  itemUid: number;
+  price: number;
+  bidLog: AuctionHouseBidLogSnapshot;
+}
+
+export interface AuctionHouseUnlanchItemResponse {
+  errorCode: number;
+  itemUid: number;
+  orderId: string;
+}
+
+export interface AuctionHouseTradeInfoSnapshot {
+  tradeTime: number;
+  itemCid: number;
+  numberCid: number;
+  no: number;
+  price: number;
+}
+
+export interface AuctionHouseTradeInfoListSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  tradeInfoInList: AuctionHouseTradeInfoSnapshot[];
+  tradeInfoOutList: AuctionHouseTradeInfoSnapshot[];
+}
+
 export interface MarketOrderView extends MarketOrderState {
   playerId: string;
   playerName: string;
+  sourceAuctionHouseLanchItem?: AuctionHouseLanchItemSnapshot;
 }
 
 export interface MarketOrdersSnapshot {
   generatedAt: number;
   orders: MarketOrderView[];
+  sourceAuctionHouseItemInfo?: AuctionHouseItemInfoSnapshot;
 }
 
 export type SendAuctionStatus = 'listed' | 'settled' | 'recycled' | 'failed';

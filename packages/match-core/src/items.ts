@@ -3,17 +3,25 @@ import {
   SkillGroup,
   bidKingBattleItemDisplayName,
   bidKingSkillDisplayName,
-  itemById,
   skillById,
   skillEffectById
 } from '@bitkingdom/bidking-compat';
 import type { BidKingBattleItemRow, BidKingSkillEffectRow, BidKingSkillGroupRow, BidKingSkillRow } from '@bitkingdom/bidking-compat';
 import type { Clue, SkillFeedEntry } from '@bitkingdom/shared';
+import {
+  bidKingKnowledgeByItemIdFromSkillFeed,
+  bidKingSkillRequiresTargetBox,
+  bidKingSourceHitBoxList,
+  bidKingSourceTargetCount,
+  selectBidKingSlotsBySkill
+} from './bidking/skillTargeting';
+import { bidKingBattleItemUsesRemainingThisRound } from './bidking/battleItemUseRuntime';
+import { bidKingSkillEffectRuntimeProfile } from './bidking/skillEffectRuntime';
 import { pushEvent, requirePlayer, requireRound } from './match';
 import type { MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } from './types';
 
-export type BattleItemRevealKind = 'value' | 'risk' | 'category' | 'quality' | 'quantity' | 'footprint' | 'identity';
-export type BattleItemTargetMode = 'skill_target' | 'highest_value' | 'risk_first' | 'largest_slots';
+export type BattleItemRevealKind = 'value' | 'risk' | 'category' | 'quality' | 'quantity' | 'footprint' | 'identity' | 'system';
+export type BattleItemTargetMode = 'skill_target' | 'highest_value' | 'risk_first' | 'largest_slots' | 'system_effect';
 export type BattleItemEffectImplementationStatus = 'implemented' | 'simplified';
 
 export interface BattleItemEffectPlan {
@@ -40,6 +48,7 @@ export interface BattleItemEffectPlan {
   revealKind: BattleItemRevealKind;
   targetMode: BattleItemTargetMode;
   targetPlayerRequired: boolean;
+  targetBoxRequired: boolean;
   valueHint: boolean;
   riskHint: boolean;
   categoryHint: boolean;
@@ -58,7 +67,13 @@ export function useBattleItem(
   targetPlayerId?: string
 ): MatchRuntimeState {
   const { round, player, skillContext, effectPlan, targetPlayer } = prepareBattleItemUse(state, playerId, item, targetPlayerId);
-  let clue = buildBattleItemClue(state, playerId, item, skillContext, effectPlan, now);
+  const targets = battleItemTargets(state, playerId, skillContext, effectPlan);
+  const resolvedEffectPlan = {
+    ...effectPlan,
+    targetCount: targets.length,
+    description: battleItemEffectDescription(item, skillContext.skill, skillContext.effect, effectPlan.revealKind, targets.length, effectPlan.requestedTargetCount)
+  };
+  let clue = buildBattleItemClue(state, playerId, item, skillContext, resolvedEffectPlan, targets, now);
   if (targetPlayer) {
     clue = {
       ...clue,
@@ -85,10 +100,11 @@ export function useBattleItem(
     effectKey: skillContext.effect?.effect_key,
     effectName: skillContext.effect?.effect_desc,
     skillTarget: skillContext.skill?.skilltarget,
-    targetCount: effectPlan.targetCount,
+    targetCount: targets.length,
     text: clue.text,
     visibility: 'private',
     targetItemIds: clue.targetItemIds ?? (clue.targetItemId ? [clue.targetItemId] : undefined),
+    hitBoxList: skillContext.skill ? bidKingSourceHitBoxList(round, targets, skillContext.skill) : undefined,
     createdAt: now
   };
   round.skillFeed.push(entry);
@@ -99,7 +115,7 @@ export function useBattleItem(
     skillGroup: item.skill_group,
     skillId: skillContext.skill?.id,
     effectCategory: skillContext.effect?.Category,
-    effectPlan,
+    effectPlan: resolvedEffectPlan,
     targetPlayerId: targetPlayer?.id,
     targetPlayerName: targetPlayer?.name,
     cooldownRemaining,
@@ -134,6 +150,9 @@ function prepareBattleItemUse(
   }
   if (round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === playerId))) {
     throw new Error('Battle items must be used before bidding');
+  }
+  if (bidKingBattleItemUsesRemainingThisRound(state, playerId) <= 0) {
+    throw new Error('Battle item use limit reached for this round');
   }
   const cooldownRemaining = battleItemCooldownRemainingForPlayer(player, item.id);
   if (cooldownRemaining > 0) {
@@ -197,10 +216,10 @@ export function battleItemEffectPlanForItem(
 ): BattleItemEffectPlan {
   const skill = skillContext.skill;
   const effect = skillContext.effect;
-  const requestedTargetCount = skill?.skill_count && skill.skill_count > 0
-    ? skill.skill_count
+  const requestedTargetCount = skill
+    ? bidKingSourceTargetCount(skill)
     : 1 + Math.floor(item.item_quality / 3);
-  const targetCount = Math.max(1, Math.min(3, requestedTargetCount));
+  const targetCount = requestedTargetCount;
   const effectCategory = effect?.Category;
   const revealKind = battleItemRevealKind(item, effectCategory);
   const targetMode = battleItemTargetMode(item, revealKind, skill);
@@ -227,7 +246,8 @@ export function battleItemEffectPlanForItem(
     effectName: effect?.effect_desc,
     revealKind,
     targetMode,
-    targetPlayerRequired: Boolean(skill && [7, 8, 9].includes(skill.skilltarget)),
+    targetPlayerRequired: false,
+    targetBoxRequired: Boolean(skill && bidKingSkillRequiresTargetBox(skill)),
     valueHint: revealKind === 'value',
     riskHint: revealKind === 'risk',
     categoryHint: revealKind === 'category',
@@ -235,7 +255,7 @@ export function battleItemEffectPlanForItem(
     quantityHint: revealKind === 'quantity' || revealKind === 'footprint',
     identityHint: revealKind === 'identity',
     implementationStatus: battleItemEffectImplementationStatus(revealKind, effectCategory),
-    description: battleItemEffectDescription(item, skill, effect, revealKind, targetCount)
+    description: battleItemEffectDescription(item, skill, effect, revealKind, targetCount, requestedTargetCount)
   };
   return plan;
 }
@@ -246,26 +266,36 @@ function buildBattleItemClue(
   item: BidKingBattleItemRow,
   skillContext: BattleItemSkillContext,
   effectPlan: BattleItemEffectPlan,
+  targets: readonly WarehouseSlot[],
   now: number
 ): Clue {
   const round = requireRound(state);
-  const targets = battleItemTargets(state, skillContext, effectPlan);
   const targetItems = targets.map((slot) => slot.item);
   const prefix = `battle_item_${item.id}_${playerId}_${round.index}_${now}`;
   const itemName = bidKingBattleItemDisplayName(item);
   const skillName = skillContext.skill ? bidKingSkillDisplayName(skillContext.skill) : undefined;
+  const targetItemIds = targetItems.map((target) => target.id);
+  const sourceText = battleItemClueTextForPlan(item, skillContext, effectPlan, targets);
   if (effectPlan.revealKind === 'value') {
-    const totalValue = targetItems.reduce((sum, target) => sum + target.value, 0);
+    const valueHint = battleItemValueHint(effectPlan, targets);
     return {
       id: prefix,
       kind: 'value',
-      text: `${itemName}·${skillName ?? '掌眼'}：锁定 ${targetItems.length} 个格位，估值约 ${Math.round(totalValue * 0.9).toLocaleString()} ～ ${Math.round(totalValue * 1.12).toLocaleString()}。`,
+      text: sourceText,
       accuracy: Math.min(0.96, 0.68 + item.item_quality * 0.045),
-      targetItemIds: targetItems.map((target) => target.id),
-      valueHint: {
-        min: Math.round(totalValue * 0.9),
-        max: Math.round(totalValue * 1.12)
-      },
+      targetItemIds,
+      valueHint,
+      source: 'skill',
+      isTruthful: true
+    };
+  }
+  if (effectPlan.revealKind === 'system') {
+    return {
+      id: prefix,
+      kind: 'category',
+      text: sourceText,
+      accuracy: 1,
+      targetItemIds: [],
       source: 'skill',
       isTruthful: true
     };
@@ -275,10 +305,10 @@ function buildBattleItemClue(
     return {
       id: prefix,
       kind: 'category',
-      text: `${itemName}·${skillName ?? '辨形'}：显示藏品本体，${target.name}，${target.category}，品质接近${target.rarity}。`,
+      text: sourceText,
       accuracy: Math.min(0.97, 0.7 + item.item_quality * 0.045),
       targetItemId: target.id,
-      targetItemIds: [target.id],
+      targetItemIds: targetItemIds.length > 0 ? targetItemIds : [target.id],
       riskHint: target.isFake ? 'fake' : target.repairCost > 0 ? 'repair' : 'safe',
       source: 'skill',
       isTruthful: true
@@ -290,9 +320,10 @@ function buildBattleItemClue(
     kind: effectPlan.revealKind === 'risk' ? 'risk' : 'category',
     text: effectPlan.revealKind === 'risk'
       ? `${itemName}·${skillName ?? '验伪'}：命中格位风险为${riskHint === 'fake' ? '赝品风险' : riskHint === 'repair' ? '修复风险' : '安全'}，品类 ${target.category}。`
-      : battleItemClueTextForPlan(item, skillContext, effectPlan, target),
+      : sourceText,
     accuracy: Math.min(0.95, 0.62 + item.item_quality * 0.05),
     targetItemId: target.id,
+    targetItemIds: targetItemIds.length > 0 ? targetItemIds : [target.id],
     riskHint,
     source: 'skill',
     isTruthful: true
@@ -301,31 +332,46 @@ function buildBattleItemClue(
 
 function battleItemTargets(
   state: MatchRuntimeState,
+  playerId: string,
   skillContext: BattleItemSkillContext,
   effectPlan: BattleItemEffectPlan
 ): WarehouseSlot[] {
   const round = requireRound(state);
-  const count = effectPlan.targetCount;
+  const count = effectPlan.requestedTargetCount;
   const skill = skillContext.skill;
-  let slots = skill
-    ? slotsByBattleItemSkillTarget(round.container.warehouseSlots, state, skill, effectPlan)
-    : [...round.container.warehouseSlots];
+  if (effectPlan.revealKind === 'system') {
+    return [];
+  }
+  if (skill) {
+    return selectBidKingSlotsBySkill(round.container.warehouseSlots, state, skill, {
+      knownInfoByItemId: bidKingKnowledgeByItemIdFromSkillFeed(round.container.warehouseSlots, round.skillFeed, playerId)
+    });
+  }
+  let slots = [...round.container.warehouseSlots];
   if (slots.length === 0) {
     slots = [...round.container.warehouseSlots];
   }
   if (effectPlan.targetMode === 'highest_value') {
-    return slots.sort((left, right) => right.item.value - left.item.value).slice(0, count);
+    return slots.sort((left, right) => right.item.value - left.item.value).slice(0, count === 999 ? slots.length : count);
   }
   if (effectPlan.targetMode === 'risk_first') {
     const risky = slots
       .filter((slot) => slot.item.isFake || slot.item.repairCost > 0)
       .sort((left, right) => Number(right.item.isFake) - Number(left.item.isFake) || right.item.repairCost - left.item.repairCost);
-    return (risky.length > 0 ? risky : slots.sort((left, right) => right.item.value - left.item.value)).slice(0, count);
+    return (risky.length > 0 ? risky : slots.sort((left, right) => right.item.value - left.item.value)).slice(0, count === 999 ? slots.length : count);
   }
-  return slots.sort((left, right) => (right.w * right.h) - (left.w * left.h)).slice(0, count);
+  return slots.sort((left, right) => (right.w * right.h) - (left.w * left.h)).slice(0, count === 999 ? slots.length : count);
 }
 
 function battleItemSkillContext(state: MatchRuntimeState | undefined, item: BidKingBattleItemRow): BattleItemSkillContext {
+  const directSkill = skillForBattleItem(item);
+  if (directSkill) {
+    const effectId = directSkill.skilleffect_position[0];
+    return {
+      skill: directSkill,
+      effect: effectId ? skillEffectById(effectId) : undefined
+    };
+  }
   const group = skillGroupForBattleItem(item);
   const candidates = group?.skill_group
     .map(([skillId, weight]) => ({ item: skillById(skillId), weight }))
@@ -337,6 +383,10 @@ function battleItemSkillContext(state: MatchRuntimeState | undefined, item: BidK
     skill,
     effect: effectId ? skillEffectById(effectId) : undefined
   };
+}
+
+export function skillForBattleItem(item: BidKingBattleItemRow): BidKingSkillRow | undefined {
+  return Skill.find((candidate) => candidate.skill_name === `itemName_${item.id}`);
 }
 
 function resolveBattleItemSkill(
@@ -375,6 +425,10 @@ function battleItemEffectName(item: BidKingBattleItemRow, skillContext: BattleIt
 
 function battleItemRevealKind(item: BidKingBattleItemRow, effectCategory: number | undefined): BattleItemRevealKind {
   if (effectCategory !== undefined) {
+    const effectProfile = bidKingSkillEffectRuntimeProfile(effectCategory);
+    if (effectProfile.runtimeKind === 'system' || effectProfile.runtimeKind === 'unsupported') {
+      return 'system';
+    }
     if ([5, 8, 9, 10, 14].includes(effectCategory)) {
       return 'value';
     }
@@ -408,7 +462,10 @@ function battleItemTargetMode(
   revealKind: BattleItemRevealKind,
   skill: BidKingSkillRow | undefined
 ): BattleItemTargetMode {
-  if (skill && skill.skilltarget !== 0) {
+  if (revealKind === 'system') {
+    return 'system_effect';
+  }
+  if (skill) {
     return 'skill_target';
   }
   if (revealKind === 'value' || item.battle_item_type === 2) {
@@ -424,9 +481,13 @@ function battleItemEffectImplementationStatus(
   revealKind: BattleItemRevealKind,
   effectCategory: number | undefined
 ): BattleItemEffectImplementationStatus {
-  const directlyImplemented = effectCategory === undefined
-    || [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 22].includes(effectCategory);
-  return directlyImplemented && revealKind !== 'category' ? 'implemented' : 'simplified';
+  if (effectCategory === undefined) {
+    return revealKind === 'category' || revealKind === 'system' ? 'simplified' : 'implemented';
+  }
+  const effectProfile = bidKingSkillEffectRuntimeProfile(effectCategory);
+  return effectProfile.runtimeKind === 'system' || effectProfile.runtimeKind === 'unsupported'
+    ? 'simplified'
+    : 'implemented';
 }
 
 function battleItemEffectDescription(
@@ -434,14 +495,23 @@ function battleItemEffectDescription(
   skill: BidKingSkillRow | undefined,
   effect: BidKingSkillEffectRow | undefined,
   revealKind: BattleItemRevealKind,
-  targetCount: number
+  targetCount: number,
+  requestedTargetCount: number
 ): string {
   const itemName = bidKingBattleItemDisplayName(item);
   const skillName = skill ? bidKingSkillDisplayName(skill) : '默认试宝情报';
   const effectName = effect?.effect_desc ?? '按试宝令类型生成情报';
   const duration = skill && skill.skill_round > 0 ? `，持续 ${skill.skill_round} 回合` : '';
   const cooldown = skill && skill.skill_CD > 0 ? `，冷却 ${skill.skill_CD} 回合` : '';
-  return `${itemName} 使用 ${skillName}/${effectName}，揭示 ${targetCount} 个目标的${battleItemRevealLabel(revealKind)}${duration}${cooldown}`;
+  if (revealKind === 'system') {
+    return `${itemName} 使用 ${skillName}/${effectName}，触发非仓库情报效果${duration}${cooldown}`;
+  }
+  const countText = requestedTargetCount === 999 && targetCount === 999
+    ? '所有匹配目标'
+    : requestedTargetCount === 999
+      ? `${targetCount} 个匹配目标`
+      : `${targetCount} 个目标`;
+  return `${itemName} 使用 ${skillName}/${effectName}，揭示 ${countText}的${battleItemRevealLabel(revealKind)}${duration}${cooldown}`;
 }
 
 function battleItemRevealLabel(revealKind: BattleItemRevealKind): string {
@@ -463,6 +533,9 @@ function battleItemRevealLabel(revealKind: BattleItemRevealKind): string {
   if (revealKind === 'identity') {
     return '藏品本体';
   }
+  if (revealKind === 'system') {
+    return '系统效果';
+  }
   return '品类';
 }
 
@@ -470,10 +543,68 @@ function battleItemClueTextForPlan(
   item: BidKingBattleItemRow,
   skillContext: BattleItemSkillContext,
   effectPlan: BattleItemEffectPlan,
-  target: WarehouseSlot['item']
+  targets: readonly WarehouseSlot[]
 ): string {
   const itemName = bidKingBattleItemDisplayName(item);
   const skillName = skillContext.skill ? bidKingSkillDisplayName(skillContext.skill) : '格位侦察';
+  const target = targets[0]?.item;
+  const targetItems = targets.map((slot) => slot.item);
+  const count = targetItems.length;
+  const cells = targetItems.reduce((sum, candidate) => sum + candidate.footprint.w * candidate.footprint.h, 0);
+  const totalValue = targetItems.reduce((sum, candidate) => sum + candidate.value, 0);
+  const category = effectPlan.effectCategory;
+  const categories = skillContext.skill?.skilleffect_position
+    .map((effectId) => skillEffectById(effectId)?.Category)
+    .filter((entry): entry is number => typeof entry === 'number') ?? [];
+  if (effectPlan.revealKind === 'system') {
+    return `${itemName}·${skillName}：触发${effectPlan.effectName ?? '系统效果'}，不直接揭示仓库藏品。`;
+  }
+  if (categories.includes(1) && categories.includes(7)) {
+    return `${itemName}·${skillName}：显示 ${count} 件藏品的轮廓和品质。`;
+  }
+  if (category === 2) {
+    return `${itemName}·${skillName}：命中藏品总格数为 ${cells} 格。`;
+  }
+  if (category === 3) {
+    return `${itemName}·${skillName}：命中藏品平均格数为 ${formatBattleItemNumber(cells / Math.max(1, count))} 格。`;
+  }
+  if (category === 4) {
+    return `${itemName}·${skillName}：命中藏品数量为 ${count} 件。`;
+  }
+  if (category === 5) {
+    return target
+      ? `${itemName}·${skillName}：显示 ${count} 件藏品价值，首个命中格价值 ${target.value.toLocaleString()}。`
+      : `${itemName}·${skillName}：没有命中藏品价值。`;
+  }
+  if (category === 8) {
+    return `${itemName}·${skillName}：命中藏品平均价值为 ${formatBattleItemNumber(totalValue / Math.max(1, count))}。`;
+  }
+  if (category === 9) {
+    return `${itemName}·${skillName}：命中藏品每格均价为 ${formatBattleItemNumber(totalValue / Math.max(1, cells))}。`;
+  }
+  if (category === 10) {
+    return `${itemName}·${skillName}：命中藏品总价值为 ${totalValue.toLocaleString()}。`;
+  }
+  if (category === 11) {
+    return `${itemName}·${skillName}：命中藏品总占格为 ${cells} 格。`;
+  }
+  if (category === 12) {
+    return target
+      ? `${itemName}·${skillName}：目标品质为${target.rarity}。`
+      : `${itemName}·${skillName}：没有命中品质信息。`;
+  }
+  if (category === 13) {
+    return target
+      ? `${itemName}·${skillName}：目标品类为${target.category}。`
+      : `${itemName}·${skillName}：没有命中品类信息。`;
+  }
+  if (category === 14) {
+    const digits = target ? String(Math.max(0, Math.floor(target.value))).length : 0;
+    return `${itemName}·${skillName}：命中格价格为 ${digits} 位数。`;
+  }
+  if (!target) {
+    return `${itemName}·${skillName}：没有命中藏品。`;
+  }
   if (effectPlan.revealKind === 'quality') {
     return `${itemName}·${skillName}：命中格位品质接近${target.rarity}，品类 ${target.category}。`;
   }
@@ -481,7 +612,7 @@ function battleItemClueTextForPlan(
     return `${itemName}·${skillName}：命中格位占用 ${target.footprint.w * target.footprint.h} 格，尺寸 ${target.footprint.w}x${target.footprint.h}。`;
   }
   if (effectPlan.revealKind === 'footprint') {
-    return `${itemName}·${skillName}：命中格位轮廓 ${target.footprint.w}x${target.footprint.h}，品类 ${target.category}。`;
+    return `${itemName}·${skillName}：命中 ${count} 件藏品轮廓，首个命中格 ${target.footprint.w}x${target.footprint.h}。`;
   }
   if (effectPlan.revealKind === 'identity') {
     return `${itemName}·${skillName}：显示藏品本体，${target.name}，${target.category}，品质接近${target.rarity}。`;
@@ -489,153 +620,41 @@ function battleItemClueTextForPlan(
   return `${itemName}·${skillName}：命中格位属于${target.category}，品质接近${target.rarity}。`;
 }
 
-function slotsByBattleItemSkillTarget(
-  slots: readonly WarehouseSlot[],
-  state: MatchRuntimeState,
-  skill: BidKingSkillRow,
-  effectPlan: BattleItemEffectPlan
-): WarehouseSlot[] {
-  let filtered = applyBattleItemTarget(slots, state, skill.skilltarget, skill.skilltargetvalue, effectPlan);
-  filtered = applyBattleItemSecondaryTarget(filtered, skill.skilltarget2, skill.skilltargetvalue2);
-  filtered = applyBattleItemSecondaryTarget(filtered, skill.skilltarget3, skill.skilltargetvalue3);
-  return filtered.length > 0 ? filtered : [...slots];
+function battleItemValueHint(
+  effectPlan: BattleItemEffectPlan,
+  targets: readonly WarehouseSlot[]
+): { min: number; max: number } | undefined {
+  const targetItems = targets.map((slot) => slot.item);
+  const target = targetItems[0];
+  if (!target) {
+    return undefined;
+  }
+  const totalValue = targetItems.reduce((sum, candidate) => sum + candidate.value, 0);
+  const cells = targetItems.reduce((sum, candidate) => sum + candidate.footprint.w * candidate.footprint.h, 0);
+  if (effectPlan.effectCategory === 5) {
+    return { min: target.value, max: target.value };
+  }
+  if (effectPlan.effectCategory === 14) {
+    const digits = Math.max(1, String(Math.max(0, Math.floor(target.value))).length);
+    return { min: digits === 1 ? 0 : 10 ** (digits - 1), max: 10 ** digits - 1 };
+  }
+  if (effectPlan.effectCategory === 8) {
+    const value = Math.round(totalValue / Math.max(1, targetItems.length));
+    return { min: value, max: value };
+  }
+  if (effectPlan.effectCategory === 9) {
+    const value = Math.round(totalValue / Math.max(1, cells));
+    return { min: value, max: value };
+  }
+  if (effectPlan.effectCategory === 10) {
+    return { min: totalValue, max: totalValue };
+  }
+  return { min: totalValue, max: totalValue };
 }
 
-function applyBattleItemTarget(
-  slots: readonly WarehouseSlot[],
-  state: MatchRuntimeState,
-  targetType: number,
-  values: readonly number[],
-  effectPlan: BattleItemEffectPlan
-): WarehouseSlot[] {
-  if (targetType === 0) {
-    return shuffleBattleItemSlots(slots, state);
+function formatBattleItemNumber(value: number): string {
+  if (!Number.isFinite(value)) {
+    return '0';
   }
-  if (targetType === 1) {
-    return slots.filter((slot) => values.some((value) => itemRowForBattleItemSlot(slot)?.item_type_ids.includes(value)));
-  }
-  if (targetType === 2) {
-    return slots.filter((slot) => values.includes(itemRowForBattleItemSlot(slot)?.item_quality ?? -1));
-  }
-  if (targetType === 3) {
-    return slots.filter((slot) => values.includes(numericItemIdForBattleItemSlot(slot) ?? -1));
-  }
-  if (targetType === 4) {
-    const typeId = weightedBattleItemTargetValue(values, state, [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]);
-    return slots.filter((slot) => itemRowForBattleItemSlot(slot)?.item_type_ids.includes(typeId));
-  }
-  if (targetType === 5) {
-    const quality = weightedBattleItemTargetValue(values, state, [1, 2, 3, 4, 5, 6]);
-    return slots.filter((slot) => itemRowForBattleItemSlot(slot)?.item_quality === quality);
-  }
-  if (targetType === 6) {
-    return sortBattleItemSlotsByFilter(slots, values, effectPlan);
-  }
-  if (targetType === 10) {
-    return filterBattleItemSlotsByShape(slots, values);
-  }
-  return shuffleBattleItemSlots(slots, state);
-}
-
-function applyBattleItemSecondaryTarget(
-  slots: WarehouseSlot[],
-  targetType: number,
-  values: readonly number[]
-): WarehouseSlot[] {
-  if (targetType === 0 || slots.length === 0) {
-    return slots;
-  }
-  if (targetType === 1) {
-    return slots.filter((slot) => values.some((value) => itemRowForBattleItemSlot(slot)?.item_type_ids.includes(value)));
-  }
-  if (targetType === 2) {
-    return slots.filter((slot) => values.includes(itemRowForBattleItemSlot(slot)?.item_quality ?? -1));
-  }
-  if (targetType === 3) {
-    return slots.filter((slot) => values.includes(numericItemIdForBattleItemSlot(slot) ?? -1));
-  }
-  if (targetType === 10) {
-    return filterBattleItemSlotsByShape(slots, values);
-  }
-  return slots;
-}
-
-function sortBattleItemSlotsByFilter(
-  slots: readonly WarehouseSlot[],
-  values: readonly number[],
-  effectPlan: BattleItemEffectPlan
-): WarehouseSlot[] {
-  const filterType = values[0] ?? (effectPlan.valueHint ? 3 : 1);
-  const isMax = values[1] !== 2;
-  return [...slots].sort((left, right) => {
-    const diff = battleItemFilterValue(right, filterType) - battleItemFilterValue(left, filterType);
-    return isMax ? diff : -diff;
-  });
-}
-
-function battleItemFilterValue(slot: WarehouseSlot, filterType: number): number {
-  if (filterType === 1) {
-    return slot.item.footprint.w * slot.item.footprint.h;
-  }
-  if (filterType === 2) {
-    return itemRowForBattleItemSlot(slot)?.item_quality ?? 0;
-  }
-  if (filterType === 3) {
-    return slot.item.value;
-  }
-  if (filterType === 4) {
-    return slot.item.isFake ? 1 : 0;
-  }
-  return slot.item.value;
-}
-
-function itemRowForBattleItemSlot(slot: WarehouseSlot): ReturnType<typeof itemById> {
-  const itemId = numericItemIdForBattleItemSlot(slot);
-  return itemId ? itemById(itemId) : undefined;
-}
-
-function numericItemIdForBattleItemSlot(slot: WarehouseSlot): number | undefined {
-  const match = /^compat_(\d+)_/.exec(slot.item.id);
-  return match?.[1] ? Number(match[1]) : undefined;
-}
-
-function filterBattleItemSlotsByShape(slots: readonly WarehouseSlot[], values: readonly number[]): WarehouseSlot[] {
-  const [w, h, area] = values;
-  return slots.filter((slot) => {
-    const footprintArea = slot.item.footprint.w * slot.item.footprint.h;
-    return (w === undefined || w === 0 || slot.item.footprint.w === w)
-      && (h === undefined || h === 0 || slot.item.footprint.h === h)
-      && (area === undefined || area === 0 || footprintArea === area);
-  });
-}
-
-function weightedBattleItemTargetValue(
-  values: readonly number[],
-  state: MatchRuntimeState,
-  fallback: readonly number[]
-): number {
-  if (values.length <= 1 && (values[0] ?? 0) === 0) {
-    return state.rng.pick([...fallback]);
-  }
-  const pairs: Array<{ item: number; weight: number }> = [];
-  for (let index = 0; index < values.length; index += 2) {
-    const value = values[index];
-    const weight = values[index + 1] ?? 1;
-    if (value !== undefined && value > 0 && weight > 0) {
-      pairs.push({ item: value, weight });
-    }
-  }
-  if (pairs.length === 0) {
-    return state.rng.pick([...fallback]);
-  }
-  return state.rng.weighted(pairs);
-}
-
-function shuffleBattleItemSlots(slots: readonly WarehouseSlot[], state: MatchRuntimeState): WarehouseSlot[] {
-  const shuffled = [...slots];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const target = Math.floor(state.rng.next() * (index + 1));
-    [shuffled[index], shuffled[target]] = [shuffled[target]!, shuffled[index]!];
-  }
-  return shuffled;
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }

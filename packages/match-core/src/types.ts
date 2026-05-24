@@ -1,5 +1,8 @@
 import type {
   AuctionMode,
+  BidKingShopStatusDataSnapshot,
+  BidKingUserSimBuffItemDataSnapshot,
+  BidKingUserSimSelectGameItemDataSnapshot,
   BidKingUserSelectItemDataSnapshot,
   Clue,
   CoreAuctionMode,
@@ -13,6 +16,7 @@ import type {
   RoundBidFeedback,
   RoundHistoryEntry,
   RoundSettlement,
+  BidKingSimGameLogSnapshot,
   SkillFeedEntry,
   TransactionLog,
   WarehouseSlotView
@@ -28,6 +32,12 @@ export interface CreateMatchPlayer {
   heroCid?: number;
   heroSkinCid?: number;
   selectedItemList?: BidKingUserSelectItemDataSnapshot[];
+  simGold?: number;
+  gameWinItemList?: number[];
+  simShopStatus?: BidKingShopStatusDataSnapshot;
+  simGameLog?: BidKingSimGameLogSnapshot;
+  simSelectItemList?: BidKingUserSimSelectGameItemDataSnapshot[];
+  simBuffItemList?: BidKingUserSimBuffItemDataSnapshot[];
 }
 
 export interface RuntimePlayer {
@@ -39,6 +49,12 @@ export interface RuntimePlayer {
   heroCid?: number;
   heroSkinCid?: number;
   selectedItemList?: BidKingUserSelectItemDataSnapshot[];
+  simGold?: number;
+  gameWinItemList?: number[];
+  simShopStatus?: BidKingShopStatusDataSnapshot;
+  simGameLog?: BidKingSimGameLogSnapshot;
+  simSelectItemList?: BidKingUserSimSelectGameItemDataSnapshot[];
+  simBuffItemList?: BidKingUserSimBuffItemDataSnapshot[];
   cash: number;
   status: PublicPlayer['status'];
   passed: boolean;
@@ -112,6 +128,7 @@ export interface MatchRuntimeState {
   coreMode: boolean;
   coreAuctionMode?: CoreAuctionMode;
   coreBidMapId?: number;
+  bidKingActiveSystemSkillIds?: number[];
   roundIndex: number;
   totalRounds: number;
   players: RuntimePlayer[];

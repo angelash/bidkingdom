@@ -4,6 +4,9 @@ import type {
   AuctionMode,
   BidKingBoxInfoDataSnapshot,
   BidKingGameDataSnapshot,
+  BidKingProtocolMessageRef,
+  BidKingShopStatusDataSnapshot,
+  BidKingSimGameLogSnapshot,
   Clue,
   CoreAuctionMode,
   FinalMatchInsight,
@@ -28,9 +31,16 @@ import {
   createBidKingCoreWarehouseInstance
 } from './bidking/compatRuntime';
 import { bidKingBidMapPlayerCount } from './bidking/bidMapRuntime';
+import {
+  bidKingBattleItemUseLimitThisRound,
+  bidKingBattleItemUsesRemainingThisRound,
+  bidKingBattleItemUsesThisRound
+} from './bidking/battleItemUseRuntime';
 import { bidKingBidLossRebateAmount } from './bidking/economyRuleRuntime';
 import { buildBidKingGameDataSnapshot } from './bidking/gameDataRuntime';
 import { bidKingInitialCashForBidMap } from './bidking/initialCashRuntime';
+import { bidKingSkillEffectKnowledge, bidKingSkillEffectPublicFields } from './bidking/skillEffectRuntime';
+import { bidKingSourceEffectCategoriesForFeedEntry } from './bidking/skillTargeting';
 import { buildPrivateClues, buildPublicClues } from './clues';
 import { createRandom, hashSeed } from './random';
 import { calculateNetWorth, calculateSetBonus, sumItemValue } from './scoring';
@@ -51,6 +61,7 @@ export function createMatch(params: {
   coreMode?: boolean;
   coreAuctionMode?: CoreAuctionMode;
   coreBidMapId?: number;
+  bidKingActiveSystemSkillIds?: number[];
   config?: GameConfig;
   now?: number;
 }): MatchRuntimeState {
@@ -80,6 +91,12 @@ export function createMatch(params: {
     heroCid: player.heroCid,
     heroSkinCid: player.heroSkinCid,
     selectedItemList: player.selectedItemList?.map((entry) => ({ ...entry })),
+    simGold: player.simGold,
+    gameWinItemList: player.gameWinItemList ? [...player.gameWinItemList] : undefined,
+    simShopStatus: cloneBidKingShopStatusData(player.simShopStatus),
+    simGameLog: cloneBidKingSimGameLogSnapshot(player.simGameLog),
+    simSelectItemList: player.simSelectItemList?.map((entry) => ({ ...entry })),
+    simBuffItemList: player.simBuffItemList?.map((entry) => ({ ...entry })),
     cash: runtimeConfig.rules.initialCash,
     status: 'playing',
     passed: false,
@@ -103,6 +120,7 @@ export function createMatch(params: {
     coreMode: params.coreMode ?? false,
     coreAuctionMode: params.coreMode ? params.coreAuctionMode ?? rng.pick<CoreAuctionMode>(['open', 'sealed']) : undefined,
     coreBidMapId: params.coreBidMapId,
+    bidKingActiveSystemSkillIds: params.bidKingActiveSystemSkillIds ? [...params.bidKingActiveSystemSkillIds] : undefined,
     roundIndex: -1,
     totalRounds: params.totalRounds ?? runtimeConfig.rules.totalRounds,
     players,
@@ -242,6 +260,75 @@ function buildPublicMatchState(state: MatchRuntimeState, playerId?: string): Pub
   };
 }
 
+function cloneBidKingShopStatusData(
+  shopStatus: BidKingShopStatusDataSnapshot | undefined
+): BidKingShopStatusDataSnapshot | undefined {
+  return shopStatus
+    ? {
+        ...shopStatus,
+        shopItemList: shopStatus.shopItemList.map((entry) => ({ ...entry }))
+      }
+    : undefined;
+}
+
+function cloneBidKingSimGameLogSnapshot(
+  simGameLog: BidKingSimGameLogSnapshot | undefined
+): BidKingSimGameLogSnapshot | undefined {
+  return simGameLog
+    ? {
+        ...simGameLog,
+        gameWinItemList: [...simGameLog.gameWinItemList],
+        simShopStatus: cloneBidKingShopStatusData(simGameLog.simShopStatus),
+        gameData: cloneBidKingGameDataSnapshot(simGameLog.gameData),
+        simSelectItemList: simGameLog.simSelectItemList.map((entry) => ({ ...entry })),
+        simBuffItemList: simGameLog.simBuffItemList.map((entry) => ({ ...entry }))
+      }
+    : undefined;
+}
+
+function cloneBidKingGameDataSnapshot(
+  gameData: BidKingGameDataSnapshot | undefined
+): BidKingGameDataSnapshot | undefined {
+  return gameData
+    ? {
+        ...gameData,
+        stockContainer: {
+          ...gameData.stockContainer,
+          stockBoxes: gameData.stockContainer.stockBoxes.map((box) => ({
+            ...box,
+            position: { ...box.position },
+            item: {
+              ...box.item,
+              boxPositionData: box.item.boxPositionData.map((position) => ({ ...position }))
+            }
+          }))
+        },
+        userLog: gameData.userLog.map((user) => ({
+          ...user,
+          useItemLog: user.useItemLog.map((entry) => ({ ...entry })),
+          priceLog: user.priceLog.map((entry) => ({ ...entry })),
+          simSelectItemList: user.simSelectItemList.map((entry) => ({ ...entry })),
+          simBuffItemList: user.simBuffItemList.map((entry) => ({ ...entry })),
+          selectItemList: user.selectItemList.map((entry) => ({ ...entry }))
+        })),
+        heroSkillLog: cloneBidKingSkillLogs(gameData.heroSkillLog),
+        mapSkillLog: cloneBidKingSkillLogs(gameData.mapSkillLog),
+        itemSkillLog: cloneBidKingSkillLogs(gameData.itemSkillLog)
+      }
+    : undefined;
+}
+
+function cloneBidKingSkillLogs(
+  skillLogs: BidKingGameDataSnapshot['heroSkillLog']
+): BidKingGameDataSnapshot['heroSkillLog'] {
+  return skillLogs.map((log) => ({
+    ...log,
+    hitBoxList: log.hitBoxList.map((box) => ({ ...box, itemType: [...box.itemType] })),
+    hitItemTypeList: [...log.hitItemTypeList],
+    hitItemQuilityList: [...log.hitItemQuilityList]
+  }));
+}
+
 export function buildSnapshot(state: MatchRuntimeState, playerId?: string) {
   const player = playerId ? state.players.find((candidate) => candidate.id === playerId) : undefined;
   return {
@@ -254,9 +341,18 @@ export function buildSnapshot(state: MatchRuntimeState, playerId?: string) {
           skillUsesRemaining: player.skillUsesRemaining,
           skillUsedThisRound: player.skillUsedThisRound,
           insuranceActive: player.insuranceActive,
+          battleItemUseLimitThisRound: bidKingBattleItemUseLimitThisRound(state),
+          battleItemUsesThisRound: bidKingBattleItemUsesThisRound(state, player.id),
+          battleItemUsesRemainingThisRound: bidKingBattleItemUsesRemainingThisRound(state, player.id),
           battleItemCooldowns: Object.keys(player.battleItemCooldowns).length > 0
             ? { ...player.battleItemCooldowns }
-            : undefined
+            : undefined,
+          simGold: player.simGold,
+          gameWinItemList: player.gameWinItemList ? [...player.gameWinItemList] : undefined,
+          simShopStatus: cloneBidKingShopStatusData(player.simShopStatus),
+          simGameLog: cloneBidKingSimGameLogSnapshot(player.simGameLog),
+          simSelectItemList: player.simSelectItemList?.map((entry) => ({ ...entry })),
+          simBuffItemList: player.simBuffItemList?.map((entry) => ({ ...entry }))
         }
       : undefined
   };
@@ -320,8 +416,64 @@ export function pushEvent(
     type,
     actorId,
     payload,
+    sourceProtocols: bidKingSourceProtocolsForEvent(state, type),
     createdAt: now
   });
+}
+
+function bidKingSourceProtocolsForEvent(
+  state: MatchRuntimeState,
+  type: string
+): BidKingProtocolMessageRef[] | undefined {
+  if (!state.coreMode) {
+    return undefined;
+  }
+  switch (type) {
+    case 'round_started':
+      return [
+        state.roundIndex <= 0
+          ? protocolRef(33, 'S2C_33_game_start_notify', 'S2C', ['GameData'])
+          : protocolRef(37, 'S2C_37_game_next_round_notify', 'S2C', ['GameData'])
+      ];
+    case 'bid_submitted':
+      return [
+        protocolRef(34, 'C2S_34_game_bid', 'C2S', ['Token', 'GameUid', 'BidPrice']),
+        protocolRef(35, 'S2C_35_game_bid', 'S2C', ['ErrorCode']),
+        protocolRef(119, 'S2C_119_game_user_bid_price_notify', 'S2C', ['UserUid', 'GameUid'])
+      ];
+    case 'auction_passed':
+      return [
+        protocolRef(42, 'C2S_42_game_stand_down', 'C2S', ['Token', 'GameUid']),
+        protocolRef(43, 'S2C_43_game_stand_down', 'S2C', ['ErrorCode'])
+      ];
+    case 'battle_item_used':
+      return [
+        protocolRef(38, 'C2S_38_game_use_item', 'C2S', ['Token', 'GameUid', 'ItemCid']),
+        protocolRef(39, 'S2C_39_game_use_item', 'S2C', ['ErrorCode', 'ItemSkillLog'])
+      ];
+    case 'match_ended':
+      return [
+        protocolRef(45, 'S2C_45_game_over_notify', 'S2C', [
+          'WinUserUid',
+          'GameData',
+          'OldCollectionExp',
+          'NewCollectionExp',
+          'LossRecovery',
+          'UserSkillList'
+        ])
+      ];
+    default:
+      return undefined;
+  }
+}
+
+function protocolRef(
+  id: number,
+  name: string,
+  direction: BidKingProtocolMessageRef['direction'],
+  fields: string[]
+): BidKingProtocolMessageRef {
+  return { id, name, direction, fields };
 }
 
 export function recordRoundHistory(state: MatchRuntimeState): void {
@@ -1147,8 +1299,23 @@ function publicSkillFeedForRound(
     .map((entry) => ({
       ...entry,
       targetItemIds: entry.targetItemIds ? [...entry.targetItemIds] : undefined,
-      hitBoxList: entry.hitBoxList?.map((box) => ({ ...box, itemType: [...box.itemType] }))
+      hitBoxList: entry.hitBoxList?.map((box) => publicSourceHitBox(entry, box))
     }));
+}
+
+function publicSourceHitBox(entry: SkillFeedEntry, box: BidKingBoxInfoDataSnapshot): BidKingBoxInfoDataSnapshot {
+  const categories = bidKingSourceEffectCategoriesForFeedEntry(entry);
+  const fields = bidKingSkillEffectPublicFields(categories);
+  return {
+    boxId: box.boxId,
+    itemUid: box.itemUid,
+    itemCid: fields.itemCid ? box.itemCid : 0,
+    itemSlotType: fields.itemSlotType ? box.itemSlotType : 0,
+    itemType: fields.itemType ? [...box.itemType] : [],
+    itemQuility: fields.itemQuility ? box.itemQuility : 0,
+    itemPrice: fields.itemPrice ? box.itemPrice : 0,
+    itemBoxIndex: fields.itemBoxIndex ? box.itemBoxIndex : 0
+  };
 }
 
 function publicCluesForRound(round: RuntimeRound): Clue[] {
@@ -1259,38 +1426,33 @@ function applySourceHitBoxToSlotView(
   entry: SkillFeedEntry,
   hitBox: BidKingBoxInfoDataSnapshot | undefined
 ): WarehouseSlotView {
-  const category = entry.effectCategory;
+  const categories = bidKingSourceEffectCategoriesForFeedEntry(entry);
+  const knowledge = bidKingSkillEffectKnowledge(categories);
   const view: WarehouseSlotView = {
-    ...slotView,
-    markedBySkill: true,
-    markReason: entry.source === 'map' ? '拍场技能' : entry.source === 'item' ? '试宝令' : '名士掌眼'
+    ...slotView
   };
+  let revealed = false;
 
-  if (hitBox?.itemSlotType || category === 1 || category === 22) {
+  if ((hitBox?.itemSlotType && knowledge.shape) || knowledge.shape) {
     view.visibleShape = true;
+    revealed = true;
   }
-  if (hitBox?.itemBoxIndex || category === 11) {
+  if ((hitBox?.itemBoxIndex && knowledge.sizeCount) || knowledge.sizeCount) {
     view.visibleSizeCount = hitBox?.itemBoxIndex || Math.max(1, realSlot.w * realSlot.h);
+    revealed = true;
   }
-  if (hitBox?.itemQuility || category === 7 || category === 12) {
+  if ((hitBox?.itemQuility && knowledge.rank) || knowledge.rank) {
     view.visibleRarity = realSlot.item.rarity;
+    revealed = true;
   }
-  if ((hitBox?.itemType?.length ?? 0) > 0 || category === 13) {
-    view.visibleCategory = realSlot.item.category;
-  }
-  if (hitBox?.itemPrice && category === 14) {
-    const digits = Math.max(1, String(Math.max(0, Math.floor(hitBox.itemPrice))).length);
-    view.visibleValueRange = {
-      min: digits === 1 ? 0 : 10 ** (digits - 1),
-      max: 10 ** digits - 1
-    };
-  } else if (hitBox?.itemPrice && category === 5) {
+  if (hitBox?.itemPrice && knowledge.value) {
     view.visibleValueRange = {
       min: hitBox.itemPrice,
       max: hitBox.itemPrice
     };
+    revealed = true;
   }
-  if (hitBox?.itemCid || category === 6) {
+  if ((hitBox?.itemCid && knowledge.all) || knowledge.all) {
     view.itemId = realSlot.item.id;
     view.visibleShape = true;
     view.visibleRarity = realSlot.item.rarity;
@@ -1301,8 +1463,18 @@ function applySourceHitBoxToSlotView(
     };
     view.itemName = realSlot.item.name;
     view.iconKey = realSlot.item.iconKey;
+    revealed = true;
   }
-  return view;
+  if (!revealed && categories.size === 0) {
+    revealed = true;
+  }
+  return revealed
+    ? {
+        ...view,
+        markedBySkill: true,
+        markReason: entry.source === 'map' ? '拍场技能' : entry.source === 'item' ? '试宝令' : '名士掌眼'
+      }
+    : slotView;
 }
 
 function clueTargetIds(...clues: Array<Clue | undefined>): Set<string> {

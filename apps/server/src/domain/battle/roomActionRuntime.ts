@@ -11,6 +11,7 @@ import {
   type BidKingEmojiUnlockRequirement,
   type BidKingRawTableRow
 } from '@bitkingdom/bidking-compat';
+import { bidKingBattleItemUsesRemainingThisRound } from '@bitkingdom/match-core';
 import type { MatchRuntimeState } from '@bitkingdom/match-core';
 import type { RevealedItem } from '@bitkingdom/shared';
 
@@ -88,6 +89,9 @@ export function assertBattleItemPhase(match: MatchRuntimeState, playerId: string
   const player = match.players.find((candidate) => candidate.id === playerId);
   if (round.phase === 'auction' && (player?.hasSubmittedBid || round.bids.some((bid) => bid.playerId === playerId))) {
     throw new Error('战斗道具必须在出价前使用');
+  }
+  if (bidKingBattleItemUsesRemainingThisRound(match, playerId) <= 0) {
+    throw new Error('本回合可使用战斗道具次数已用完');
   }
 }
 

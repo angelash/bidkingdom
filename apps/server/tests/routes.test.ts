@@ -2,7 +2,18 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Activity, Item } from '@bitkingdom/bidking-compat';
-import type { AccountSessionSnapshot, AdminReviewSnapshot, PlayerProfile } from '@bitkingdom/shared';
+import type {
+  AccountSessionSnapshot,
+  AdminReviewSnapshot,
+  AuctionHouseBidLogListSnapshot,
+  AuctionHouseItemInfoSnapshot,
+  AuctionHouseItemPriceInfoListSnapshot,
+  AuctionHouseLanchItemListSnapshot,
+  AuctionHouseTradeInfoListSnapshot,
+  AuctionHouseUnlanchItemResponse,
+  PlayerProfile,
+  ProfileSnapshot
+} from '@bitkingdom/shared';
 import { describe, expect, it } from 'vitest';
 import { addInventory } from '../src/domain/profile/profileInventory';
 import { createBitKingdomServer, type BitKingdomServerRuntime } from '../src/serverApp';
@@ -456,7 +467,7 @@ describe('server routes', () => {
   });
 
   it('keeps profile and economy endpoints available after route extraction', async () => {
-    await withRouteRuntime(async ({ app }) => {
+    await withRouteRuntime(async ({ app, store }) => {
       const auth = await createGuestAuth(app, 'p_route', '掌柜路由');
       const playerId = auth.profileId;
       const profile = await app.inject({
@@ -487,6 +498,109 @@ describe('server routes', () => {
       const shopPayload = JSON.parse(shop.payload) as { profile: { shopRestocks: unknown[] } };
       expect(shop.statusCode).toBe(200);
       expect(shopPayload.profile.shopRestocks.length).toBeGreaterThan(0);
+
+      const routeProfile = store.state.profiles[playerId]!;
+      resetRouteStockInventory(routeProfile);
+      routeProfile.coins = 20_000;
+      addInventory(routeProfile, 'warehouse', '100102', 1, 'test:route:auction_house');
+      const auctionOrder = await app.inject({
+        method: 'POST',
+        url: '/api/market/order',
+        headers: auth.headers,
+        payload: { playerId, refId: '100102', quantity: 1, price: 1500, orderType: 'auction' }
+      });
+      const auctionOrderPayload = JSON.parse(auctionOrder.payload) as ProfileSnapshot;
+      const sourceUid = auctionOrderPayload.profile.marketOrders[0]?.sourceAuctionHouseLanchItemUid;
+      expect(auctionOrder.statusCode).toBe(200);
+      expect(sourceUid).toEqual(expect.any(Number));
+
+      const auctionLanchList = await app.inject({
+        method: 'GET',
+        url: `/api/auction-house/lanch-items?playerId=${playerId}`,
+        headers: auth.headers
+      });
+      const auctionLanchListPayload = JSON.parse(auctionLanchList.payload) as AuctionHouseLanchItemListSnapshot;
+      expect(auctionLanchList.statusCode).toBe(200);
+      expect(auctionLanchListPayload.lanchItemList[0]).toEqual(expect.objectContaining({
+        lanchItemUid: sourceUid,
+        itemCid: 100102,
+        price: 0,
+        startPrice: 1500,
+        count: 1
+      }));
+
+      const auctionItems = await app.inject({
+        method: 'GET',
+        url: '/api/auction-house/items?itemCid=100102&sortType=StartPrice&page=1&pageSize=5',
+        headers: auth.headers
+      });
+      const auctionItemsPayload = JSON.parse(auctionItems.payload) as AuctionHouseItemInfoSnapshot;
+      expect(auctionItems.statusCode).toBe(200);
+      expect(auctionItemsPayload.itemInfoList[0]?.lanchItemUid).toBe(sourceUid);
+
+      const auctionItemPriceInfo = await app.inject({
+        method: 'GET',
+        url: '/api/auction-house/item-price-info',
+        headers: auth.headers
+      });
+      const auctionItemPriceInfoPayload = JSON.parse(auctionItemPriceInfo.payload) as AuctionHouseItemPriceInfoListSnapshot;
+      expect(auctionItemPriceInfo.statusCode).toBe(200);
+      expect(auctionItemPriceInfoPayload.allAuctionHouseItemPriceInfo).toEqual([
+        expect.objectContaining({
+          itemCid: 100102,
+          avgPrice: 0,
+          count: 1
+        })
+      ]);
+
+      const bidderAuth = await createGuestAuth(app, 'p_route_auction_bidder', '路由竞拍人');
+      const auctionBid = await app.inject({
+        method: 'POST',
+        url: '/api/auction-house/bid',
+        headers: bidderAuth.headers,
+        payload: { playerId: bidderAuth.profileId, itemUid: sourceUid, price: 2_000 }
+      });
+      const auctionBidPayload = JSON.parse(auctionBid.payload) as ProfileSnapshot & { sourceAuctionHouseBidPrice: { errorCode: number; price: number } };
+      expect(auctionBid.statusCode).toBe(200);
+      expect(auctionBidPayload.sourceAuctionHouseBidPrice).toEqual(expect.objectContaining({ errorCode: 0, price: 2_000 }));
+      const bidderCoinsAfterBid = auctionBidPayload.profile.coins;
+
+      const auctionBidLogs = await app.inject({
+        method: 'GET',
+        url: `/api/auction-house/bid-logs?playerId=${bidderAuth.profileId}`,
+        headers: bidderAuth.headers
+      });
+      const auctionBidLogsPayload = JSON.parse(auctionBidLogs.payload) as AuctionHouseBidLogListSnapshot;
+      expect(auctionBidLogs.statusCode).toBe(200);
+      expect(auctionBidLogsPayload.bidLogList[0]).toEqual(expect.objectContaining({
+        bidPrice: 2_000,
+        lanchItem: expect.objectContaining({ lanchItemUid: sourceUid, maxPrice: 2_000 })
+      }));
+
+      const emptyAuctionTradeInfo = await app.inject({
+        method: 'GET',
+        url: `/api/auction-house/trade-info?playerId=${bidderAuth.profileId}`,
+        headers: bidderAuth.headers
+      });
+      const emptyAuctionTradeInfoPayload = JSON.parse(emptyAuctionTradeInfo.payload) as AuctionHouseTradeInfoListSnapshot;
+      expect(emptyAuctionTradeInfo.statusCode).toBe(200);
+      expect(emptyAuctionTradeInfoPayload).toEqual(expect.objectContaining({
+        errorCode: 0,
+        tradeInfoInList: [],
+        tradeInfoOutList: []
+      }));
+
+      const auctionUnlanch = await app.inject({
+        method: 'POST',
+        url: '/api/auction-house/unlanch-item',
+        headers: auth.headers,
+        payload: { playerId, itemUid: sourceUid }
+      });
+      const auctionUnlanchPayload = JSON.parse(auctionUnlanch.payload) as ProfileSnapshot & { sourceAuctionHouseUnlanchItem: AuctionHouseUnlanchItemResponse };
+      expect(auctionUnlanch.statusCode).toBe(200);
+      expect(auctionUnlanchPayload.sourceAuctionHouseUnlanchItem).toEqual(expect.objectContaining({ errorCode: 0, itemUid: sourceUid }));
+      expect(auctionUnlanchPayload.profile.marketOrders[0]?.status).toBe('cancelled');
+      expect(store.state.profiles[bidderAuth.profileId]?.coins).toBe(bidderCoinsAfterBid + 2_000);
 
       const activity = await app.inject({
         method: 'GET',

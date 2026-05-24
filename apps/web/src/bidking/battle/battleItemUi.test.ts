@@ -17,7 +17,7 @@ describe('battle item action UI state', () => {
       itemId: row.id,
       targetMode: 'skill_target'
     }));
-    expect(state.badges).toEqual(expect.arrayContaining(['指定目标', '无冷却', '已落实']));
+    expect(state.badges).toEqual(expect.arrayContaining(['指定目标', '全量目标', '无冷却', '已落实']));
     expect(state.actionTitle).toContain(`机缘 ${state.effectPlan?.skillId}`);
   });
 

@@ -2,6 +2,7 @@ import type { GameConfig } from '@bitkingdom/config';
 import { BattleItem, Drop, Emoji, Hero, RankAi, bidKingBattleItemDisplayName, bidKingRawTableDisplayName } from '@bitkingdom/bidking-compat';
 import type { AuctionMode, Clue, Rarity, SkillId, WarehouseSlotView } from '@bitkingdom/shared';
 import { getBidKingCloseThreshold } from './bidking/compatRuntime';
+import { bidKingBattleItemUsesRemainingThisRound } from './bidking/battleItemUseRuntime';
 import { bidKingHeroIdForRoleId } from './bidking/heroRuntime';
 import { battleItemCooldownRemaining, battleItemEffectPlanForItem } from './items';
 import { createRandom, hashSeed } from './random';
@@ -386,31 +387,32 @@ function estimateFromVisibleSlots(slots: readonly WarehouseSlotView[], publicEst
     return { coverage: 0 };
   }
   const averagePublicItemValue = publicEstimate / Math.max(1, slots.length);
-  let observedValue = 0;
-  let observedWeight = 0;
+  let estimatedTotal = 0;
+  let coverageWeight = 0;
   for (const slot of slots) {
+    let observedValue = averagePublicItemValue;
+    let observedWeight = 0;
     if (slot.visibleValueRange) {
-      observedValue += (slot.visibleValueRange.min + slot.visibleValueRange.max) / 2;
-      observedWeight += 1;
-      continue;
+      observedValue = (slot.visibleValueRange.min + slot.visibleValueRange.max) / 2;
+      observedWeight = 1;
+    } else if (slot.visibleRarity) {
+      observedValue = averagePublicItemValue * rarityValueMultiplier(slot.visibleRarity);
+      observedWeight = 0.42;
+    } else if (slot.visibleShape || slot.visibleSizeCount) {
+      const area = Math.max(1, slot.visibleSizeCount ?? slot.w * slot.h);
+      observedValue = averagePublicItemValue * clamp(area / 2.2, 0.55, 1.45);
+      observedWeight = 0.18;
     }
-    if (slot.visibleRarity) {
-      observedValue += averagePublicItemValue * rarityValueMultiplier(slot.visibleRarity);
-      observedWeight += 0.42;
-      continue;
-    }
-    if (slot.visibleShape) {
-      const area = Math.max(1, slot.w * slot.h);
-      observedValue += averagePublicItemValue * clamp(area / 2.2, 0.55, 1.45);
-      observedWeight += 0.18;
-    }
+    estimatedTotal += averagePublicItemValue * (1 - observedWeight) + observedValue * observedWeight;
+    coverageWeight += observedWeight;
   }
-  if (observedWeight <= 0) {
+  if (coverageWeight <= 0) {
     return { coverage: 0 };
   }
-  const coverage = clamp(observedWeight / slots.length, 0, 1);
-  const observedAverage = observedValue / observedWeight;
-  const estimate = Math.round(observedAverage * slots.length);
+  const coverage = clamp(coverageWeight / slots.length, 0, 1);
+  const lowerBound = publicEstimate * (1 - coverage * 0.45);
+  const upperBound = publicEstimate * (1 + coverage * 0.75);
+  const estimate = Math.round(clamp(estimatedTotal, lowerBound, upperBound));
   return { estimate, coverage };
 }
 
@@ -764,7 +766,7 @@ function canUseBattleItem(context: BotContext): boolean {
   if (!state.coreMode || !['intel', 'auction'].includes(round.phase)) {
     return false;
   }
-  if (botUsedBattleItemThisRound(state, player.id, round.id)) {
+  if (bidKingBattleItemUsesRemainingThisRound(state, player.id) <= 0) {
     return false;
   }
   if (round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === player.id))) {
@@ -805,15 +807,6 @@ function battleItemAction(context: BotContext, reason: string): BotAction {
     targetPlayerId: plan.targetPlayerRequired ? context.targetOpponent?.id : undefined,
     reason: `${reason}: ${bidKingBattleItemDisplayName(choice.item)} from Drop ${choice.dropGroupId}`
   };
-}
-
-function botUsedBattleItemThisRound(state: MatchRuntimeState, playerId: string, roundId: string): boolean {
-  return state.events.some((event) => (
-    event.type === 'battle_item_used'
-    && event.actorId === playerId
-    && ((event.payload as { roundId?: string } | undefined)?.roundId === roundId
-      || (event.payload as { entry?: { id?: string } } | undefined)?.entry?.id?.startsWith(`${roundId}_battle_item_${playerId}_`))
-  ));
 }
 
 function rankAiBattleItemChoice(context: BotContext): { item: (typeof BattleItem)[number]; dropGroupId: number } | undefined {

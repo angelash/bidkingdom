@@ -1,4 +1,12 @@
 import type {
+  AuctionHouseBidLogListSnapshot,
+  AuctionHouseBidPriceResponse,
+  AuctionHouseItemInfoSnapshot,
+  AuctionHouseItemPriceInfoListSnapshot,
+  AuctionHouseItemSortModel,
+  AuctionHouseLanchItemListSnapshot,
+  AuctionHouseTradeInfoListSnapshot,
+  AuctionHouseUnlanchItemResponse,
   FinalMatchSummary,
   MarketOrdersSnapshot,
   PlayerProfile,
@@ -63,6 +71,13 @@ export interface ProfileService {
   settleMarketOrder(playerId: string, orderId: string): ProfileSnapshot;
   cancelMarketOrder(playerId: string, orderId: string): ProfileSnapshot;
   listMarketOrders(orderType?: 'trade' | 'auction'): MarketOrdersSnapshot;
+  listAuctionHouseLanchItems(playerId: string): AuctionHouseLanchItemListSnapshot;
+  listAuctionHouseItems(options?: { itemCid?: number; isDisplayPeriod?: number; sortType?: AuctionHouseItemSortModel; page?: number; pageSize?: number; reverse?: boolean }): AuctionHouseItemInfoSnapshot;
+  listAuctionHouseItemPriceInfo(): AuctionHouseItemPriceInfoListSnapshot;
+  bidAuctionHousePrice(playerId: string, itemUid: number, price: number): ProfileSnapshot & { sourceAuctionHouseBidPrice: AuctionHouseBidPriceResponse };
+  cancelAuctionHouseLanchItem(playerId: string, itemUid: number): ProfileSnapshot & { sourceAuctionHouseUnlanchItem: AuctionHouseUnlanchItemResponse };
+  listAuctionHouseBidLogs(playerId: string): AuctionHouseBidLogListSnapshot;
+  listAuctionHouseTradeInfo(playerId: string): AuctionHouseTradeInfoListSnapshot;
   createSendAuction(playerId: string, mapCid: number, itemSelections: SendAuctionItemSelectionInput[]): ProfileSnapshot;
   settleSendAuction(playerId: string, sendAuctionId: string, finalPrice?: number): ProfileSnapshot;
   recycleSendAuction(playerId: string, slotId: number): ProfileSnapshot;

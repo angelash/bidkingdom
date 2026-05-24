@@ -182,6 +182,7 @@ function revealKindName(kind: string): string {
     quality: '品质',
     quantity: '数量',
     risk: '风险',
+    system: '系统',
     value: '估值'
   };
   return names[kind] ?? kind;
@@ -192,7 +193,8 @@ function targetModeName(mode: string): string {
     highest_value: '高价值优先',
     largest_slots: '大格位优先',
     risk_first: '风险优先',
-    skill_target: '指定目标'
+    skill_target: '指定目标',
+    system_effect: '系统效果'
   };
   return names[mode] ?? mode;
 }

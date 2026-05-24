@@ -42,6 +42,7 @@ import {
 } from './domain/battle/roomActionRuntime';
 import { createRoomBroadcastRuntime } from './domain/battle/roomBroadcastRuntime';
 import { inventoryRecord } from './domain/profile/profileInventory';
+import { bidKingSourceBoxIdForProfileStockBox } from './domain/profile/profileStockRuntime';
 import { createRoomRoundRuntime } from './domain/battle/roomRoundRuntime';
 import { apiErrorEnvelope } from './domain/system/errorCodeCatalog';
 import {
@@ -594,7 +595,10 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     if (equipped.stockId !== undefined && equipped.boxId !== undefined) {
       const selectedBox = profile.stockContainers
         ?.find((container) => container.stockId === equipped.stockId)
-        ?.boxes.find((box) => box.boxId === equipped.boxId && box.item.cid === itemId);
+        ?.boxes.find((box) => (
+          (bidKingSourceBoxIdForProfileStockBox(box) === equipped.boxId || box.boxId === equipped.boxId) &&
+          box.item.cid === itemId
+        ));
       if (!selectedBox) {
         throw new Error('战斗道具实体已不在仓库');
       }
@@ -624,11 +628,20 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     const profile = services.profiles.getSnapshot(player.id).profile;
     return profile.equippedBattleItems
       .filter((entry) => entry.stockId !== undefined && entry.boxId !== undefined)
-      .map((entry) => ({
-        stockId: entry.stockId!,
-        boxId: entry.boxId!,
-        itemCid: entry.itemId
-      }));
+      .map((entry) => {
+        const selectedBox = profile.stockContainers
+          ?.find((container) => container.stockId === entry.stockId)
+          ?.boxes.find((box) => (
+            (bidKingSourceBoxIdForProfileStockBox(box) === entry.boxId || box.boxId === entry.boxId) &&
+            box.item.cid === entry.itemId
+          ));
+        return {
+          itemCid: entry.itemId,
+          isUsed: false,
+          stockId: entry.stockId!,
+          boxId: selectedBox ? bidKingSourceBoxIdForProfileStockBox(selectedBox) : entry.boxId!
+        };
+      });
   }
 
   function clearEmojiCooldowns(room: Room): void {
