@@ -6,6 +6,7 @@ import {
   bidKingHeroIdForRoleId,
   bidKingRoleIdForHeroId,
   bidKingRoleHasSourceHero,
+  bidKingSourceRoles,
   type CreateMatchPlayer,
   type MatchRuntimeState
 } from '@bitkingdom/match-core';
@@ -48,7 +49,10 @@ export function createBotRoomPlayer(
   id: string,
   options: CreateBotRoomPlayerOptions = {}
 ): { player: RoomPlayer; profileId: string } {
-  const fallbackRoleId = BOT_ROLE_SEQUENCE[index - 1] ?? BOT_ROLE_SEQUENCE[index % BOT_ROLE_SEQUENCE.length]!;
+  const sourceRoles = bidKingSourceRoles(gameConfig.roles);
+  const fallbackRoleId = sourceRoles[index % Math.max(1, sourceRoles.length)]?.id
+    ?? BOT_ROLE_SEQUENCE[index - 1]
+    ?? BOT_ROLE_SEQUENCE[index % BOT_ROLE_SEQUENCE.length]!;
   const sourceHeroCid = options.heroCid ?? bidKingBotHeroIdForBidMap({
     bidMapId: options.selectedBidMapId,
     seed: options.seed ?? `${id}:${index}`,
@@ -114,7 +118,7 @@ export function snapshotRoom(room: RoomSnapshotSource): RoomSnapshot {
 }
 
 export function validRole(roleId?: string): string {
-  return bidKingRoleHasSourceHero(roleId, gameConfig.roles) ? roleId! : gameConfig.roles[0]!.id;
+  return bidKingRoleHasSourceHero(roleId, gameConfig.roles) ? roleId! : bidKingSourceRoles(gameConfig.roles)[0]?.id ?? gameConfig.roles[0]!.id;
 }
 
 export function validCoreAuctionMode(mode?: CoreAuctionMode): CoreAuctionMode {

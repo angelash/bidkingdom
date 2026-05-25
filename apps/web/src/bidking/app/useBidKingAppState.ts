@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { gameConfig } from '@bitkingdom/config';
-import { bidKingBestAvailableBidMapId, bidKingRoleIdForHeroId } from '@bitkingdom/match-core';
+import { bidKingBestAvailableBidMapId, bidKingRoleIdForHeroId, bidKingSourceRoles } from '@bitkingdom/match-core';
 import type { AccountSessionSnapshot, CoreAuctionMode, PlayerProfile, ProfileSnapshot, PublicPlayerAccount } from '@bitkingdom/shared';
 import {
   createGuestAccountSession,
@@ -38,13 +38,14 @@ export const bidKingBattleMapGroups = buildBidKingBattleMapGroups();
 export const defaultBidMapId = bidKingBattleMapGroups[0]?.children[0]?.id;
 
 export function useBidKingAppState() {
+  const sourceRoles = bidKingSourceRoles(gameConfig.roles);
   const [account, setAccount] = useState<PublicPlayerAccount | undefined>(() => loadStoredAccountSession()?.account);
   const [sessionToken, setSessionToken] = useState<string | undefined>(() => loadStoredAccountSession()?.sessionToken);
   const [authStatus, setAuthStatus] = useState<AccountAuthStatus>(() => loadStoredAccountSession() ? 'checking' : 'signedOut');
   const [authError, setAuthError] = useState<string>();
   const [profileId, setProfileId] = useState(() => loadStoredAccountSession()?.profileId ?? loadProfileId());
   const [playerName, setPlayerName] = useState(localStorage.getItem('bk_player_name') ?? '试拍掌柜');
-  const [selectedRoleId, setSelectedRoleId] = useState(gameConfig.roles[0]!.id);
+  const [selectedRoleId, setSelectedRoleId] = useState(sourceRoles[0]?.id ?? gameConfig.roles[0]!.id);
   const [view, setView] = useState<AppView>(() => (window.location.pathname === '/admin' ? 'admin' : 'play'));
   const [skillTargetId, setSkillTargetId] = useState<string>();
   const [botCount, setBotCount] = useState(3);

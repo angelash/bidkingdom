@@ -1595,11 +1595,11 @@ export interface RankSnapshot {
 
 export interface ClientToServerEvents {
   createRoom: (
-    payload: { playerName: string; profileId?: string; roleId?: string; botCount?: number; coreAuctionMode?: CoreAuctionMode; selectedBidMapId?: number; initialCash?: number },
+    payload: { playerName: string; profileId?: string; roleId?: string; sourceHeroId?: number; botCount?: number; coreAuctionMode?: CoreAuctionMode; selectedBidMapId?: number; initialCash?: number },
     ack: (snapshot: RoomAck) => void
   ) => void;
   joinRoom: (
-    payload: { roomCode: string; playerName: string; profileId?: string; roleId?: string },
+    payload: { roomCode: string; playerName: string; profileId?: string; roleId?: string; sourceHeroId?: number },
     ack: (result: { ok: true; room: RoomSnapshot; selfPlayerId: string } | { ok: false; error: string }) => void
   ) => void;
   rejoinRoom: (
@@ -1607,7 +1607,7 @@ export interface ClientToServerEvents {
     ack: (result: { ok: true; room: RoomSnapshot; selfPlayerId: string } | { ok: false; error: string }) => void
   ) => void;
   setReady: (payload: { ready: boolean }) => void;
-  selectRole: (payload: { roleId: string }) => void;
+  selectRole: (payload: { roleId: string; sourceHeroId?: number }) => void;
   setCoreAuctionMode: (payload: { mode: CoreAuctionMode }) => void;
   setSelectedBidMap: (payload: { bidMapId: number }) => void;
   startMatch: () => void;

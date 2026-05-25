@@ -7,6 +7,7 @@ import {
   bidKingInitialCashForBidMap,
   bidKingRoleHasSourceHero,
   bidKingRoleIdForHeroId,
+  bidKingSourceRoles,
   bidKingDefaultBidGameCount,
   bidKingMaxBotCount,
   createMatch,
@@ -112,6 +113,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
           socket,
           payload.playerName,
           payload.roleId,
+          payload.sourceHeroId,
           payload.botCount ?? maxBotCount,
           payload.coreAuctionMode,
           payload.selectedBidMapId,
@@ -136,7 +138,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
         ack({ ok: false, error: '对局已经开始' });
         return;
       }
-      const player = addHumanToRoom(room, socket, payload.playerName, payload.roleId, payload.profileId);
+      const player = addHumanToRoom(room, socket, payload.playerName, payload.roleId, payload.sourceHeroId, payload.profileId);
       if (!player) {
         ack({ ok: false, error: '房间已满' });
         return;
@@ -195,17 +197,16 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       if (!context) {
         return;
       }
-      const roleExists = bidKingRoleHasSourceHero(payload.roleId, gameConfig.roles);
+      const resolved = resolveRoleSelection(payload.roleId, payload.sourceHeroId);
       const player = context.room.players.find((candidate) => candidate.id === context.playerId);
-      if (!player || !roleExists || context.room.status !== 'lobby') {
+      if (!player || !resolved || context.room.status !== 'lobby') {
         return;
       }
       try {
-        const heroCid = bidKingHeroIdForRoleId(payload.roleId, gameConfig.roles);
-        const profile = services.profiles.selectHero(context.playerId, heroCid).profile;
-        player.roleId = payload.roleId;
-        player.heroCid = heroCid;
-        player.heroSkinCid = bidKingHeroSkinForHero(heroCid, profile.selectedHeroSkins);
+        const profile = services.profiles.selectHero(context.playerId, resolved.heroCid).profile;
+        player.roleId = resolved.roleId;
+        player.heroCid = resolved.heroCid;
+        player.heroSkinCid = bidKingHeroSkinForHero(resolved.heroCid, profile.selectedHeroSkins);
         broadcasts.emitProfileSnapshot(socket, context.playerId);
       } catch (error) {
         emitError(socket, error);
@@ -449,6 +450,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     socket: AppSocket,
     playerName: string,
     roleId?: string,
+    sourceHeroId?: number,
     requestedBotCount = 3,
     requestedCoreAuctionMode?: CoreAuctionMode,
     requestedBidMapId?: number,
@@ -474,13 +476,13 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       selectedBidMapId,
     });
     rooms.set(code, room);
-    addHumanToRoom(room, socket, playerName, roleId, playerId);
+    addHumanToRoom(room, socket, playerName, roleId, sourceHeroId, playerId);
     fillBots(room);
     log.info({ roomCode: code }, 'room created');
     return room;
   }
 
-  function addHumanToRoom(room: Room, socket: AppSocket, playerName: string, roleId?: string, fixedPlayerId?: string): ReturnType<typeof createHumanRoomPlayer> | undefined {
+  function addHumanToRoom(room: Room, socket: AppSocket, playerName: string, roleId?: string, sourceHeroId?: number, fixedPlayerId?: string): ReturnType<typeof createHumanRoomPlayer> | undefined {
     const sessionProfileId = profileIdForSocket(socket);
     if (sessionProfileId && fixedPlayerId && fixedPlayerId !== sessionProfileId) {
       emitError(socket, new Error('账号会话与玩家档案不匹配'));
@@ -488,8 +490,10 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     const playerId = sessionProfileId ?? fixedPlayerId ?? `p_${randomUUID()}`;
     let profile = services.profiles.getOrCreateProfile(playerId, playerName);
     const profileRoleId = bidKingRoleIdForHeroId(profile.selectedHeroId, gameConfig.roles);
-    const resolvedRoleId = roleId ?? profileRoleId;
-    const heroCid = bidKingHeroIdForRoleId(resolvedRoleId, gameConfig.roles);
+    const resolvedSelection = resolveRoleSelection(roleId, sourceHeroId)
+      ?? resolveRoleSelection(profileRoleId, profile.selectedHeroId)
+      ?? defaultRoleSelection();
+    const { roleId: resolvedRoleId, heroCid } = resolvedSelection;
     if (profile.selectedHeroId !== heroCid) {
       try {
         profile = services.profiles.selectHero(playerId, heroCid).profile;
@@ -515,6 +519,25 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     socketToRoom.set(socket.id, room.code);
     socketToPlayer.set(socket.id, playerId);
     return player;
+  }
+
+  function resolveRoleSelection(roleId?: string, sourceHeroId?: number): { roleId: string; heroCid: number } | undefined {
+    const normalizedHeroId = typeof sourceHeroId === 'number' && Number.isInteger(sourceHeroId) ? sourceHeroId : undefined;
+    const roleIdFromHero = bidKingRoleIdForHeroId(normalizedHeroId, gameConfig.roles);
+    if (roleIdFromHero) {
+      return !roleId || roleId === roleIdFromHero
+        ? { roleId: roleIdFromHero, heroCid: normalizedHeroId! }
+        : undefined;
+    }
+    if (bidKingRoleHasSourceHero(roleId, gameConfig.roles)) {
+      return { roleId: roleId!, heroCid: bidKingHeroIdForRoleId(roleId, gameConfig.roles) };
+    }
+    return undefined;
+  }
+
+  function defaultRoleSelection(): { roleId: string; heroCid: number } {
+    const roleId = bidKingSourceRoles(gameConfig.roles)[0]?.id ?? gameConfig.roles[0]!.id;
+    return { roleId, heroCid: bidKingHeroIdForRoleId(roleId, gameConfig.roles) };
   }
 
   function fillBots(room: Room): void {

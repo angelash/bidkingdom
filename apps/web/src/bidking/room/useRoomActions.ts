@@ -10,6 +10,7 @@ import { gameConfig } from '@bitkingdom/config';
 import {
   bidKingBestAvailableBidMapId,
   bidKingBidMapAccess,
+  bidKingHeroIdForRoleId,
   bidKingInitialCashForBidMap
 } from '@bitkingdom/match-core';
 import {
@@ -106,6 +107,7 @@ export function useRoomActions({
       playerName,
       profileId,
       roleId: requestedRoleId,
+      sourceHeroId: bidKingHeroIdForRoleId(requestedRoleId, gameConfig.roles),
       botCount,
       coreAuctionMode: sceneMode,
       selectedBidMapId: bidMapId,
@@ -138,7 +140,7 @@ export function useRoomActions({
 
   const selectRole = useCallback((roleId: string): void => {
     setSelectedRoleId(roleId);
-    socket?.emit('selectRole', { roleId });
+    socket?.emit('selectRole', { roleId, sourceHeroId: bidKingHeroIdForRoleId(roleId, gameConfig.roles) });
   }, [setSelectedRoleId, socket]);
 
   const selectCoreAuctionMode = useCallback((mode: CoreAuctionMode): void => {

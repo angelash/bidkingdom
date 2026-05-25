@@ -19,7 +19,7 @@ import {
   X
 } from 'lucide-react';
 import { gameConfig } from '@bitkingdom/config';
-import { bidKingBestAvailableBidMapId } from '@bitkingdom/match-core';
+import { bidKingBestAvailableBidMapId, bidKingSourceRoles } from '@bitkingdom/match-core';
 import type { CoreAuctionMode, PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
 import { containerArtForKey } from '../../artAssets';
 import { sourcePathForOutgameHub, titleForOutgameHub, type BidKingOutgameHubWindowKey } from '../app/windowRegistry';
@@ -197,7 +197,8 @@ export function MainHallView({
     bidKingBestAvailableBidMapId(profile, selectedBidMapId) ?? selectedBidMapId ?? defaultBidMapId
   );
   const [dismissedStartupNoticeIds, setDismissedStartupNoticeIds] = useState<string[]>([]);
-  const selectedRole = gameConfig.roles.find((role) => role.id === selectedRoleId) ?? gameConfig.roles[0]!;
+  const sourceRoles = bidKingSourceRoles(gameConfig.roles);
+  const selectedRole = sourceRoles.find((role) => role.id === selectedRoleId) ?? sourceRoles[0] ?? gameConfig.roles[0]!;
   const startupNotice = bidKingStartupNoticeQueue([...(profile.readNotices ?? []), ...dismissedStartupNoticeIds], 1)[0];
   const guideTargetWindow = !battlePrevOpen && activeHub ? sourcePathForOutgameHub(activeHub) : undefined;
   const guideStep = guideTargetWindow ? nextBidKingGuideStep(profile.completedGuides ?? [], guideTargetWindow) : undefined;

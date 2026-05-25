@@ -1,5 +1,5 @@
 import { gameConfig } from '@bitkingdom/config';
-import { createMatch, startNextRound } from '@bitkingdom/match-core';
+import { bidKingRoleHasSourceHero, bidKingSourceRoles, createMatch, startNextRound } from '@bitkingdom/match-core';
 import { RankMap } from '@bitkingdom/bidking-compat';
 import { describe, expect, it } from 'vitest';
 import {
@@ -91,15 +91,16 @@ describe('BidKing room lifecycle runtime', () => {
   });
 
   it('bounds human role selection to source Hero-backed bidder rows', () => {
-    const extraRole = gameConfig.roles[20]!;
+    const extraRole = gameConfig.roles.find((role) => !bidKingRoleHasSourceHero(role.id, gameConfig.roles));
+    expect(extraRole).toBeDefined();
     const player = createHumanRoomPlayer({
       id: 'p_extra_role',
       name: '甲',
-      roleId: extraRole.id,
+      roleId: extraRole!.id,
       socketId: 'socket_extra_role'
     });
 
-    expect(player.roleId).toBe(gameConfig.roles[0]!.id);
+    expect(player.roleId).toBe(bidKingSourceRoles(gameConfig.roles)[0]?.id);
   });
 
   it('previews original BidKing initial cash tiers before the match starts', () => {
