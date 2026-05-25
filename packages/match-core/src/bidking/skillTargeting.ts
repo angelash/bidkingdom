@@ -32,6 +32,24 @@ export function bidKingSourceTargetCount(skill: BidKingSkillRow | undefined): nu
   return skill.skill_count === 0 ? 999 : Math.max(1, Math.floor(skill.skill_count));
 }
 
+export function bidKingSourceTargetCountForCandidateCount(skill: BidKingSkillRow | undefined, candidateCount: number): number {
+  const normalizedCandidateCount = Math.max(0, Math.floor(candidateCount));
+  if (!skill) {
+    return Math.min(1, normalizedCandidateCount);
+  }
+  if (normalizedCandidateCount === 0) {
+    return 0;
+  }
+  if (skill.skill_count === 0) {
+    return normalizedCandidateCount;
+  }
+  if (skill.skill_count_type === 2) {
+    const ratio = Math.max(0, skill.skill_count) / 10_000;
+    return Math.min(normalizedCandidateCount, Math.max(1, Math.ceil(normalizedCandidateCount * ratio)));
+  }
+  return Math.min(normalizedCandidateCount, Math.max(1, Math.floor(skill.skill_count)));
+}
+
 export function selectBidKingSlotsBySkill(
   slots: readonly WarehouseSlot[],
   state: MatchRuntimeState,
@@ -46,7 +64,7 @@ export function selectBidKingSlotsBySkill(
   if (filtered.length === 0 && !usesRequiredContextTarget(skill)) {
     filtered = shuffleBidKingSlots(sourceSlots, state);
   }
-  const limit = targetCount === 999 ? filtered.length : targetCount;
+  const limit = bidKingSourceTargetCountForCandidateCount(skill, filtered.length);
   return filtered.slice(0, Math.max(1, limit));
 }
 
@@ -71,9 +89,17 @@ export function bidKingKnowledgeByItemIdFromSkillFeed(
 }
 
 export function bidKingSourceEffectCategoriesForFeedEntry(
-  entry: Pick<SkillFeedEntry, 'effectCategory' | 'skillCid'>
+  entry: Pick<SkillFeedEntry, 'effectCategory' | 'effectCategories' | 'skillCid'>
 ): Set<number> {
   const categories = new Set<number>();
+  for (const category of entry.effectCategories ?? []) {
+    if (typeof category === 'number' && category > 0) {
+      categories.add(category);
+    }
+  }
+  if (categories.size > 0) {
+    return categories;
+  }
   const skill = typeof entry.skillCid === 'number' ? skillById(entry.skillCid) : undefined;
   for (const effectId of skill?.skilleffect_position ?? []) {
     const category = skillEffectById(effectId)?.Category;
@@ -95,6 +121,15 @@ export function bidKingSourceHitBoxList(
   const categories = skill.skilleffect_position
     .map((effectId) => skillEffectById(effectId)?.Category)
     .filter((category): category is number => typeof category === 'number' && category > 0);
+  const effectiveCategories = categories.length > 0 ? categories : [1];
+  return bidKingSourceHitBoxListForCategories(round, slots, effectiveCategories);
+}
+
+export function bidKingSourceHitBoxListForCategories(
+  round: RuntimeRound,
+  slots: readonly WarehouseSlot[],
+  categories: readonly number[]
+): BidKingBoxInfoDataSnapshot[] {
   const effectiveCategories = categories.length > 0 ? categories : [1];
   return slots.map((slot) => mergeSourceBoxInfo(
     effectiveCategories.map((category) => bidKingSourceBoxInfoForSlot(slot, round.id, category))

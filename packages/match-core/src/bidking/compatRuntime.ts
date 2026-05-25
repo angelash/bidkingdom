@@ -33,6 +33,7 @@ import { bidKingHeroIdForRoleId } from './heroRuntime';
 import {
   bidKingKnowledgeByItemIdFromSkillFeed,
   bidKingSourceHitBoxList,
+  bidKingSourceHitBoxListForCategories,
   bidKingSourceTargetCount,
   selectBidKingSlotsBySkill
 } from './skillTargeting';
@@ -141,7 +142,7 @@ export function buildBidKingRoundStartSkillFeed(
     }
     const targetItemIds = clueTargetItemIds(clue);
     const hitSlots = slotsForTargetItemIds(round.container.warehouseSlots, targetItemIds);
-    entries.push({
+    const entry: SkillFeedEntry = {
       id: `${round.id}_hero_skill_${player.id}_${skill.id}`,
       round: roundNumber,
       playerId: player.id,
@@ -155,7 +156,9 @@ export function buildBidKingRoundStartSkillFeed(
       targetItemIds,
       hitBoxList: bidKingSourceHitBoxList(round, hitSlots, skill),
       createdAt: now
-    });
+    };
+    entries.push(entry);
+    entries.push(...buildCompositeHeroSkillFeedEntries(state, round, player, hero, skill, now, entries));
   }
 
   return entries;
@@ -536,6 +539,7 @@ function buildBidKingSkillClue(
     return undefined;
   }
   const effect = effectForSkill(skill);
+  const effectSummary = skillEffectSummaryLabel(skill, effect);
   const clueId = `${core.id}_${trigger}_${player.id}_${roundIndex + 1}_${hero.id}_${skill.id}`;
   const selectedSlots = selectSlotsBySkill(core, state, skill, trigger, player.id, extraSkillFeed);
   const scanSlots = selectedSlots.slice(0, trigger === 'manual' ? 3 : 2);
@@ -649,7 +653,7 @@ function buildBidKingSkillClue(
     return {
       id: clueId,
       kind: 'category',
-      text: `${hero.packaged_name}·${skillName}：揭示一个命中格的品质，接近${rarityNameForText(target.item.rarity)}。`,
+      text: `${hero.packaged_name}·${skillName}：揭示一个命中格的${effectSummary}，品质接近${rarityNameForText(target.item.rarity)}。`,
       accuracy: 0.86,
       targetItemId: target.item.id,
       targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
@@ -698,11 +702,10 @@ function buildBidKingSkillClue(
 
   if ([1, 11, 22].includes(effect.Category)) {
     const targets = selectedSlots.length > 0 ? selectedSlots : shuffleByRng(core.warehouseSlots, state).slice(0, trigger === 'manual' ? 3 : 2);
-    const label = effect.Category === 11 ? '占格数' : '占位轮廓';
     return {
       id: clueId,
       kind: 'category',
-      text: `${hero.packaged_name}·${skillName}：揭示 ${targets.length} 个命中格的${label}。`,
+      text: `${hero.packaged_name}·${skillName}：揭示 ${targets.length} 个命中格的${effectSummary}。`,
       accuracy: 0.86,
       targetItemIds: targets.map((slot) => slot.item.id),
       source: 'skill',
@@ -742,6 +745,114 @@ function buildBidKingSkillClue(
   };
 }
 
+interface CompositeHeroSkillFeedSpec {
+  suffix: string;
+  target: number;
+  values: readonly number[];
+  target2?: number;
+  values2?: readonly number[];
+  countType?: number;
+  count: number;
+  effectId: number;
+  text: (targetCount: number) => string;
+}
+
+function buildCompositeHeroSkillFeedEntries(
+  state: MatchRuntimeState,
+  round: RuntimeRound,
+  player: RuntimePlayer,
+  hero: ReturnType<typeof heroForPlayer>,
+  skill: BidKingSkillRow,
+  now: number,
+  existingEntries: readonly SkillFeedEntry[]
+): SkillFeedEntry[] {
+  return compositeHeroSkillFeedSpecs(hero.id, skill.id).flatMap((spec) => {
+    const effect = skillEffectById(spec.effectId);
+    if (!effect) {
+      return [];
+    }
+    const virtualSkill = skillWithRuntimeOverrides(skill, {
+      skilltarget: spec.target,
+      skilltargetvalue: [...spec.values],
+      skilltarget2: spec.target2 ?? 0,
+      skilltargetvalue2: [...(spec.values2 ?? [0])],
+      skilltarget3: 0,
+      skilltargetvalue3: [0],
+      skill_count_type: spec.countType ?? 1,
+      skill_count: spec.count,
+      skilleffect_position: [spec.effectId]
+    });
+    const hitSlots = selectSlotsBySkill(round.container, state, virtualSkill, 'auto', player.id, existingEntries);
+    const targetItemIds = slotItemIds(hitSlots);
+    const effectCategories = [effect.Category];
+    return [{
+      id: `${round.id}_hero_skill_${player.id}_${skill.id}_${spec.suffix}`,
+      round: round.index + 1,
+      playerId: player.id,
+      source: 'hero' as const,
+      sourceName: hero.packaged_name,
+      skillName: bidKingSkillDisplayName(skill),
+      ...skillFeedEffectMetadata(virtualSkill, effect, targetItemIds),
+      skillCid: skill.id,
+      effectCategories,
+      text: `${hero.packaged_name}·${bidKingSkillDisplayName(skill)}：${spec.text(targetItemIds.length)}`,
+      iconKey: skill.skill_icon,
+      visibility: 'private' as const,
+      targetItemIds,
+      hitBoxList: bidKingSourceHitBoxListForCategories(round, hitSlots, effectCategories),
+      createdAt: now
+    }];
+  });
+}
+
+function compositeHeroSkillFeedSpecs(heroId: number, skillId: number): CompositeHeroSkillFeedSpec[] {
+  if (heroId === 110 && skillId === 100110) {
+    return [{
+      suffix: 'jewelry_shape',
+      target: 1,
+      values: [102],
+      count: 4,
+      effectId: 1000,
+      text: (count) => `显示 ${count} 件矿物珠宝类藏品的轮廓。`
+    }];
+  }
+  if (heroId === 106 && skillId === 100106) {
+    return [{
+      suffix: 'trend_digital_shape',
+      target: 1,
+      values: [103, 107],
+      count: 0,
+      effectId: 1000,
+      text: (count) => `显示 ${count} 件时尚潮流与数码电子类藏品的轮廓。`
+    }];
+  }
+  if (heroId === 203 && skillId === 100203) {
+    return [{
+      suffix: 'antique_rank',
+      target: 1,
+      values: [106],
+      count: 2,
+      effectId: 7000,
+      text: (count) => `显示 ${count} 件文玩古董类藏品的品质。`
+    }];
+  }
+  if (heroId === 206 && skillId === 100206) {
+    return [{
+      suffix: 'book_painting_shape',
+      target: 1,
+      values: [110],
+      count: 0,
+      effectId: 1000,
+      text: (count) => `显示 ${count} 件书籍绘画类藏品的轮廓。`
+    }];
+  }
+  return [];
+}
+
+function skillWithRuntimeOverrides(skill: BidKingSkillRow, overrides: Partial<BidKingSkillRow>): BidKingSkillRow {
+  return { ...skill, ...overrides };
+}
+
 function heroForPlayer(player: RuntimePlayer, state?: MatchRuntimeState) {
   const mappedHeroId = player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, state?.config.roles ?? []);
   return Hero.find((hero) => hero.id === mappedHeroId) ?? Hero[player.seat % Hero.length]!;
@@ -757,17 +868,66 @@ function effectForSkill(skill: BidKingSkillRow): BidKingSkillEffectRow {
   return skillEffectById(effectId) ?? { EffectId: 1000, Category: 1, Param: [0], effect_key: 'category_1', effect_desc: '显示轮廓尺寸' };
 }
 
+function skillEffectSummaryLabel(skill: BidKingSkillRow, fallbackEffect: BidKingSkillEffectRow): string {
+  const effectiveCategories = skillEffectCategories(skill, fallbackEffect);
+  if (effectiveCategories.includes(6)) {
+    return '完整信息';
+  }
+  const labels: string[] = [];
+  if (effectiveCategories.some((category) => category === 1 || category === 22)) {
+    labels.push('轮廓');
+  }
+  if (effectiveCategories.some((category) => category === 7 || category === 12)) {
+    labels.push('品质');
+  }
+  if (effectiveCategories.includes(5)) {
+    labels.push('价值');
+  }
+  if (effectiveCategories.includes(11)) {
+    labels.push('占格数');
+  }
+  if (effectiveCategories.includes(13)) {
+    labels.push('品类');
+  }
+  if (effectiveCategories.includes(14)) {
+    labels.push('价格位数');
+  }
+  if (effectiveCategories.includes(10)) {
+    labels.push('总价值');
+  }
+  if (effectiveCategories.includes(4)) {
+    labels.push('命中数量');
+  }
+  if (effectiveCategories.includes(3)) {
+    labels.push('平均占格');
+  }
+  if (effectiveCategories.includes(2)) {
+    labels.push('总占格');
+  }
+  return labels.length > 0 ? [...new Set(labels)].join('和') : fallbackEffect.effect_desc;
+}
+
+function skillEffectCategories(skill: BidKingSkillRow, fallbackEffect: BidKingSkillEffectRow): number[] {
+  const categories = [...new Set(skill.skilleffect_position
+    .map((effectId) => skillEffectById(effectId)?.Category)
+    .filter((category): category is number => typeof category === 'number' && category > 0))];
+  return categories.length > 0 ? categories : [fallbackEffect.Category];
+}
+
 function skillFeedEffectMetadata(
   skill: BidKingSkillRow,
   effect: BidKingSkillEffectRow,
   targetItemIds: readonly string[]
-): Pick<SkillFeedEntry, 'skillCid' | 'effectId' | 'effectCategory' | 'effectKey' | 'effectName' | 'skillTarget' | 'targetCount'> {
+): Pick<SkillFeedEntry, 'skillCid' | 'effectId' | 'effectCategory' | 'effectCategories' | 'effectKey' | 'effectName' | 'skillTarget' | 'targetCount'> {
+  const effectName = skillEffectSummaryLabel(skill, effect);
+  const effectCategories = skillEffectCategories(skill, effect);
   return {
     skillCid: skill.id,
     effectId: effect.EffectId,
     effectCategory: effect.Category,
+    effectCategories,
     effectKey: effect.effect_key,
-    effectName: effect.effect_desc,
+    effectName,
     skillTarget: skill.skilltarget,
     targetCount: targetItemIds.length
   };
@@ -781,8 +941,11 @@ function buildBidKingSkillEffectPlan(
   cooldownRounds = Math.max(0, skill.skill_CD)
 ): BidKingSkillEffectPlan {
   const targetItemIds = clueTargetItemIds(clue);
-  const requestedTargetCount = bidKingSourceTargetCount(skill);
+  const requestedTargetCount = skill.skill_count_type === 2
+    ? targetItemIds.length
+    : bidKingSourceTargetCount(skill);
   const skillName = bidKingSkillDisplayName(skill);
+  const effectName = skillEffectSummaryLabel(skill, effect);
   return {
     skillId: skill.id,
     skillName,
@@ -799,10 +962,10 @@ function buildBidKingSkillEffectPlan(
     effectId: effect.EffectId,
     effectCategory: effect.Category,
     effectKey: effect.effect_key,
-    effectName: effect.effect_desc,
+    effectName,
     targetItemIds,
     trigger,
-    description: `${skillName}/${effect.effect_desc} 命中 ${targetItemIds.length} 个目标`
+    description: `${skillName}/${effectName} 命中 ${targetItemIds.length} 个目标`
   };
 }
 

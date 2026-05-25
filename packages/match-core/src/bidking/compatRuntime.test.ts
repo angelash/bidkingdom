@@ -51,8 +51,10 @@ import { bidKingHeroIdForRoleId } from './heroRuntime';
 import { buildBidKingGameDataSnapshot } from './gameDataRuntime';
 import {
   bidKingKnowledgeByItemIdFromSkillFeed,
+  bidKingItemRowForSlot,
   bidKingSkillRequiresTargetBox,
   bidKingSourceHitBoxList,
+  bidKingSourceTargetCountForCandidateCount,
   selectBidKingSlotsBySkill,
   type BidKingKnownInfoState
 } from './skillTargeting';
@@ -383,6 +385,10 @@ describe('BidKing compatible core runtime', () => {
     expect(skillPayload?.entry?.effectId).toBe(effect.EffectId);
     expect(feedEntry?.skillCid).toBe(skill.id);
     expect(feedEntry?.effectCategory).toBe(effect.Category);
+    expect(feedEntry?.effectName).toContain('轮廓');
+    expect(feedEntry?.effectName).toContain('品质');
+    expect(feedEntry?.text).toContain('轮廓');
+    expect(feedEntry?.text).toContain('品质');
     expect(feedEntry?.hitBoxList?.length).toBe(feedEntry?.targetCount);
     expect(feedEntry?.hitBoxList?.[0]?.itemSlotType).toBeGreaterThan(0);
     expect(feedEntry?.hitBoxList?.[0]?.itemCid).toBe(0);
@@ -434,6 +440,38 @@ describe('BidKing compatible core runtime', () => {
     expect(secondTargets.some((itemId) => firstTargets.includes(itemId))).toBe(false);
     expect(match.players[0]?.privateClues.some((clue) => clue.id.includes(`_auto_p1_2_${hero.id}_${secondSkill.id}`))).toBe(true);
     expect(secondEvent).toBeDefined();
+  });
+
+  it('interprets percentage skill counts as ten-thousand ratios for source hero skills', () => {
+    const hero = Hero.find((candidate) => candidate.id === 207)!;
+    const ratioSkill = skillById(10002073)!;
+    const match = createMatch({
+      id: 'compat-percentage-skill-count',
+      players: players.map((player) => player.id === 'p1' ? { ...player, heroCid: hero.id } : player),
+      seed: 91015,
+      coreMode: true,
+      coreAuctionMode: 'sealed'
+    });
+    match.players.forEach((player) => {
+      player.cash = 1_000_000;
+    });
+    startNextRound(match, 1000);
+    advanceCoreAuctionRound(match, 1500);
+    advanceCoreAuctionRound(match, 2500);
+    advanceCoreAuctionRound(match, 3500);
+
+    const candidateCount = match.currentRound!.container.warehouseSlots
+      .filter((slot) => bidKingItemRowForSlot(slot)?.item_type_id === ratioSkill.skilltargetvalue[0])
+      .length;
+    const effectiveCandidateCount = candidateCount > 0 ? candidateCount : match.currentRound!.container.warehouseSlots.length;
+    const expectedTargetCount = bidKingSourceTargetCountForCandidateCount(ratioSkill, effectiveCandidateCount);
+    const feed = match.currentRound?.skillFeed.find((entry) => entry.source === 'hero' && entry.playerId === 'p1');
+
+    expect(ratioSkill.skill_count_type).toBe(2);
+    expect(ratioSkill.skill_count).toBe(3333);
+    expect(feed?.skillCid).toBe(ratioSkill.id);
+    expect(feed?.targetCount).toBe(expectedTargetCount);
+    expect(feed?.targetCount).toBeLessThan(3333);
   });
 
   it('does not collapse empty Hero.cast_type slots into first-round skills', () => {
@@ -515,6 +553,37 @@ describe('BidKing compatible core runtime', () => {
     expect(plan.identityHint).toBe(true);
     expect(plan.implementationStatus).toBe('implemented');
     expect(plan.description).toContain('藏品本体');
+  });
+
+  it('emits composite panel effects for bidder skills with split original descriptions', () => {
+    const cases = [
+      { heroId: 110, skillId: 100110, suffix: 'jewelry_shape', category: 1, maxTargets: 4 },
+      { heroId: 106, skillId: 100106, suffix: 'trend_digital_shape', category: 1 },
+      { heroId: 203, skillId: 100203, suffix: 'antique_rank', category: 7, maxTargets: 2 },
+      { heroId: 206, skillId: 100206, suffix: 'book_painting_shape', category: 1 }
+    ];
+
+    for (const entryCase of cases) {
+      const match = createMatch({
+        id: `compat-composite-${entryCase.heroId}`,
+        players: players.map((player) => player.id === 'p1' ? { ...player, heroCid: entryCase.heroId } : player),
+        seed: 92000 + entryCase.heroId,
+        coreMode: true,
+        coreAuctionMode: 'sealed'
+      });
+      startNextRound(match, 1000);
+
+      const compositeFeed = match.currentRound?.skillFeed.find((entry) => (
+        entry.playerId === 'p1' &&
+        entry.skillCid === entryCase.skillId &&
+        entry.id.endsWith(entryCase.suffix)
+      ));
+      expect(compositeFeed?.effectCategories).toEqual([entryCase.category]);
+      expect(compositeFeed?.targetCount ?? 0).toBeGreaterThan(0);
+      if (entryCase.maxTargets) {
+        expect(compositeFeed?.targetCount ?? 0).toBeLessThanOrEqual(entryCase.maxTargets);
+      }
+    }
   });
 
   it('links every Hero cast skill and every Skill effect to original SkillEffect rows', () => {

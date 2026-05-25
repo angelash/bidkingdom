@@ -41,6 +41,7 @@ export interface SkillFeedEntry {
   skillCid?: number;
   effectId?: number;
   effectCategory?: number;
+  effectCategories?: number[];
   effectKey?: string;
   effectName?: string;
   skillTarget?: number;
