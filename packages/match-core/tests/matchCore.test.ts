@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { finishRound, passAuction, revealNextItem, settleCurrentRound, submitBid } from '../src/auction';
 import { chooseBotAction } from '../src/bots';
 import { createMatch, buildSnapshot, setRoundPhase, startNextRound } from '../src/match';
+import { bidKingSourceRoles } from '../src/bidking/heroRuntime';
 import { useSkill } from '../src/skills';
 
 function makeMatch() {
@@ -25,7 +26,7 @@ function makeMatch() {
 }
 
 function makeCoreMatch() {
-  const roles = gameConfig.roles;
+  const roles = bidKingSourceRoles(gameConfig.roles);
   const match = createMatch({
     id: 'core_match',
     seed: 24680,

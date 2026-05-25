@@ -6,29 +6,40 @@ import type {
   ProfileHeroState,
   RoleConfig
 } from '@bitkingdom/shared';
+import {
+  BID_KING_BIDDER_ROLE_BINDINGS,
+  BID_KING_BIDDER_SOURCE_HERO_IDS,
+  bidKingBidderBindingForRoleId,
+  bidKingRoleIdForSourceHeroId,
+  bidKingSourceHeroIdForRoleId
+} from './bidderCatalog';
 import { bidKingStarterInventoryRewards } from './profileInitialRuntime';
 
 const HERO_ITEM_TYPE = 15;
 const TRIAL_HERO_ITEM_TYPE = 19;
 
 export function bidKingHeroIdForRoleId(roleId: string | undefined, roles: readonly Pick<RoleConfig, 'id'>[]): number {
-  const roleIndex = roles.findIndex((role) => role.id === roleId);
-  const index = roleIndex >= 0 && roleIndex < Hero.length ? roleIndex : 0;
-  return Hero[index]?.id ?? Hero[0]?.id ?? 0;
+  const mappedHeroId = bidKingSourceHeroIdForRoleId(roleId);
+  if (mappedHeroId && roles.some((role) => role.id === roleId) && bidKingHeroExists(mappedHeroId)) {
+    return mappedHeroId;
+  }
+  return BID_KING_BIDDER_SOURCE_HERO_IDS.find((heroId) => bidKingHeroExists(heroId)) ?? Hero[0]?.id ?? 0;
 }
 
 export function bidKingRoleIdForHeroId(heroId: number | undefined, roles: readonly Pick<RoleConfig, 'id'>[]): string | undefined {
-  const index = Hero.findIndex((hero) => hero.id === heroId);
-  return index >= 0 ? roles[index]?.id : undefined;
+  const roleId = bidKingRoleIdForSourceHeroId(heroId);
+  return roleId && roles.some((role) => role.id === roleId) ? roleId : undefined;
 }
 
 export function bidKingRoleHasSourceHero(roleId: string | undefined, roles: readonly Pick<RoleConfig, 'id'>[]): boolean {
-  const index = roles.findIndex((role) => role.id === roleId);
-  return index >= 0 && index < Hero.length;
+  const binding = bidKingBidderBindingForRoleId(roleId);
+  return Boolean(binding && roles.some((role) => role.id === binding.roleId) && bidKingHeroExists(binding.sourceHeroId));
 }
 
 export function bidKingSourceRoles<T extends Pick<RoleConfig, 'id'>>(roles: readonly T[]): T[] {
-  return roles.slice(0, Hero.length);
+  return BID_KING_BIDDER_ROLE_BINDINGS
+    .map((binding) => roles.find((role) => role.id === binding.roleId))
+    .filter((role): role is T => Boolean(role));
 }
 
 export function bidKingStarterOwnedHeroIds(): number[] {
@@ -163,7 +174,11 @@ function sourceInventoryItemId(value: number | string): number {
 }
 
 function uniqueHeroIds(heroIds: readonly number[]): number[] {
-  const order = new Map(Hero.map((hero, index) => [hero.id, index]));
+  const fallbackOffset = BID_KING_BIDDER_SOURCE_HERO_IDS.length;
+  const order = new Map([
+    ...Hero.map((hero, index) => [hero.id, fallbackOffset + index] as const),
+    ...BID_KING_BIDDER_SOURCE_HERO_IDS.map((heroId, index) => [heroId, index] as const)
+  ]);
   return [...new Set(heroIds)]
     .filter((heroId) => order.has(heroId))
     .sort((left, right) => (order.get(left) ?? 0) - (order.get(right) ?? 0));

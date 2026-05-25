@@ -137,6 +137,15 @@ export {
   bidKingStarterSelectableHeroIds,
   bidKingStarterTrialHeroIds
 } from './bidking/heroRuntime';
+export {
+  BID_KING_BIDDER_ROLE_BINDINGS,
+  BID_KING_BIDDER_SOURCE_HERO_IDS,
+  bidKingBidderBindingForRoleId,
+  bidKingBidderBindingForSourceHeroId,
+  bidKingRoleIdForSourceHeroId,
+  bidKingSourceHeroIdForRoleId
+} from './bidking/bidderCatalog';
+export type { BidKingBidderRoleBinding } from './bidking/bidderCatalog';
 export { constantNumber, constantNumberArray, constantNumberRows, constantRawValue, constantValue } from './bidking/constant/constantEngine';
 export {
   bidKingBidMapPlayerCount,

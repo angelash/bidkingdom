@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Hero, RankMap } from '@bitkingdom/bidking-compat';
+import { RankMap } from '@bitkingdom/bidking-compat';
 import { gameConfig } from '@bitkingdom/config';
 import {
   bidKingBidMapPlayerCount,
@@ -9,6 +9,7 @@ import {
   bidKingResolveRandomBidMapId
 } from './bidMapRuntime';
 import { createMatch } from '../match';
+import { BID_KING_BIDDER_ROLE_BINDINGS, BID_KING_BIDDER_SOURCE_HERO_IDS } from './bidderCatalog';
 import { bidKingHeroIdForRoleId, bidKingRoleHasSourceHero, bidKingSourceRoles } from './heroRuntime';
 
 describe('BidKing bid map runtime', () => {
@@ -64,13 +65,15 @@ describe('BidKing bid map runtime', () => {
 
   it('keeps selectable bidder roles bounded to original Hero rows', () => {
     const sourceRoles = bidKingSourceRoles(gameConfig.roles);
-    const extraRole = gameConfig.roles[Hero.length];
+    const extraRole = gameConfig.roles.find((role) => !BID_KING_BIDDER_ROLE_BINDINGS.some((binding) => binding.roleId === role.id));
 
-    expect(sourceRoles).toHaveLength(Hero.length);
+    expect(sourceRoles).toHaveLength(BID_KING_BIDDER_SOURCE_HERO_IDS.length);
+    expect(sourceRoles.map((role) => role.id)).toEqual(BID_KING_BIDDER_ROLE_BINDINGS.map((binding) => binding.roleId));
+    expect(sourceRoles.map((role) => bidKingHeroIdForRoleId(role.id, gameConfig.roles))).toEqual(BID_KING_BIDDER_SOURCE_HERO_IDS);
     expect(bidKingRoleHasSourceHero(sourceRoles[sourceRoles.length - 1]?.id, gameConfig.roles)).toBe(true);
     expect(bidKingRoleHasSourceHero(extraRole?.id, gameConfig.roles)).toBe(false);
-    expect(bidKingHeroIdForRoleId(sourceRoles[sourceRoles.length - 1]?.id, gameConfig.roles)).toBe(Hero[Hero.length - 1]?.id);
-    expect(bidKingHeroIdForRoleId(extraRole?.id, gameConfig.roles)).toBe(Hero[0]?.id);
+    expect(bidKingHeroIdForRoleId(sourceRoles[sourceRoles.length - 1]?.id, gameConfig.roles)).toBe(301);
+    expect(bidKingHeroIdForRoleId(extraRole?.id, gameConfig.roles)).toBe(BID_KING_BIDDER_SOURCE_HERO_IDS[0]);
   });
 
   it('keeps the selected source BidMap id instead of rerolling map_group branches', () => {
