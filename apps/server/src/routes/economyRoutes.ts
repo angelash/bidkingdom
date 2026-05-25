@@ -140,6 +140,140 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
 
   app.get('/api/exchange/restock', async () => profiles.getExchangeRestockSnapshot());
 
+  app.get<{
+    Querystring: { playerId?: string };
+  }>('/api/exchange/lanch-items', async (request, reply) => {
+    if (!request.query.playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    return profiles.listExchangeLanchItems(request.query.playerId);
+  });
+
+  app.get('/api/exchange/info', async () => profiles.listExchangeInfo());
+
+  app.get<{
+    Querystring: { itemCid?: string };
+  }>('/api/exchange/item-trade-info', async (request, reply) => {
+    const itemCid = Number(request.query.itemCid);
+    if (!Number.isFinite(itemCid) || itemCid <= 0) {
+      reply.code(400);
+      return { error: 'itemCid is required' };
+    }
+    return profiles.listExchangeItemTradeInfo(itemCid);
+  });
+
+  app.post<{
+    Body: { playerId?: string; itemCid?: number; itemCount?: number; estimatePrice?: number };
+  }>('/api/exchange/buy-item', async (request, reply) => {
+    const { estimatePrice, itemCid, itemCount, playerId } = request.body;
+    if (!playerId || typeof itemCid !== 'number' || typeof itemCount !== 'number' || typeof estimatePrice !== 'number') {
+      reply.code(400);
+      return { error: 'playerId, itemCid, itemCount and estimatePrice are required' };
+    }
+    try {
+      return profiles.buyExchangeItem(playerId, itemCid, itemCount, estimatePrice);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'exchange buy failed' };
+    }
+  });
+
+  app.get<{
+    Querystring: { playerId?: string };
+  }>('/api/exchange/trade-info', async (request, reply) => {
+    if (!request.query.playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    return profiles.listExchangeTradeInfo(request.query.playerId);
+  });
+
+  app.get<{
+    Querystring: { playerId?: string };
+  }>('/api/exchange/collect-items', async (request, reply) => {
+    if (!request.query.playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    return profiles.listExchangeCollectItems(request.query.playerId);
+  });
+
+  app.post<{
+    Body: { playerId?: string; itemCid?: number };
+  }>('/api/exchange/collect-item', async (request, reply) => {
+    const { itemCid, playerId } = request.body;
+    if (!playerId || typeof itemCid !== 'number') {
+      reply.code(400);
+      return { error: 'playerId and itemCid are required' };
+    }
+    try {
+      return profiles.collectExchangeItem(playerId, itemCid);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'exchange collect failed' };
+    }
+  });
+
+  app.post<{
+    Body: { playerId?: string; itemCid?: number };
+  }>('/api/exchange/uncollect-item', async (request, reply) => {
+    const { itemCid, playerId } = request.body;
+    if (!playerId || typeof itemCid !== 'number') {
+      reply.code(400);
+      return { error: 'playerId and itemCid are required' };
+    }
+    try {
+      return profiles.uncollectExchangeItem(playerId, itemCid);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'exchange uncollect failed' };
+    }
+  });
+
+  app.post<{
+    Body: { playerId?: string; itemCid?: number; count?: number; totalPrice?: number; reLanchItemUid?: number };
+  }>('/api/exchange/lanch-item', async (request, reply) => {
+    const { count, itemCid, playerId, reLanchItemUid, totalPrice } = request.body;
+    if (!playerId) {
+      reply.code(400);
+      return { error: 'playerId is required' };
+    }
+    const isReLanch = typeof reLanchItemUid === 'number' && reLanchItemUid > 0;
+    if (!isReLanch && (typeof itemCid !== 'number' || typeof count !== 'number' || typeof totalPrice !== 'number')) {
+      reply.code(400);
+      return { error: 'itemCid, count and totalPrice are required unless reLanchItemUid is provided' };
+    }
+    try {
+      return profiles.lanchExchangeItem(
+        playerId,
+        itemCid ?? 0,
+        count ?? 0,
+        totalPrice ?? 0,
+        reLanchItemUid ?? 0
+      );
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'exchange lanch failed' };
+    }
+  });
+
+  app.post<{
+    Body: { playerId?: string; itemUid?: number };
+  }>('/api/exchange/unlanch-item', async (request, reply) => {
+    const { itemUid, playerId } = request.body;
+    if (!playerId || typeof itemUid !== 'number') {
+      reply.code(400);
+      return { error: 'playerId and itemUid are required' };
+    }
+    try {
+      return profiles.cancelExchangeLanchItem(playerId, itemUid);
+    } catch (error) {
+      reply.code(400);
+      return { error: error instanceof Error ? error.message : 'exchange unlanch failed' };
+    }
+  });
+
   app.get('/api/sim/snapshot', async () => profiles.getSimSnapshot());
 
   app.get<{
@@ -302,12 +436,17 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
   });
 
   app.post<{
-    Body: { playerId?: string; mapCid?: number; itemSelections?: Array<{ stockId?: number; boxId?: number }> };
+    Body: { playerId?: string; slotId?: number; mapCid?: number; itemSelections?: Array<{ stockId?: number; boxId?: number }> };
   }>('/api/send-auction', async (request, reply) => {
-    const { playerId, mapCid, itemSelections } = request.body;
+    const { playerId, slotId, mapCid, itemSelections } = request.body;
     if (!playerId || typeof mapCid !== 'number' || !Array.isArray(itemSelections)) {
       reply.code(400);
       return { error: 'playerId, mapCid and itemSelections are required' };
+    }
+    const normalizedSlotId = slotId === undefined ? undefined : Number(slotId);
+    if (normalizedSlotId !== undefined && (!Number.isFinite(normalizedSlotId) || !Number.isInteger(normalizedSlotId))) {
+      reply.code(400);
+      return { error: 'slotId must be an integer when provided' };
     }
     const normalizedSelections = itemSelections.map((selection) => ({
       stockId: Number(selection.stockId),
@@ -318,7 +457,7 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
       return { error: 'itemSelections must include stockId and boxId' };
     }
     try {
-      return profiles.createSendAuction(playerId, mapCid, normalizedSelections);
+      return profiles.createSendAuction(playerId, mapCid, normalizedSelections, normalizedSlotId);
     } catch (error) {
       reply.code(400);
       return { error: error instanceof Error ? error.message : 'send auction failed' };
@@ -334,10 +473,7 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
       return { error: 'playerId is required' };
     }
     try {
-      return {
-        generatedAt: Date.now(),
-        auctions: profiles.listSendAuctions(playerId, includeHistory !== '0')
-      };
+      return profiles.listSendAuctions(playerId, includeHistory !== '0');
     } catch (error) {
       reply.code(400);
       return { error: error instanceof Error ? error.message : 'send auction list failed' };
@@ -353,10 +489,7 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
       return { error: 'playerId is required' };
     }
     try {
-      return {
-        generatedAt: Date.now(),
-        games: profiles.listSendAuctionGames(playerId)
-      };
+      return profiles.listSendAuctionGames(playerId);
     } catch (error) {
       reply.code(400);
       return { error: error instanceof Error ? error.message : 'send auction game list failed' };

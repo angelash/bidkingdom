@@ -10,7 +10,7 @@ export interface CommerceProfileActions {
   completePurchaseListOrder: (purchaseId: string) => void;
   createDemoPayOrder: (payId: string) => void;
   createMarketOrder: (refId: string, quantity: number, price: number, orderType: 'trade' | 'auction', note?: string) => void;
-  createSendAuction: (mapCid: number, itemSelections: Array<{ stockId: number; boxId: number }>) => void;
+  createSendAuction: (mapCid: number, itemSelections: Array<{ stockId: number; boxId: number }>, slotId?: number) => void;
   refreshShop: (shopId?: number) => void;
   setShopItemCollection: (itemId: number, collected: boolean) => void;
   unlockDemoDlc: (dlcId: string) => void;
@@ -45,8 +45,8 @@ export function createCommerceProfileActions(postProfileAction: PostProfileActio
     createMarketOrder: (refId, quantity, price, orderType, note) => {
       postProfileAction('/api/market/order', { refId, quantity, price, orderType, note });
     },
-    createSendAuction: (mapCid, itemSelections) => {
-      postProfileAction('/api/send-auction', { mapCid, itemSelections });
+    createSendAuction: (mapCid, itemSelections, slotId) => {
+      postProfileAction('/api/send-auction', slotId === undefined ? { mapCid, itemSelections } : { mapCid, itemSelections, slotId });
     },
     refreshShop: (shopId) => {
       postProfileAction('/api/shop/refresh', { shopId });

@@ -8,12 +8,25 @@ import type {
   AuctionHouseTradeInfoListSnapshot,
   AuctionHouseUnlockLanchSlotResponse,
   AuctionHouseUnlanchItemResponse,
+  ExchangeBuyItemResponse,
+  ExchangeCollectItemListSnapshot,
+  ExchangeCollectItemResponse,
+  ExchangeInfoSnapshot,
+  ExchangeItemTradeInfoListSnapshot,
+  ExchangeLanchItemResponse,
+  ExchangeLunchItemListSnapshot,
+  ExchangeTradeInfoListSnapshot,
+  ExchangeUnlanchItemResponse,
   FinalMatchSummary,
   MarketOrdersSnapshot,
   PlayerProfile,
   ProfileSnapshot,
   ProfileTransaction,
-  RankSnapshot
+  RankSnapshot,
+  SendAuctionCreateResponse,
+  SendAuctionGameListSnapshot,
+  SendAuctionListSnapshot,
+  SendAuctionRecycleResponse
 } from '@bitkingdom/shared';
 import {
   bidKingBidMapAccess,
@@ -35,19 +48,31 @@ import {
   buildAuctionHouseItemPriceInfoListSnapshot,
   buildAuctionHouseLanchItemListSnapshot,
   buildAuctionHouseTradeInfoListSnapshot,
+  buildExchangeCollectItemListSnapshot,
+  buildExchangeInfoSnapshot,
+  buildExchangeItemTradeInfoListSnapshot,
+  buildExchangeLanchItemListSnapshot,
+  buildExchangeTradeInfoListSnapshot,
   buildMarketOrdersSnapshot,
+  buyExchangeItemForProfiles,
+  collectExchangeItemForProfile,
   cancelAuctionHouseLanchItemForProfile,
+  cancelExchangeLanchItemForProfile,
   cancelMarketOrderForProfile,
+  createExchangeLanchItemForProfile,
   createMarketOrderForProfile,
   expireMarketOrdersForProfile,
+  reExchangeLanchItemForProfile,
   settleExpiredAuctionHouseOrderForProfile,
   settleMarketOrderForProfile,
   unlockAuctionHouseLanchSlotForProfile
 } from '../domain/economy/profileMarketRuntime';
 import {
+  buildSendAuctionGameListSnapshot,
+  buildSendAuctionListSnapshot,
+  buildSourceSendAuctionCreateResponse,
+  buildSourceSendAuctionRecycleResponse,
   createSendAuctionForProfile,
-  listSendAuctionGamesForProfile,
-  listSendAuctionsForProfile,
   recycleSendAuctionForProfile,
   settleSendAuctionForProfile,
   type SendAuctionItemSelectionInput
@@ -488,6 +513,27 @@ export function createProfileService(store: ServerStore): ProfileService {
     return getSnapshot(playerId);
   }
 
+  function lanchExchangeItem(
+    playerId: string,
+    itemCid: number,
+    count: number,
+    totalPrice: number,
+    reLanchItemUid = 0
+  ): ProfileSnapshot & { sourceExchangeLanchItem: ExchangeLanchItemResponse } {
+    const profile = getOrCreateProfile(playerId);
+    expireProfileMarketOrders(profile);
+    const sourceExchangeLanchItem = reLanchItemUid > 0
+      ? reExchangeLanchItemForProfile(profile, reLanchItemUid)
+      : createExchangeLanchItemForProfile(profile, itemCid, count, totalPrice, recordTransaction, applyNumberChange);
+    if (sourceExchangeLanchItem.errorCode === 0) {
+      store.save();
+    }
+    return {
+      ...getSnapshot(playerId),
+      sourceExchangeLanchItem
+    };
+  }
+
   function settleMarketOrder(playerId: string, orderId: string): ProfileSnapshot {
     const buyerProfile = getOrCreateProfile(playerId);
     const sellerProfile = Object.values(store.state.profiles)
@@ -507,6 +553,21 @@ export function createProfileService(store: ServerStore): ProfileService {
       store.save();
     }
     return getSnapshot(playerId);
+  }
+
+  function cancelExchangeLanchItem(
+    playerId: string,
+    itemUid: number
+  ): ProfileSnapshot & { sourceExchangeUnlanchItem: ExchangeUnlanchItemResponse } {
+    const profile = getOrCreateProfile(playerId);
+    const sourceExchangeUnlanchItem = cancelExchangeLanchItemForProfile(profile, itemUid, recordTransaction);
+    if (sourceExchangeUnlanchItem.errorCode === 0) {
+      store.save();
+    }
+    return {
+      ...getSnapshot(playerId),
+      sourceExchangeUnlanchItem
+    };
   }
 
   function cancelAuctionHouseLanchItem(
@@ -558,6 +619,113 @@ export function createProfileService(store: ServerStore): ProfileService {
       store.save();
     }
     return buildMarketOrdersSnapshot(Object.values(store.state.profiles), orderType);
+  }
+
+  function listExchangeLanchItems(playerId: string): ExchangeLunchItemListSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    const expired = expireProfileMarketOrders(profile);
+    if (expired > 0) {
+      store.save();
+    }
+    return buildExchangeLanchItemListSnapshot(profile);
+  }
+
+  function listExchangeInfo(): ExchangeInfoSnapshot {
+    let expired = 0;
+    for (const profile of Object.values(store.state.profiles)) {
+      expired += expireProfileMarketOrders(profile);
+    }
+    if (expired > 0) {
+      store.save();
+    }
+    return buildExchangeInfoSnapshot(Object.values(store.state.profiles));
+  }
+
+  function listExchangeItemTradeInfo(itemCid: number): ExchangeItemTradeInfoListSnapshot {
+    let expired = 0;
+    for (const profile of Object.values(store.state.profiles)) {
+      expired += expireProfileMarketOrders(profile);
+    }
+    if (expired > 0) {
+      store.save();
+    }
+    return buildExchangeItemTradeInfoListSnapshot(Object.values(store.state.profiles), itemCid);
+  }
+
+  function buyExchangeItem(
+    playerId: string,
+    itemCid: number,
+    itemCount: number,
+    estimatePrice: number
+  ): ProfileSnapshot & { sourceExchangeBuyItem: ExchangeBuyItemResponse } {
+    let expired = 0;
+    for (const profile of Object.values(store.state.profiles)) {
+      expired += expireProfileMarketOrders(profile);
+    }
+    const buyerProfile = getOrCreateProfile(playerId);
+    const sourceExchangeBuyItem = buyExchangeItemForProfiles(
+      Object.values(store.state.profiles),
+      buyerProfile,
+      itemCid,
+      itemCount,
+      estimatePrice,
+      applyNumberChange,
+      recordTransaction
+    );
+    if (expired > 0 || sourceExchangeBuyItem.errorCode === 0) {
+      store.save();
+    }
+    return {
+      ...getSnapshot(playerId),
+      sourceExchangeBuyItem
+    };
+  }
+
+  function listExchangeTradeInfo(playerId: string): ExchangeTradeInfoListSnapshot {
+    let expired = 0;
+    for (const profile of Object.values(store.state.profiles)) {
+      expired += expireProfileMarketOrders(profile);
+    }
+    if (expired > 0) {
+      store.save();
+    }
+    const profile = getOrCreateProfile(playerId);
+    return buildExchangeTradeInfoListSnapshot(profile, Object.values(store.state.profiles));
+  }
+
+  function collectExchangeItem(
+    playerId: string,
+    itemCid: number
+  ): ProfileSnapshot & { sourceExchangeCollectItem: ExchangeCollectItemResponse } {
+    const profile = getOrCreateProfile(playerId);
+    const sourceExchangeCollectItem = collectExchangeItemForProfile(profile, itemCid, true, recordTransaction);
+    if (sourceExchangeCollectItem.errorCode === 0) {
+      store.save();
+    }
+    return {
+      ...getSnapshot(playerId),
+      sourceExchangeCollectItem
+    };
+  }
+
+  function uncollectExchangeItem(
+    playerId: string,
+    itemCid: number
+  ): ProfileSnapshot & { sourceExchangeUncollectItem: ExchangeCollectItemResponse } {
+    const profile = getOrCreateProfile(playerId);
+    const sourceExchangeUncollectItem = collectExchangeItemForProfile(profile, itemCid, false, recordTransaction);
+    if (sourceExchangeUncollectItem.errorCode === 0) {
+      store.save();
+    }
+    return {
+      ...getSnapshot(playerId),
+      sourceExchangeUncollectItem
+    };
+  }
+
+  function listExchangeCollectItems(playerId: string): ExchangeCollectItemListSnapshot {
+    const profile = getOrCreateProfile(playerId);
+    return buildExchangeCollectItemListSnapshot(profile);
   }
 
   function listAuctionHouseLanchItems(playerId: string): AuctionHouseLanchItemListSnapshot {
@@ -642,11 +810,19 @@ export function createProfileService(store: ServerStore): ProfileService {
     return buildAuctionHouseTradeInfoListSnapshot(profile, Object.values(store.state.profiles));
   }
 
-  function createSendAuction(playerId: string, mapCid: number, itemSelections: SendAuctionItemSelectionInput[]): ProfileSnapshot {
+  function createSendAuction(
+    playerId: string,
+    mapCid: number,
+    itemSelections: SendAuctionItemSelectionInput[],
+    slotId?: number
+  ): ProfileSnapshot & { sourceSendAuction: SendAuctionCreateResponse } {
     const profile = getOrCreateProfile(playerId);
-    createSendAuctionForProfile(profile, mapCid, itemSelections, applyNumberChange, recordTransaction);
+    const auction = createSendAuctionForProfile(profile, mapCid, itemSelections, applyNumberChange, recordTransaction, slotId);
     store.save();
-    return getSnapshot(playerId);
+    return {
+      ...getSnapshot(playerId),
+      sourceSendAuction: buildSourceSendAuctionCreateResponse(auction)
+    };
   }
 
   function settleSendAuction(playerId: string, sendAuctionId: string, finalPrice?: number): ProfileSnapshot {
@@ -657,20 +833,23 @@ export function createProfileService(store: ServerStore): ProfileService {
     return getSnapshot(playerId);
   }
 
-  function recycleSendAuction(playerId: string, slotId: number): ProfileSnapshot {
+  function recycleSendAuction(playerId: string, slotId: number): ProfileSnapshot & { sourceSendAuctionRecycle: SendAuctionRecycleResponse } {
     const profile = getOrCreateProfile(playerId);
     if (recycleSendAuctionForProfile(profile, slotId, applyNumberChange, recordTransaction)) {
       store.save();
     }
-    return getSnapshot(playerId);
+    return {
+      ...getSnapshot(playerId),
+      sourceSendAuctionRecycle: buildSourceSendAuctionRecycleResponse()
+    };
   }
 
-  function listSendAuctions(playerId: string, includeHistory = true) {
-    return listSendAuctionsForProfile(getOrCreateProfile(playerId), includeHistory);
+  function listSendAuctions(playerId: string, includeHistory = true): SendAuctionListSnapshot {
+    return buildSendAuctionListSnapshot(getOrCreateProfile(playerId), includeHistory);
   }
 
-  function listSendAuctionGames(playerId: string) {
-    return listSendAuctionGamesForProfile(getOrCreateProfile(playerId));
+  function listSendAuctionGames(playerId: string): SendAuctionGameListSnapshot {
+    return buildSendAuctionGameListSnapshot(getOrCreateProfile(playerId));
   }
 
   function addDemoFriend(playerId: string): ProfileSnapshot {
@@ -979,11 +1158,21 @@ export function createProfileService(store: ServerStore): ProfileService {
     completePurchaseListOrder,
     unlockDemoDlc,
     createMarketOrder,
+    lanchExchangeItem,
     settleMarketOrder,
     cancelMarketOrder,
+    cancelExchangeLanchItem,
     cancelAuctionHouseLanchItem,
     unlockAuctionHouseLanchSlot,
     listMarketOrders,
+    listExchangeLanchItems,
+    listExchangeInfo,
+    listExchangeItemTradeInfo,
+    buyExchangeItem,
+    listExchangeTradeInfo,
+    collectExchangeItem,
+    uncollectExchangeItem,
+    listExchangeCollectItems,
     listAuctionHouseLanchItems,
     listAuctionHouseItems,
     listAuctionHouseItemPriceInfo,

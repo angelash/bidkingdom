@@ -12,8 +12,18 @@ import type {
   AuctionHouseUnlockLanchSlotResponse,
   AuctionHouseTradeInfoListSnapshot,
   AuctionHouseUnlanchItemResponse,
+  ExchangeCollectItemListSnapshot,
+  ExchangeInfoSnapshot,
+  ExchangeItemTradeInfoListSnapshot,
+  ExchangeLunchItemListSnapshot,
+  ExchangeTradeInfoListSnapshot,
+  ExchangeUnlanchItemResponse,
   PlayerProfile,
-  ProfileSnapshot
+  ProfileSnapshot,
+  SendAuctionCreateResponse,
+  SendAuctionGameListSnapshot,
+  SendAuctionListSnapshot,
+  SendAuctionRecycleResponse
 } from '@bitkingdom/shared';
 import { describe, expect, it } from 'vitest';
 import { addInventory } from '../src/domain/profile/profileInventory';
@@ -269,20 +279,32 @@ describe('server routes', () => {
         url: '/api/send-auction',
         headers,
         payload: {
+          slotId: 2,
           mapCid: 101,
           itemSelections: selectRouteWarehouseStockBoxes(profile, SEND_AUCTION_ROUTE_ITEM_ID, 15)
         }
       });
-      const createdPayload = JSON.parse(created.payload) as { profile: PlayerProfile };
+      const createdPayload = JSON.parse(created.payload) as ProfileSnapshot & { sourceSendAuction: SendAuctionCreateResponse };
       const auction = createdPayload.profile.sendAuctions?.[0]!;
       const unitValue = Item.find((item) => item.id === SEND_AUCTION_ROUTE_ITEM_ID)?.base_value ?? 0;
 
       expect(created.statusCode).toBe(200);
       expect(auction).toEqual(expect.objectContaining({
         mapCid: 101,
-        slotId: 0,
+        slotId: 2,
         status: 'listed',
         totalValue: unitValue * 15
+      }));
+      expect(createdPayload.sourceSendAuction).toEqual(expect.objectContaining({
+        errorCode: 0,
+        sendAuctionData: expect.objectContaining({
+          mapCid: 101,
+          slotId: 2,
+          stockData: expect.objectContaining({
+            stockId: 2,
+            stockCid: 2101
+          })
+        })
       }));
       expect(createdPayload.profile.coins).toBe(9_000);
 
@@ -291,8 +313,10 @@ describe('server routes', () => {
         url: '/api/send-auctions?includeHistory=0',
         headers
       });
-      const listedPayload = JSON.parse(listed.payload) as { auctions: Array<{ id: string; status: string }> };
+      const listedPayload = JSON.parse(listed.payload) as SendAuctionListSnapshot;
       expect(listed.statusCode).toBe(200);
+      expect(listedPayload.errorCode).toBe(0);
+      expect(listedPayload.sendAuctionDataList).toEqual([expect.objectContaining({ slotId: 2, mapCid: 101 })]);
       expect(listedPayload.auctions).toEqual([expect.objectContaining({ id: auction.id, status: 'listed' })]);
 
       const recycled = await app.inject({
@@ -301,8 +325,9 @@ describe('server routes', () => {
         headers,
         payload: { action: 'recycle', slotId: auction.slotId }
       });
-      const recycledPayload = JSON.parse(recycled.payload) as { profile: PlayerProfile };
+      const recycledPayload = JSON.parse(recycled.payload) as ProfileSnapshot & { sourceSendAuctionRecycle: SendAuctionRecycleResponse };
       expect(recycled.statusCode).toBe(200);
+      expect(recycledPayload.sourceSendAuctionRecycle).toEqual({ errorCode: 0 });
       expect(recycledPayload.profile.sendAuctions?.find((candidate) => candidate.id === auction.id)).toEqual(expect.objectContaining({
         status: 'recycled',
         finalPrice: unitValue * 15
@@ -313,10 +338,13 @@ describe('server routes', () => {
         url: '/api/send-auction/games',
         headers
       });
-      const gamesPayload = JSON.parse(games.payload) as {
-        games: Array<{ sendAuctionId: string; finalPrice: number; gameData: { userLog: Array<{ priceLog: Array<{ itemCidOrPrice: number }> }> } }>;
-      };
+      const gamesPayload = JSON.parse(games.payload) as SendAuctionGameListSnapshot;
       expect(games.statusCode).toBe(200);
+      expect(gamesPayload.errorCode).toBe(0);
+      expect(gamesPayload.sendAuctionGameDataList).toEqual([expect.objectContaining({
+        mapCid: 101,
+        gameData: expect.objectContaining({ mapId: 2101 })
+      })]);
       expect(gamesPayload.games).toEqual([expect.objectContaining({
         sendAuctionId: auction.id,
         finalPrice: unitValue * 15
@@ -503,7 +531,7 @@ describe('server routes', () => {
       const routeProfile = store.state.profiles[playerId]!;
       resetRouteStockInventory(routeProfile);
       routeProfile.coins = 20_000;
-      addInventory(routeProfile, 'warehouse', '100102', 1, 'test:route:auction_house');
+      addInventory(routeProfile, 'warehouse', '100102', 2, 'test:route:auction_house');
       const auctionOrder = await app.inject({
         method: 'POST',
         url: '/api/market/order',
@@ -514,6 +542,172 @@ describe('server routes', () => {
       const sourceUid = auctionOrderPayload.profile.marketOrders[0]?.sourceAuctionHouseLanchItemUid;
       expect(auctionOrder.statusCode).toBe(200);
       expect(sourceUid).toEqual(expect.any(Number));
+
+      const exchangeLanch = await app.inject({
+        method: 'POST',
+        url: '/api/exchange/lanch-item',
+        headers: auth.headers,
+        payload: { playerId, itemCid: 100102, count: 1, totalPrice: 2400 }
+      });
+      const exchangeLanchPayload = JSON.parse(exchangeLanch.payload) as ProfileSnapshot & { sourceExchangeLanchItem: { errorCode: number; lunchItemUid: number; orderId: string } };
+      const exchangeUid = exchangeLanchPayload.sourceExchangeLanchItem.lunchItemUid;
+      expect(exchangeLanch.statusCode).toBe(200);
+      expect(exchangeLanchPayload.sourceExchangeLanchItem).toEqual(expect.objectContaining({
+        errorCode: 0,
+        lunchItemUid: expect.any(Number)
+      }));
+
+      const exchangeLanchList = await app.inject({
+        method: 'GET',
+        url: `/api/exchange/lanch-items?playerId=${playerId}`,
+        headers: auth.headers
+      });
+      const exchangeLanchListPayload = JSON.parse(exchangeLanchList.payload) as ExchangeLunchItemListSnapshot;
+      expect(exchangeLanchList.statusCode).toBe(200);
+      expect(exchangeLanchListPayload.lunchItemList[0]).toEqual(expect.objectContaining({
+        lunchItemUid: exchangeUid,
+        itemCid: 100102,
+        itemCount: 1,
+        totalPrice: 2400,
+        tradeCount: 0
+      }));
+
+      const exchangeInfo = await app.inject({
+        method: 'GET',
+        url: '/api/exchange/info',
+        headers: auth.headers
+      });
+      const exchangeInfoPayload = JSON.parse(exchangeInfo.payload) as ExchangeInfoSnapshot;
+      expect(exchangeInfo.statusCode).toBe(200);
+      expect(exchangeInfoPayload.allItemPriceInfo).toEqual([
+        { itemCid: 100102, price: 2400 }
+      ]);
+
+      const exchangeItemTradeInfo = await app.inject({
+        method: 'GET',
+        url: '/api/exchange/item-trade-info?itemCid=100102',
+        headers: auth.headers
+      });
+      const exchangeItemTradeInfoPayload = JSON.parse(exchangeItemTradeInfo.payload) as ExchangeItemTradeInfoListSnapshot;
+      expect(exchangeItemTradeInfo.statusCode).toBe(200);
+      expect(exchangeItemTradeInfoPayload.tradeInfoList).toEqual([
+        { price: 2400, peopleCount: 1 }
+      ]);
+
+      store.state.profiles[playerId]!.marketOrders.find((order) => order.id === exchangeLanchPayload.sourceExchangeLanchItem.orderId)!.expiresAt = Date.now() - 1;
+      const exchangeReLanch = await app.inject({
+        method: 'POST',
+        url: '/api/exchange/lanch-item',
+        headers: auth.headers,
+        payload: { playerId, reLanchItemUid: exchangeUid }
+      });
+      expect(exchangeReLanch.statusCode).toBe(200);
+      expect(JSON.parse(exchangeReLanch.payload).sourceExchangeLanchItem).toEqual(expect.objectContaining({
+        errorCode: 0,
+        lunchItemUid: exchangeUid,
+        reLanchItemUid: exchangeUid
+      }));
+
+      store.state.profiles[playerId]!.marketOrders.find((order) => order.id === exchangeLanchPayload.sourceExchangeLanchItem.orderId)!.expiresAt = Date.now() - 1;
+      const exchangeUnlanch = await app.inject({
+        method: 'POST',
+        url: '/api/exchange/unlanch-item',
+        headers: auth.headers,
+        payload: { playerId, itemUid: exchangeUid }
+      });
+      const exchangeUnlanchPayload = JSON.parse(exchangeUnlanch.payload) as ProfileSnapshot & { sourceExchangeUnlanchItem: ExchangeUnlanchItemResponse };
+      expect(exchangeUnlanch.statusCode).toBe(200);
+      expect(exchangeUnlanchPayload.sourceExchangeUnlanchItem).toEqual({
+        errorCode: 0,
+        itemUid: exchangeUid,
+        orderId: exchangeLanchPayload.sourceExchangeLanchItem.orderId
+      });
+      expect(exchangeUnlanchPayload.profile.marketOrders.find((order) => order.id === exchangeLanchPayload.sourceExchangeLanchItem.orderId)?.status).toBe('expired');
+
+      const exchangeBuyLanch = await app.inject({
+        method: 'POST',
+        url: '/api/exchange/lanch-item',
+        headers: auth.headers,
+        payload: { playerId, itemCid: 100102, count: 1, totalPrice: 1800 }
+      });
+      const exchangeBuyLanchPayload = JSON.parse(exchangeBuyLanch.payload) as ProfileSnapshot & { sourceExchangeLanchItem: { errorCode: number; orderId: string } };
+      expect(exchangeBuyLanch.statusCode).toBe(200);
+      expect(exchangeBuyLanchPayload.sourceExchangeLanchItem).toEqual(expect.objectContaining({ errorCode: 0 }));
+
+      const exchangeBuyerAuth = await createGuestAuth(app, 'p_route_exchange_buyer', '路由交易买家');
+      const exchangeBuy = await app.inject({
+        method: 'POST',
+        url: '/api/exchange/buy-item',
+        headers: exchangeBuyerAuth.headers,
+        payload: { playerId: exchangeBuyerAuth.profileId, itemCid: 100102, itemCount: 1, estimatePrice: 1800 }
+      });
+      const exchangeBuyPayload = JSON.parse(exchangeBuy.payload) as ProfileSnapshot & { sourceExchangeBuyItem: { errorCode: number; itemCid: number; itemCount: number; estimatePrice: number } };
+      expect(exchangeBuy.statusCode).toBe(200);
+      expect(exchangeBuyPayload.sourceExchangeBuyItem).toEqual({
+        errorCode: 0,
+        itemCid: 100102,
+        itemCount: 1,
+        estimatePrice: 1800
+      });
+
+      const exchangeTradeInfoIn = await app.inject({
+        method: 'GET',
+        url: `/api/exchange/trade-info?playerId=${exchangeBuyerAuth.profileId}`,
+        headers: exchangeBuyerAuth.headers
+      });
+      const exchangeTradeInfoInPayload = JSON.parse(exchangeTradeInfoIn.payload) as ExchangeTradeInfoListSnapshot;
+      expect(exchangeTradeInfoIn.statusCode).toBe(200);
+      expect(exchangeTradeInfoInPayload.tradeInfoInList).toEqual([
+        expect.objectContaining({ itemCid: 100102, itemCount: 1, price: 1800 })
+      ]);
+
+      const exchangeTradeInfoOut = await app.inject({
+        method: 'GET',
+        url: `/api/exchange/trade-info?playerId=${playerId}`,
+        headers: auth.headers
+      });
+      const exchangeTradeInfoOutPayload = JSON.parse(exchangeTradeInfoOut.payload) as ExchangeTradeInfoListSnapshot;
+      expect(exchangeTradeInfoOut.statusCode).toBe(200);
+      expect(exchangeTradeInfoOutPayload.tradeInfoOutList).toEqual([
+        expect.objectContaining({ itemCid: 100102, itemCount: 1, price: 1800 })
+      ]);
+
+      const exchangeCollect = await app.inject({
+        method: 'POST',
+        url: '/api/exchange/collect-item',
+        headers: auth.headers,
+        payload: { playerId, itemCid: 100102 }
+      });
+      const exchangeCollectPayload = JSON.parse(exchangeCollect.payload) as ProfileSnapshot & { sourceExchangeCollectItem: { errorCode: number; itemCid: number } };
+      expect(exchangeCollect.statusCode).toBe(200);
+      expect(exchangeCollectPayload.sourceExchangeCollectItem).toEqual({
+        errorCode: 0,
+        itemCid: 100102
+      });
+      expect(exchangeCollectPayload.profile.exchangeCollections).toEqual([100102]);
+
+      const exchangeCollectItems = await app.inject({
+        method: 'GET',
+        url: `/api/exchange/collect-items?playerId=${playerId}`,
+        headers: auth.headers
+      });
+      const exchangeCollectItemsPayload = JSON.parse(exchangeCollectItems.payload) as ExchangeCollectItemListSnapshot;
+      expect(exchangeCollectItems.statusCode).toBe(200);
+      expect(exchangeCollectItemsPayload.collectItemList).toEqual([100102]);
+
+      const exchangeUncollect = await app.inject({
+        method: 'POST',
+        url: '/api/exchange/uncollect-item',
+        headers: auth.headers,
+        payload: { playerId, itemCid: 100102 }
+      });
+      const exchangeUncollectPayload = JSON.parse(exchangeUncollect.payload) as ProfileSnapshot & { sourceExchangeUncollectItem: { errorCode: number; itemCid: number } };
+      expect(exchangeUncollect.statusCode).toBe(200);
+      expect(exchangeUncollectPayload.sourceExchangeUncollectItem).toEqual({
+        errorCode: 0,
+        itemCid: 100102
+      });
+      expect(exchangeUncollectPayload.profile.exchangeCollections).toEqual([]);
 
       const auctionLanchList = await app.inject({
         method: 'GET',
@@ -623,7 +817,7 @@ describe('server routes', () => {
       const auctionUnlanchPayload = JSON.parse(auctionUnlanch.payload) as ProfileSnapshot & { sourceAuctionHouseUnlanchItem: AuctionHouseUnlanchItemResponse };
       expect(auctionUnlanch.statusCode).toBe(200);
       expect(auctionUnlanchPayload.sourceAuctionHouseUnlanchItem).toEqual(expect.objectContaining({ errorCode: 0, itemUid: sourceUid }));
-      expect(auctionUnlanchPayload.profile.marketOrders[0]?.status).toBe('cancelled');
+      expect(auctionUnlanchPayload.profile.marketOrders.find((order) => order.id === auctionOrderPayload.profile.marketOrders[0]?.id)?.status).toBe('cancelled');
       expect(store.state.profiles[bidderAuth.profileId]?.coins).toBe(bidderCoinsAfterBid + 2_000);
 
       const activity = await app.inject({

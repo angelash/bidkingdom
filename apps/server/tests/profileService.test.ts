@@ -346,6 +346,36 @@ describe('profile service', () => {
     expect(() => profiles.setShopItemCollection('p_shop_collect', 99999999, true)).toThrow('收藏商品不存在');
   });
 
+  it('collects and uncollects exchange item ids through source Exchange collect state', () => {
+    const profiles = createProfileService(createMemoryStore());
+    profiles.getOrCreateProfile('p_exchange_collect', '交易收藏');
+
+    const collected = profiles.collectExchangeItem('p_exchange_collect', 100102);
+    const repeated = profiles.collectExchangeItem('p_exchange_collect', 100102);
+
+    expect(collected.sourceExchangeCollectItem).toEqual({
+      errorCode: 0,
+      itemCid: 100102
+    });
+    expect(collected.profile.exchangeCollections).toEqual([100102]);
+    expect(repeated.profile.exchangeCollections).toEqual([100102]);
+    expect(repeated.profile.shopCollections).toEqual([]);
+    expect(profiles.listExchangeCollectItems('p_exchange_collect')).toEqual(expect.objectContaining({
+      errorCode: 0,
+      collectItemList: [100102]
+    }));
+
+    const uncollected = profiles.uncollectExchangeItem('p_exchange_collect', 100102);
+
+    expect(uncollected.sourceExchangeUncollectItem).toEqual({
+      errorCode: 0,
+      itemCid: 100102
+    });
+    expect(uncollected.profile.exchangeCollections).toEqual([]);
+    expect(profiles.listExchangeCollectItems('p_exchange_collect').collectItemList).toEqual([]);
+    expect(() => profiles.collectExchangeItem('p_exchange_collect', 99999999)).toThrow('收藏藏品不存在');
+  });
+
   it('buys exchange shop items through configured item costs', () => {
     const profiles = createProfileService(createMemoryStore());
     const profile = profiles.getOrCreateProfile('p_exchange_shop', '掌柜兑换');
@@ -639,8 +669,8 @@ describe('profile service', () => {
         totalPrice: 8800,
         listingFee: 44,
         tax: 1010,
-        listingCost: 88,
-        fee: 1054,
+        listingCost: 44,
+        fee: 1010,
         netPrice: 7746,
         status: 'listed'
       })
@@ -659,6 +689,27 @@ describe('profile service', () => {
     expect(listed.marketOrders[0]).toEqual(expect.objectContaining({ quantity: 10, status: 'listed' }));
   });
 
+  it('splits source exchange lanch counts by Item max_per_listing slots', () => {
+    const profiles = createProfileService(createMemoryStore());
+    const profile = profiles.getOrCreateProfile('p_exchange_split', '交易拆单掌柜');
+    grantInventory(profile, '100102', 11);
+
+    const lanch = profiles.lanchExchangeItem('p_exchange_split', 100102, 11, 11_000);
+
+    expect(lanch.sourceExchangeLanchItem).toEqual(expect.objectContaining({ errorCode: 0 }));
+    expect(lanch.profile.marketOrders).toEqual([
+      expect.objectContaining({ orderType: 'trade', quantity: 1, price: 1000, totalPrice: 1000 }),
+      expect.objectContaining({ orderType: 'trade', quantity: 10, price: 1000, totalPrice: 10_000 })
+    ]);
+    expect(profiles.listExchangeLanchItems('p_exchange_split').lunchItemList).toEqual([
+      expect.objectContaining({ itemCid: 100102, itemCount: 1, totalPrice: 1000, tradeCount: 0 }),
+      expect.objectContaining({ itemCid: 100102, itemCount: 10, totalPrice: 10_000, tradeCount: 0 })
+    ]);
+    expect(profiles.listExchangeItemTradeInfo(100102).tradeInfoList).toEqual([
+      { price: 1000, peopleCount: 11 }
+    ]);
+  });
+
   it('settles market orders with Item transaction tax fees', () => {
     const profiles = createProfileService(createMemoryStore());
     profiles.getOrCreateProfile('p_market_fee', '掌柜手续费');
@@ -668,10 +719,10 @@ describe('profile service', () => {
     const settled = profiles.settleMarketOrder('p_market_fee', order.id).profile;
     const transactions = profiles.getSnapshot('p_market_fee').transactions;
 
-    expect(settled.marketOrders[0]).toEqual(expect.objectContaining({ status: 'sold', listingFee: 44, tax: 1010, fee: 1054, netPrice: 7746 }));
-    expect(settled.coins).toBe(DEFAULT_PROFILE_COINS + 1_658);
-    expect(transactions.some((entry) => entry.reason === 'market_order_listing_cost' && entry.amountChange === -88)).toBe(true);
-    expect(transactions.some((entry) => entry.reason === 'market_order_fee' && entry.amountChange === -1054)).toBe(true);
+    expect(settled.marketOrders[0]).toEqual(expect.objectContaining({ status: 'sold', listingFee: 44, tax: 1010, fee: 1010, netPrice: 7746 }));
+    expect(settled.coins).toBe(DEFAULT_PROFILE_COINS + 1_746);
+    expect(transactions.some((entry) => entry.reason === 'market_order_listing_cost' && entry.amountChange === -44)).toBe(true);
+    expect(transactions.some((entry) => entry.reason === 'market_order_fee' && entry.amountChange === -1010)).toBe(true);
   });
 
   it('settles global market orders between seller and buyer profiles', () => {
@@ -764,7 +815,7 @@ describe('profile service', () => {
     const sold = profiles.settleMarketOrder('p_market_actions', tradeOrder.id).profile;
 
     expect(sold.marketOrders[0]?.status).toBe('sold');
-    expect(sold.coins).toBe(DEFAULT_PROFILE_COINS + 1_122);
+    expect(sold.coins).toBe(DEFAULT_PROFILE_COINS + 1_134);
 
     const auctionOrder = profiles.createMarketOrder('p_market_actions', '100102', 1, 1500, 'auction').profile.marketOrders[0]!;
     const lockedBoxId = auctionOrder.lockedStockBoxes?.[0]?.boxId;
@@ -1052,31 +1103,225 @@ describe('profile service', () => {
     ]);
   });
 
-  it('expires listed market orders and returns locked inventory', () => {
+  it('keeps expired exchange listings locked until source relanch or unlanch', () => {
     const profiles = createProfileService(createMemoryStore());
     const profile = profiles.getOrCreateProfile('p_market_expire', '掌柜过期');
     grantInventory(profile, '100102', 1);
-    const order = profiles.createMarketOrder('p_market_expire', '100102', 1, 2400, 'trade').profile.marketOrders[0]!;
+    const lanchSnapshot = profiles.lanchExchangeItem('p_market_expire', 100102, 1, 2400);
+    const order = lanchSnapshot.profile.marketOrders[0]!;
     const lockedBoxId = order.lockedStockBoxes?.[0]?.boxId;
+    const sourceItemUid = order.sourceExchangeLunchItemUid!;
+    expect(lanchSnapshot.sourceExchangeLanchItem).toEqual({
+      errorCode: 0,
+      lunchItemUid: sourceItemUid,
+      orderId: order.id
+    });
     expect(order.sourceAuctionHouseLaunches?.[0]?.boxId).toBe(order.lockedStockBoxes?.[0]?.position);
     profiles.getOrCreateProfile('p_market_expire').marketOrders[0]!.expiresAt = Date.now() - 1;
 
     const snapshot = profiles.listMarketOrders('trade');
     const sellerSnapshot = profiles.getSnapshot('p_market_expire');
 
-    expect(snapshot.orders.find((candidate) => candidate.id === order.id)).toEqual(expect.objectContaining({ status: 'expired' }));
-    expect(sellerSnapshot.profile.marketOrders[0]).toEqual(expect.objectContaining({ status: 'expired' }));
-    expect(inventoryQuantity(sellerSnapshot.profile, '100102')).toBe(1);
-    expect(sellerSnapshot.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.boxId === lockedBoxId)).toBe(true);
-    expect(sellerSnapshot.transactions.some((entry) => entry.reason === 'market_order_expired_return')).toBe(true);
+    expect(snapshot.orders.find((candidate) => candidate.id === order.id)).toEqual(expect.objectContaining({
+      status: 'listed',
+      sourceExchangeLunchItem: expect.objectContaining({
+        lunchItemUid: sourceItemUid,
+        itemCid: 100102,
+        itemCount: 1,
+        totalPrice: 2400,
+        tradeCount: 0
+      })
+    }));
+    expect(profiles.listExchangeLanchItems('p_market_expire').lunchItemList).toEqual([
+      expect.objectContaining({
+        lunchItemUid: sourceItemUid,
+        itemCid: 100102,
+        endLunchTime: Math.floor((profile.marketOrders[0]?.expiresAt ?? 0) / 1000)
+      })
+    ]);
+    expect(sellerSnapshot.profile.marketOrders[0]).toEqual(expect.objectContaining({ status: 'listed' }));
+    expect(inventoryQuantity(sellerSnapshot.profile, '100102')).toBe(0);
+    expect(() => profiles.settleMarketOrder('p_market_expire_buyer', order.id)).toThrow('交易信息过期');
+
+    const relanchSnapshot = profiles.lanchExchangeItem('p_market_expire', 0, 0, 0, sourceItemUid);
+    expect(relanchSnapshot.sourceExchangeLanchItem).toEqual({
+      errorCode: 0,
+      lunchItemUid: sourceItemUid,
+      orderId: order.id,
+      reLanchItemUid: sourceItemUid
+    });
+    expect(relanchSnapshot.profile.marketOrders[0]).toEqual(expect.objectContaining({
+      status: 'listed',
+      sourceExchangeLunchItemUid: sourceItemUid
+    }));
+    expect((relanchSnapshot.profile.marketOrders[0]?.expiresAt ?? 0)).toBeGreaterThan(Date.now());
+
+    profiles.getOrCreateProfile('p_market_expire').marketOrders[0]!.expiresAt = Date.now() - 1;
+    const unlanchSnapshot = profiles.cancelExchangeLanchItem('p_market_expire', sourceItemUid);
+
+    expect(unlanchSnapshot.sourceExchangeUnlanchItem).toEqual({
+      errorCode: 0,
+      itemUid: sourceItemUid,
+      orderId: order.id
+    });
+    expect(unlanchSnapshot.profile.marketOrders[0]).toEqual(expect.objectContaining({ status: 'expired' }));
+    expect(inventoryQuantity(unlanchSnapshot.profile, '100102')).toBe(1);
+    expect(unlanchSnapshot.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.boxId === lockedBoxId)).toBe(true);
+    expect(unlanchSnapshot.transactions.some((entry) => entry.reason === 'market_order_expired_return')).toBe(true);
+  });
+
+  it('buys exchange items by source price buckets and records in/out trades', () => {
+    const profiles = createProfileService(createMemoryStore());
+    const sellerA = profiles.getOrCreateProfile('p_exchange_seller_a', '交易卖家甲');
+    const sellerB = profiles.getOrCreateProfile('p_exchange_seller_b', '交易卖家乙');
+    const buyer = profiles.getOrCreateProfile('p_exchange_buyer', '交易买家');
+    buyer.coins = 30_000;
+    grantInventory(sellerA, '100102', 1);
+    grantInventory(sellerB, '100102', 2);
+
+    const lanchA = profiles.lanchExchangeItem('p_exchange_seller_a', 100102, 1, 1000);
+    const orderA = lanchA.profile.marketOrders[0]!;
+    const sellerACoinsAfterListing = lanchA.profile.coins;
+    const lanchB = profiles.lanchExchangeItem('p_exchange_seller_b', 100102, 2, 3000);
+    const orderB = lanchB.profile.marketOrders[0]!;
+    const sellerBCoinsAfterListing = lanchB.profile.coins;
+
+    expect(orderA).toEqual(expect.objectContaining({ listingFee: 5, listingCost: 5, tax: 50, fee: 50, netPrice: 945 }));
+    expect(orderB).toEqual(expect.objectContaining({ listingFee: 15, listingCost: 15, tax: 150, fee: 150, netPrice: 2835 }));
+
+    expect(profiles.listExchangeInfo().allItemPriceInfo).toEqual([
+      { itemCid: 100102, price: 1000 }
+    ]);
+    expect(profiles.listExchangeItemTradeInfo(100102).tradeInfoList).toEqual([
+      { price: 1000, peopleCount: 1 },
+      { price: 1500, peopleCount: 2 }
+    ]);
+
+    const buySnapshot = profiles.buyExchangeItem('p_exchange_buyer', 100102, 2, 2500);
+
+    expect(buySnapshot.sourceExchangeBuyItem).toEqual({
+      errorCode: 0,
+      itemCid: 100102,
+      itemCount: 2,
+      estimatePrice: 2500
+    });
+    expect(buySnapshot.profile.coins).toBe(27_500);
+    expect(inventoryQuantity(buySnapshot.profile, '100102')).toBe(2);
+    const sellerASnapshot = profiles.getSnapshot('p_exchange_seller_a');
+    const sellerBSnapshot = profiles.getSnapshot('p_exchange_seller_b');
+    const soldA = sellerASnapshot.profile.marketOrders.find((order) => order.id === orderA.id)!;
+    const partialB = sellerBSnapshot.profile.marketOrders.find((order) => order.id === orderB.id)!;
+    expect(soldA).toEqual(expect.objectContaining({
+      status: 'sold',
+      sourceExchangeTradeCount: 1,
+      buyerId: 'p_exchange_buyer'
+    }));
+    expect(partialB).toEqual(expect.objectContaining({
+      status: 'listed',
+      sourceExchangeTradeCount: 1
+    }));
+    expect(partialB.lockedStockBoxes).toHaveLength(1);
+    expect(sellerASnapshot.profile.coins).toBeGreaterThan(sellerACoinsAfterListing);
+    expect(sellerBSnapshot.profile.coins).toBeGreaterThan(sellerBCoinsAfterListing);
+    expect(sellerASnapshot.transactions.some((entry) => entry.reason === 'market_order_listing_cost' && entry.amountChange === -5)).toBe(true);
+    expect(sellerASnapshot.transactions.some((entry) => entry.reason === 'exchange_order_fee' && entry.amountChange === -50)).toBe(true);
+    expect(sellerBSnapshot.transactions.some((entry) => entry.reason === 'market_order_listing_cost' && entry.amountChange === -15)).toBe(true);
+    expect(sellerBSnapshot.transactions.some((entry) => entry.reason === 'exchange_order_fee' && entry.amountChange === -75)).toBe(true);
+    expect(profiles.listExchangeItemTradeInfo(100102).tradeInfoList).toEqual([
+      { price: 1500, peopleCount: 1 }
+    ]);
+    expect(profiles.listExchangeLanchItems('p_exchange_seller_b').lunchItemList).toEqual([
+      expect.objectContaining({
+        lunchItemUid: orderB.sourceExchangeLunchItemUid,
+        itemCount: 2,
+        totalPrice: 3000,
+        tradeCount: 1
+      })
+    ]);
+    expect(profiles.listExchangeTradeInfo('p_exchange_buyer').tradeInfoInList).toEqual(expect.arrayContaining([
+      expect.objectContaining({ itemCid: 100102, itemCount: 1, price: 1000 }),
+      expect.objectContaining({ itemCid: 100102, itemCount: 1, price: 1500 })
+    ]));
+    expect(profiles.listExchangeTradeInfo('p_exchange_seller_b').tradeInfoOutList).toEqual([
+      expect.objectContaining({ itemCid: 100102, itemCount: 1, price: 1500 })
+    ]);
+    expect(() => profiles.buyExchangeItem('p_exchange_buyer', 100102, 1, 1000)).toThrow('交易信息过期');
+
+    const unlanchB = profiles.cancelExchangeLanchItem('p_exchange_seller_b', orderB.sourceExchangeLunchItemUid!);
+
+    expect(unlanchB.profile.marketOrders.find((order) => order.id === orderB.id)).toEqual(expect.objectContaining({ status: 'cancelled' }));
+    expect(inventoryQuantity(unlanchB.profile, '100102')).toBe(1);
+  });
+
+  it('checks source exchange buyer warehouse capacity before mutating purchase state', () => {
+    const profiles = createProfileService(createMemoryStore());
+    const seller = profiles.getOrCreateProfile('p_exchange_full_seller', '满仓交易卖家');
+    const buyer = profiles.getOrCreateProfile('p_exchange_full_buyer', '满仓交易买家');
+    buyer.coins = 10_000;
+    grantInventory(seller, '100102', 1);
+
+    const lanch = profiles.lanchExchangeItem('p_exchange_full_seller', 100102, 1, 1000);
+    const order = lanch.profile.marketOrders[0]!;
+    const sellerCoinsAfterListing = lanch.profile.coins;
+    const lockedBoxIds = order.lockedStockBoxes?.map((box) => box.boxId) ?? [];
+
+    resetStockInventory(buyer);
+    const item = Item.find((candidate) => candidate.id === 100102)!;
+    const now = Date.now();
+    buyer.stockContainers = [{
+      stockId: 5001,
+      cid: 5001,
+      kind: 'warehouse',
+      name: '主仓库',
+      width: 1,
+      height: 1,
+      boxes: [{
+        boxId: 1,
+        position: 0,
+        item: {
+          uid: 'buyer_full:100102:1',
+          sourceUid: 1,
+          cid: 100102,
+          count: 1,
+          boxPositionData: [{ x: 0, y: 0 }],
+          rotate: false,
+          canTrade: true,
+          no: 1,
+          isLock: false,
+          quality: item.item_quality,
+          createdAt: now
+        }
+      }],
+      updatedAt: now
+    }];
+    buyer.stockState = { nextBoxId: 2, nextItemNo: 2 };
+    const buyerCoinsBefore = buyer.coins;
+
+    expect(() => profiles.buyExchangeItem('p_exchange_full_buyer', 100102, 1, 1000)).toThrow('仓库空间不足');
+
+    const buyerSnapshot = profiles.getSnapshot('p_exchange_full_buyer');
+    const sellerSnapshot = profiles.getSnapshot('p_exchange_full_seller');
+    const sellerOrder = sellerSnapshot.profile.marketOrders.find((candidate) => candidate.id === order.id)!;
+    expect(buyerSnapshot.profile.coins).toBe(buyerCoinsBefore);
+    expect(inventoryQuantity(buyerSnapshot.profile, '100102')).toBe(0);
+    expect(buyerSnapshot.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes).toHaveLength(1);
+    expect(sellerSnapshot.profile.coins).toBe(sellerCoinsAfterListing);
+    expect(sellerOrder).toEqual(expect.objectContaining({
+      status: 'listed',
+      sourceExchangeTradeCount: 0
+    }));
+    expect(sellerOrder.lockedStockBoxes?.map((box) => box.boxId)).toEqual(lockedBoxIds);
+    expect(profiles.listExchangeItemTradeInfo(100102).tradeInfoList).toEqual([
+      { price: 1000, peopleCount: 1 }
+    ]);
   });
 
   it('enforces original market slot and mail-cap constants before listing', () => {
     const profiles = createProfileService(createMemoryStore());
     const profile = profiles.getOrCreateProfile('p_market_slots', '掌柜槽位');
-    grantInventory(profile, '100102', 6);
+    grantInventory(profile, '100102', 11);
 
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 10; index += 1) {
       profiles.createMarketOrder('p_market_slots', '100102', 1, 1000 + index * 100, 'trade');
     }
 
@@ -1113,7 +1358,8 @@ describe('profile service', () => {
       ?.boxes.find((box) => box.item.cid === SEND_AUCTION_TEST_ITEM_ID && box.position === 10);
 
     const unitValue = Item.find((item) => item.id === SEND_AUCTION_TEST_ITEM_ID)?.base_value ?? 0;
-    const created = profiles.createSendAuction('p_send_auction', 101, selectedBoxes).profile;
+    const createdSnapshot = profiles.createSendAuction('p_send_auction', 101, selectedBoxes, 2);
+    const created = createdSnapshot.profile;
     const auction = created.sendAuctions?.[0]!;
 
     expect(firstSourceBox?.item.sourceUid).toEqual(expect.any(Number));
@@ -1127,11 +1373,33 @@ describe('profile service', () => {
     expect(auction).toEqual(expect.objectContaining({
       mapCid: 101,
       bidMapId: 2101,
-      slotId: 0,
+      slotId: 2,
       status: 'listed',
       fee: 1000,
       totalValue: unitValue * 15,
       targetValue: 20_000
+    }));
+    expect(createdSnapshot.sourceSendAuction).toEqual(expect.objectContaining({
+      errorCode: 0,
+      sendAuctionData: expect.objectContaining({
+        uid: expect.any(Number),
+        mapCid: 101,
+        slotId: 2,
+        sendTime: auction.createdAt,
+        stockData: expect.objectContaining({
+          stockId: 2,
+          stockCid: 2101,
+          stockBoxes: expect.arrayContaining([
+            expect.objectContaining({ boxId: expect.any(Number) })
+          ])
+        })
+      })
+    }));
+    const listed = profiles.listSendAuctions('p_send_auction', false);
+    expect(listed).toEqual(expect.objectContaining({
+      errorCode: 0,
+      auctions: [expect.objectContaining({ id: auction.id, status: 'listed' })],
+      sendAuctionDataList: [expect.objectContaining({ uid: expect.any(Number), slotId: 2, mapCid: 101 })]
     }));
     expect(auction.items).toHaveLength(15);
     expect(auction.stockContainer.kind).toBe('sendAuction');
@@ -1147,7 +1415,9 @@ describe('profile service', () => {
     expect(inventoryQuantity(created, String(SEND_AUCTION_TEST_ITEM_ID))).toBe(0);
     expect(created.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes.some((box) => box.item.cid === SEND_AUCTION_TEST_ITEM_ID)).toBe(false);
 
-    const recycled = profiles.recycleSendAuction('p_send_auction', auction.slotId).profile;
+    const recycledSnapshot = profiles.recycleSendAuction('p_send_auction', auction.slotId);
+    const recycled = recycledSnapshot.profile;
+    expect(recycledSnapshot.sourceSendAuctionRecycle).toEqual({ errorCode: 0 });
 
     expect(recycled.sendAuctions?.find((candidate) => candidate.id === auction.id)).toEqual(expect.objectContaining({
       status: 'recycled',
@@ -1155,6 +1425,16 @@ describe('profile service', () => {
       profit: 0
     }));
     const recycledGame = recycled.sendAuctionGames?.[0]!;
+    expect(profiles.listSendAuctionGames('p_send_auction')).toEqual(expect.objectContaining({
+      errorCode: 0,
+      sendAuctionGameDataList: [expect.objectContaining({
+        uid: recycledGame.uid,
+        mapCid: 101,
+        gameOverTime: recycledGame.gameOverTime,
+        gameData: expect.objectContaining({ mapId: 2101 })
+      })],
+      games: [expect.objectContaining({ sendAuctionId: auction.id })]
+    }));
     expect(recycledGame).toEqual(expect.objectContaining({
       sendAuctionId: auction.id,
       mapCid: 101,
@@ -1226,6 +1506,7 @@ describe('profile service', () => {
     const fourth = profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profiles.getOrCreateProfile('p_send_auction_rules'), SEND_AUCTION_TEST_ITEM_ID, 15)).profile.sendAuctions?.[0]!;
 
     expect([second.slotId, third.slotId, fourth.slotId]).toEqual([0, 1, 2]);
+    expect(() => profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profiles.getOrCreateProfile('p_send_auction_rules'), SEND_AUCTION_TEST_ITEM_ID, 15), 1)).toThrow('委托槽位已满');
     expect(() => profiles.createSendAuction('p_send_auction_rules', 101, selectWarehouseStockBoxes(profiles.getOrCreateProfile('p_send_auction_rules'), SEND_AUCTION_TEST_ITEM_ID, 15))).toThrow('委托槽位已满');
   });
 

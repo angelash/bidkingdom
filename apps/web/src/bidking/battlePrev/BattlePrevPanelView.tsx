@@ -216,7 +216,7 @@ export function BattlePrevPanelView({
       >
         <header className="battle-scene-header">
           <div className="battle-scene-brand">
-            <span className="battle-scene-logo">BID KING</span>
+            <span className="battle-scene-logo">珍宝局</span>
             <h2>竞拍大厅</h2>
           </div>
           <div className="battle-scene-wallet">

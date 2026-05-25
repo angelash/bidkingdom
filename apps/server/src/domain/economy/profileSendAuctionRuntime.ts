@@ -9,8 +9,14 @@ import type {
   ProfileStockBoxState,
   ProfileStockContainerState,
   ProfileTransaction,
+  SendAuctionCreateResponse,
+  SendAuctionDataSnapshot,
+  SendAuctionGameDataSnapshot,
+  SendAuctionGameListSnapshot,
   SendAuctionGameState,
   SendAuctionItemState,
+  SendAuctionListSnapshot,
+  SendAuctionRecycleResponse,
   SendAuctionState
 } from '@bitkingdom/shared';
 import { randomUUID } from 'node:crypto';
@@ -56,6 +62,7 @@ export function createSendAuctionForProfile(
   itemSelections: readonly SendAuctionItemSelectionInput[],
   applyNumberChange: SendAuctionNumberApplier,
   recordTransaction: SendAuctionTransactionRecorder,
+  requestedSlotId?: number,
   now = Date.now()
 ): SendAuctionState {
   ensureProfileShape(profile);
@@ -110,10 +117,7 @@ export function createSendAuctionForProfile(
     throw new Error('委托手续费铜钱不足');
   }
 
-  const slotId = firstFreeSendAuctionSlot(activeAuctions, slotBase);
-  if (slotId < 0) {
-    throw new Error('委托槽位已满');
-  }
+  const slotId = resolveSendAuctionSlot(activeAuctions, slotBase, requestedSlotId);
 
   if (fee > 0) {
     applyNumberChange(profile, `send_auction:${profile.playerId}:${now}:slot:${slotId}:fee`, 'send_auction_fee', 'coins', -fee);
@@ -227,6 +231,66 @@ export function listSendAuctionGamesForProfile(profile: PlayerProfile): SendAuct
   return profile.sendAuctionGames!.sort((left, right) => right.gameOverTime - left.gameOverTime);
 }
 
+export function buildSourceSendAuctionData(auction: SendAuctionState): SendAuctionDataSnapshot {
+  return {
+    uid: stableNumericId(auction.id),
+    mapCid: auction.mapCid,
+    slotId: auction.slotId,
+    stockData: toBidKingStockContainer(auction.stockContainer),
+    sendTime: auction.createdAt
+  };
+}
+
+export function buildSourceSendAuctionCreateResponse(auction: SendAuctionState): SendAuctionCreateResponse {
+  return {
+    errorCode: 0,
+    sendAuctionData: buildSourceSendAuctionData(auction)
+  };
+}
+
+export function buildSourceSendAuctionRecycleResponse(): SendAuctionRecycleResponse {
+  return {
+    errorCode: 0
+  };
+}
+
+export function buildSendAuctionListSnapshot(
+  profile: PlayerProfile,
+  includeHistory = true,
+  generatedAt = Date.now()
+): SendAuctionListSnapshot {
+  const auctions = listSendAuctionsForProfile(profile, includeHistory);
+  return {
+    generatedAt,
+    errorCode: 0,
+    sendAuctionDataList: auctions.map(buildSourceSendAuctionData),
+    auctions
+  };
+}
+
+export function buildSourceSendAuctionGameData(game: SendAuctionGameState): SendAuctionGameDataSnapshot {
+  return {
+    uid: game.uid,
+    mapCid: game.mapCid,
+    gameData: game.gameData,
+    gameOverTime: game.gameOverTime,
+    userSkillList: game.userSkillList.map(cloneBidKingGameSkillData)
+  };
+}
+
+export function buildSendAuctionGameListSnapshot(
+  profile: PlayerProfile,
+  generatedAt = Date.now()
+): SendAuctionGameListSnapshot {
+  const games = listSendAuctionGamesForProfile(profile);
+  return {
+    generatedAt,
+    errorCode: 0,
+    sendAuctionGameDataList: games.map(buildSourceSendAuctionGameData),
+    games
+  };
+}
+
 function buildSendAuctionGameState(
   profile: PlayerProfile,
   auction: SendAuctionState,
@@ -280,7 +344,7 @@ function buildSendAuctionGameState(
 
 function toBidKingStockContainer(container: ProfileStockContainerState): BidKingStockContainerDataSnapshot {
   return {
-    stockId: stableNumericId(`send-auction-stock:${container.stockId}:${container.cid}`),
+    stockId: container.stockId,
     stockCid: container.cid,
     stockBoxes: container.boxes.map((box) => toBidKingStockBox(container, box)),
     cabinetLastGetRewardTime: 0,
@@ -602,6 +666,39 @@ function firstFreeSendAuctionSlot(activeAuctions: readonly SendAuctionState[], s
     }
   }
   return -1;
+}
+
+function resolveSendAuctionSlot(
+  activeAuctions: readonly SendAuctionState[],
+  slotBase: number,
+  requestedSlotId?: number
+): number {
+  if (requestedSlotId === undefined) {
+    const slotId = firstFreeSendAuctionSlot(activeAuctions, slotBase);
+    if (slotId < 0) {
+      throw new Error('委托槽位已满');
+    }
+    return slotId;
+  }
+  if (!Number.isFinite(requestedSlotId) || !Number.isInteger(requestedSlotId) || requestedSlotId < 0 || requestedSlotId >= slotBase) {
+    throw new Error(`委托槽位无效：${requestedSlotId}`);
+  }
+  if (activeAuctions.some((auction) => auction.slotId === requestedSlotId)) {
+    throw new Error(`委托槽位已占用：${requestedSlotId}`);
+  }
+  return requestedSlotId;
+}
+
+function cloneBidKingGameSkillData(skill: BidKingGameDataSnapshot['heroSkillLog'][number]): BidKingGameDataSnapshot['heroSkillLog'][number] {
+  return {
+    ...skill,
+    hitBoxList: skill.hitBoxList.map((box) => ({
+      ...box,
+      itemType: [...box.itemType]
+    })),
+    hitItemTypeList: [...skill.hitItemTypeList],
+    hitItemQuilityList: [...skill.hitItemQuilityList]
+  };
 }
 
 function sendAuctionMapForId(mapCid: number): BidKingMapRow | undefined {

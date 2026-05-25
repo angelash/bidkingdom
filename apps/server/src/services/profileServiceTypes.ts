@@ -8,14 +8,25 @@ import type {
   AuctionHouseTradeInfoListSnapshot,
   AuctionHouseUnlockLanchSlotResponse,
   AuctionHouseUnlanchItemResponse,
+  ExchangeBuyItemResponse,
+  ExchangeCollectItemListSnapshot,
+  ExchangeCollectItemResponse,
+  ExchangeInfoSnapshot,
+  ExchangeItemTradeInfoListSnapshot,
+  ExchangeLanchItemResponse,
+  ExchangeLunchItemListSnapshot,
+  ExchangeTradeInfoListSnapshot,
+  ExchangeUnlanchItemResponse,
   FinalMatchSummary,
   MarketOrdersSnapshot,
   PlayerProfile,
   ProfileSnapshot,
   ProfileTransaction,
   RankSnapshot,
-  SendAuctionGameState,
-  SendAuctionState
+  SendAuctionCreateResponse,
+  SendAuctionGameListSnapshot,
+  SendAuctionListSnapshot,
+  SendAuctionRecycleResponse
 } from '@bitkingdom/shared';
 import type {
   SendAuctionItemSelectionInput
@@ -69,9 +80,19 @@ export interface ProfileService {
   completePurchaseListOrder(playerId: string, purchaseId: string): ProfileSnapshot;
   unlockDemoDlc(playerId: string, dlcId: string): ProfileSnapshot;
   createMarketOrder(playerId: string, refId: string, quantity: number, price: number, orderType: 'trade' | 'auction', note?: string): ProfileSnapshot;
+  lanchExchangeItem(playerId: string, itemCid: number, count: number, totalPrice: number, reLanchItemUid?: number): ProfileSnapshot & { sourceExchangeLanchItem: ExchangeLanchItemResponse };
   settleMarketOrder(playerId: string, orderId: string): ProfileSnapshot;
   cancelMarketOrder(playerId: string, orderId: string): ProfileSnapshot;
+  cancelExchangeLanchItem(playerId: string, itemUid: number): ProfileSnapshot & { sourceExchangeUnlanchItem: ExchangeUnlanchItemResponse };
   listMarketOrders(orderType?: 'trade' | 'auction'): MarketOrdersSnapshot;
+  listExchangeLanchItems(playerId: string): ExchangeLunchItemListSnapshot;
+  listExchangeInfo(): ExchangeInfoSnapshot;
+  listExchangeItemTradeInfo(itemCid: number): ExchangeItemTradeInfoListSnapshot;
+  buyExchangeItem(playerId: string, itemCid: number, itemCount: number, estimatePrice: number): ProfileSnapshot & { sourceExchangeBuyItem: ExchangeBuyItemResponse };
+  listExchangeTradeInfo(playerId: string): ExchangeTradeInfoListSnapshot;
+  collectExchangeItem(playerId: string, itemCid: number): ProfileSnapshot & { sourceExchangeCollectItem: ExchangeCollectItemResponse };
+  uncollectExchangeItem(playerId: string, itemCid: number): ProfileSnapshot & { sourceExchangeUncollectItem: ExchangeCollectItemResponse };
+  listExchangeCollectItems(playerId: string): ExchangeCollectItemListSnapshot;
   listAuctionHouseLanchItems(playerId: string): AuctionHouseLanchItemListSnapshot;
   listAuctionHouseItems(options?: { itemCid?: number; isDisplayPeriod?: number; sortType?: AuctionHouseItemSortModel; page?: number; pageSize?: number; reverse?: boolean }): AuctionHouseItemInfoSnapshot;
   listAuctionHouseItemPriceInfo(): AuctionHouseItemPriceInfoListSnapshot;
@@ -80,11 +101,11 @@ export interface ProfileService {
   unlockAuctionHouseLanchSlot(playerId: string, unlockCount?: number): ProfileSnapshot & { sourceAuctionHouseUnlockLanchSlot: AuctionHouseUnlockLanchSlotResponse };
   listAuctionHouseBidLogs(playerId: string): AuctionHouseBidLogListSnapshot;
   listAuctionHouseTradeInfo(playerId: string): AuctionHouseTradeInfoListSnapshot;
-  createSendAuction(playerId: string, mapCid: number, itemSelections: SendAuctionItemSelectionInput[]): ProfileSnapshot;
+  createSendAuction(playerId: string, mapCid: number, itemSelections: SendAuctionItemSelectionInput[], slotId?: number): ProfileSnapshot & { sourceSendAuction: SendAuctionCreateResponse };
   settleSendAuction(playerId: string, sendAuctionId: string, finalPrice?: number): ProfileSnapshot;
-  recycleSendAuction(playerId: string, slotId: number): ProfileSnapshot;
-  listSendAuctions(playerId: string, includeHistory?: boolean): SendAuctionState[];
-  listSendAuctionGames(playerId: string): SendAuctionGameState[];
+  recycleSendAuction(playerId: string, slotId: number): ProfileSnapshot & { sourceSendAuctionRecycle: SendAuctionRecycleResponse };
+  listSendAuctions(playerId: string, includeHistory?: boolean): SendAuctionListSnapshot;
+  listSendAuctionGames(playerId: string): SendAuctionGameListSnapshot;
   addDemoFriend(playerId: string): ProfileSnapshot;
   removeFriend(playerId: string, friendId: string): ProfileSnapshot;
   setFriendRemark(playerId: string, friendId: string, remark: string): ProfileSnapshot;

@@ -896,6 +896,10 @@ export interface MarketOrderState {
   numberCid?: number;
   itemNo?: number;
   lockedStockBoxes?: ProfileStockBoxState[];
+  sourceExchangeLunchItemUid?: number;
+  sourceExchangeTradeCount?: number;
+  sourceExchangeTotalPrice?: number;
+  sourceExchangeTrades?: MarketOrderSourceExchangeTrade[];
   sourceAuctionHouseLaunches?: MarketOrderSourceAuctionHouseLaunch[];
   sourceAuctionHouseLanchItemUid?: number;
   sourceAuctionHouseMaxPrice?: number;
@@ -932,6 +936,102 @@ export interface MarketOrderSourceAuctionHouseLaunch {
   startPrice: number;
   itemCount: number;
   bagItemCid: number;
+}
+
+export interface ExchangeLunchItemSnapshot {
+  lunchItemUid: number;
+  itemCid: number;
+  startLunchTime: number;
+  endLunchTime: number;
+  itemCount: number;
+  totalPrice: number;
+  tradeCount: number;
+}
+
+export interface ExchangeLunchItemListSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  lunchItemList: ExchangeLunchItemSnapshot[];
+}
+
+export interface ExchangeLanchItemResponse {
+  errorCode: number;
+  lunchItemUid: number;
+  orderId: string;
+  reLanchItemUid?: number;
+}
+
+export interface ExchangeUnlanchItemResponse {
+  errorCode: number;
+  itemUid: number;
+  orderId: string;
+}
+
+export interface ExchangeCollectItemResponse {
+  errorCode: number;
+  itemCid: number;
+}
+
+export interface ExchangeCollectItemListSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  collectItemList: number[];
+}
+
+export interface MarketOrderSourceExchangeTrade {
+  tradeTime: number;
+  itemCid: number;
+  itemCount: number;
+  price: number;
+  buyerId: string;
+  buyerName: string;
+  sellerId: string;
+  sellerName: string;
+  orderId: string;
+  lunchItemUid: number;
+}
+
+export interface ExchangeItemPriceInfoSnapshot {
+  itemCid: number;
+  price: number;
+}
+
+export interface ExchangeInfoSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  allItemPriceInfo: ExchangeItemPriceInfoSnapshot[];
+}
+
+export interface ExchangeItemTradeInfoSnapshot {
+  price: number;
+  peopleCount: number;
+}
+
+export interface ExchangeItemTradeInfoListSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  tradeInfoList: ExchangeItemTradeInfoSnapshot[];
+}
+
+export interface ExchangeTradeInfoSnapshot {
+  tradeTime: number;
+  itemCid: number;
+  itemCount: number;
+  price: number;
+}
+
+export interface ExchangeTradeInfoListSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  tradeInfoInList: ExchangeTradeInfoSnapshot[];
+  tradeInfoOutList: ExchangeTradeInfoSnapshot[];
+}
+
+export interface ExchangeBuyItemResponse {
+  errorCode: number;
+  itemCid: number;
+  itemCount: number;
+  estimatePrice: number;
 }
 
 export type AuctionHouseItemSortModel = 'LanchTime' | 'Price' | 'MaxPrice' | 'StartPrice';
@@ -1034,6 +1134,7 @@ export interface AuctionHouseTradeInfoListSnapshot {
 export interface MarketOrderView extends MarketOrderState {
   playerId: string;
   playerName: string;
+  sourceExchangeLunchItem?: ExchangeLunchItemSnapshot;
   sourceAuctionHouseLanchItem?: AuctionHouseLanchItemSnapshot;
 }
 
@@ -1082,6 +1183,30 @@ export interface SendAuctionState {
   failedAt?: number;
 }
 
+export interface SendAuctionDataSnapshot {
+  uid: number;
+  mapCid: number;
+  slotId: number;
+  stockData: BidKingStockContainerDataSnapshot;
+  sendTime: number;
+}
+
+export interface SendAuctionCreateResponse {
+  errorCode: number;
+  sendAuctionData: SendAuctionDataSnapshot;
+}
+
+export interface SendAuctionListSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  sendAuctionDataList: SendAuctionDataSnapshot[];
+  auctions: SendAuctionState[];
+}
+
+export interface SendAuctionRecycleResponse {
+  errorCode: number;
+}
+
 export interface SendAuctionGameState {
   id: string;
   sendAuctionId: string;
@@ -1098,6 +1223,21 @@ export interface SendAuctionGameState {
   totalValue: number;
   profit: number;
   createdAt: number;
+}
+
+export interface SendAuctionGameDataSnapshot {
+  uid: number;
+  mapCid: number;
+  gameData: BidKingGameDataSnapshot;
+  gameOverTime: number;
+  userSkillList: BidKingGameSkillDataSnapshot[];
+}
+
+export interface SendAuctionGameListSnapshot {
+  generatedAt: number;
+  errorCode: number;
+  sendAuctionGameDataList: SendAuctionGameDataSnapshot[];
+  games: SendAuctionGameState[];
 }
 
 export interface FriendState {
@@ -1274,6 +1414,7 @@ export interface PlayerProfile {
   shopPurchases: ShopPurchaseState[];
   shopRestocks?: ShopRestockState[];
   shopCollections?: number[];
+  exchangeCollections?: number[];
   equippedBattleItems: EquippedBattleItem[];
   claimedRankRewards: string[];
   claimedActivityRewards: string[];

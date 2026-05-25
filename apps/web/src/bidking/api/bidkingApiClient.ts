@@ -2,6 +2,7 @@ import type {
   AccountSessionSnapshot,
   MatchEventLog,
   ProfileSnapshot,
+  SendAuctionGameDataSnapshot,
   SendAuctionGameState,
   TransactionLog
 } from '@bitkingdom/shared';
@@ -19,6 +20,8 @@ export interface ReplayBundlePayload {
 
 export interface SendAuctionGamesPayload {
   generatedAt: number;
+  errorCode?: number;
+  sendAuctionGameDataList?: SendAuctionGameDataSnapshot[];
   games: SendAuctionGameState[];
 }
 

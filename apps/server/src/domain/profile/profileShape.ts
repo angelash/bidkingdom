@@ -13,6 +13,7 @@ export function ensureProfileShape(profile: PlayerProfile): void {
   profile.shopPurchases ??= [];
   profile.shopRestocks ??= [];
   profile.shopCollections ??= [];
+  profile.exchangeCollections ??= [];
   profile.claimedMissionRewards ??= [];
   profile.claimedAchievements ??= [];
   profile.missionRewardClaims ??= {};

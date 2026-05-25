@@ -241,6 +241,59 @@ export function returnStockBoxesToWarehouse(
   return restoredBoxes;
 }
 
+export function assertCanAddStockItemsToWarehouse(
+  profile: PlayerProfile,
+  itemCids: readonly number[],
+  now = Date.now(),
+  errorMessage = '仓库空间不足，无法放入实体藏品'
+): void {
+  const safeItemCids = itemCids
+    .map((itemCid) => Math.max(0, Math.floor(itemCid)))
+    .filter((itemCid) => itemCid > 0);
+  if (safeItemCids.length === 0) {
+    return;
+  }
+
+  ensureProfileStockState(profile, now);
+  const sourceWarehouse = ensureWarehouseContainer(profile, now);
+  const warehouse: ProfileStockContainerState = {
+    ...sourceWarehouse,
+    width: Math.max(1, sourceWarehouse.width || WAREHOUSE_WIDTH),
+    height: Math.max(1, sourceWarehouse.height || WAREHOUSE_HEIGHT),
+    boxes: sourceWarehouse.boxes.map((box) => cloneStockBoxForTransfer(box, box.item.isLock))
+  };
+
+  for (const itemCid of safeItemCids) {
+    const item = Item.find((candidate) => candidate.id === itemCid);
+    if (!item || item.slot_type <= 0) {
+      continue;
+    }
+    const position = firstAvailablePosition(warehouse, item);
+    if (position < 0) {
+      throw new Error(errorMessage);
+    }
+    const uid = `preflight:${profile.playerId}:${item.id}:${warehouse.boxes.length + 1}`;
+    warehouse.boxes.push({
+      boxId: -warehouse.boxes.length - 1,
+      position,
+      item: {
+        uid,
+        sourceUid: stableNumericId(uid),
+        cid: item.id,
+        count: 1,
+        boxPositionData: boxPositionDataForItem(position, warehouse.width, item, false),
+        rotate: false,
+        canTrade: bidKingItemRuntimeFlags(item).tradable,
+        no: warehouse.boxes.length + 1,
+        isLock: false,
+        quality: item.item_quality,
+        sourceId: 'warehouse_preflight',
+        createdAt: now
+      }
+    });
+  }
+}
+
 export interface ProfileStockItemSelection {
   stockId: number;
   boxId: number;

@@ -3432,6 +3432,348 @@ h1 {
   background: rgba(255, 255, 255, 0.13);
 }
 
+/* Ancient BidKing scene theme */
+.battle-scene-shell {
+  --scene-accent: #d8ad5f;
+  --scene-jade: #4f927b;
+  --scene-lacquer: #70251f;
+  --scene-ink: #090806;
+  --scene-paper: #d8c092;
+  color: #efe2c1;
+  background:
+    linear-gradient(90deg, rgba(7, 6, 4, 0.2), rgba(7, 6, 4, 0.08) 45%, rgba(12, 7, 5, 0.82) 70%, rgba(7, 5, 4, 0.94)),
+    linear-gradient(180deg, rgba(56, 18, 14, 0.18), rgba(8, 7, 5, 0.22) 46%, rgba(7, 5, 4, 0.78)),
+    var(--scene-bg) center / cover no-repeat;
+}
+
+.battle-scene-shell::before {
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.42), transparent 20%, transparent 62%, rgba(0, 0, 0, 0.5)),
+    radial-gradient(circle at 42% 42%, rgba(216, 173, 95, 0.13), transparent 34%);
+}
+
+.battle-scene-shell::after {
+  background:
+    repeating-linear-gradient(90deg, rgba(216, 173, 95, 0.035) 0 1px, transparent 1px 120px),
+    repeating-linear-gradient(45deg, rgba(216, 173, 95, 0.035) 0 1px, transparent 1px 64px);
+  opacity: 0.5;
+}
+
+.battle-scene-header {
+  border-bottom-color: rgba(216, 173, 95, 0.32);
+  background:
+    linear-gradient(90deg, rgba(86, 27, 22, 0.5), rgba(10, 8, 6, 0.6)),
+    rgba(8, 6, 4, 0.42);
+}
+
+.battle-scene-logo {
+  width: 104px;
+  color: #2b1809;
+  background:
+    linear-gradient(135deg, rgba(255, 247, 202, 0.22), transparent 32% 68%, rgba(79, 146, 123, 0.16)),
+    linear-gradient(180deg, #ddbd73, #a66f2d);
+  border: 1px solid rgba(255, 232, 158, 0.76);
+  clip-path: polygon(8% 10%, 92% 10%, 100% 50%, 92% 90%, 8% 90%, 0 50%);
+  box-shadow: inset 0 0 0 2px rgba(71, 32, 14, 0.35), 0 8px 22px rgba(0, 0, 0, 0.36);
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.battle-scene-brand h2 {
+  color: #f4e3bd;
+  text-shadow: 0 2px 0 rgba(45, 16, 8, 0.75);
+}
+
+.battle-scene-wallet > span {
+  border: 1px solid rgba(216, 173, 95, 0.22);
+  color: #f8e7be;
+  background:
+    linear-gradient(90deg, rgba(101, 34, 28, 0.34), rgba(16, 12, 9, 0.56)),
+    repeating-linear-gradient(135deg, rgba(216, 173, 95, 0.12) 0 4px, transparent 4px 14px);
+}
+
+.battle-scene-wallet .gold svg {
+  color: #e0bd72;
+}
+
+.battle-scene-wallet .silver svg,
+.battle-scene-stat .coin-cost svg,
+.battle-scene-stat > strong > svg {
+  color: #aac5b4;
+}
+
+.battle-scene-wallet button:not(.battle-scene-close) {
+  color: #321909;
+  background: linear-gradient(180deg, #f4d98c, #b98536);
+  box-shadow: inset 0 0 0 1px rgba(255, 244, 192, 0.55);
+}
+
+.battle-scene-close {
+  color: #e7c978;
+}
+
+.battle-scene-world-map {
+  border-color: rgba(216, 173, 95, 0.2);
+  background:
+    linear-gradient(90deg, rgba(37, 16, 9, 0.36), rgba(5, 8, 7, 0.1) 52%, rgba(37, 16, 9, 0.42)),
+    linear-gradient(180deg, rgba(86, 27, 22, 0.14), rgba(7, 5, 4, 0.72)),
+    url("/art/approved/backgrounds/background_black_market_v1.png") center / cover no-repeat;
+}
+
+.battle-scene-world-map .battle-prev-map-bg {
+  background:
+    radial-gradient(circle at 50% 44%, rgba(216, 173, 95, 0.18), transparent 29%),
+    repeating-linear-gradient(45deg, rgba(216, 173, 95, 0.055) 0 1px, transparent 1px 80px);
+}
+
+.battle-scene-world-map .battle-prev-route {
+  border-color: rgba(184, 131, 57, 0.28);
+  box-shadow: 0 0 70px rgba(177, 114, 42, 0.16);
+}
+
+.battle-scene-world-map .battle-prev-node {
+  border: 1px solid rgba(216, 173, 95, 0.28);
+  color: #ead7aa;
+  background:
+    linear-gradient(90deg, rgba(77, 29, 20, 0.92), rgba(12, 10, 8, 0.82)),
+    rgba(0, 0, 0, 0.48);
+  box-shadow: inset 0 0 0 1px rgba(255, 232, 158, 0.06), 0 14px 46px rgba(0, 0, 0, 0.46);
+}
+
+.battle-scene-world-map .battle-prev-node.mode-open {
+  background:
+    linear-gradient(90deg, rgba(35, 54, 43, 0.92), rgba(10, 12, 9, 0.8)),
+    rgba(0, 0, 0, 0.5);
+}
+
+.battle-scene-world-map .battle-prev-node.mode-sealed {
+  background:
+    linear-gradient(90deg, rgba(93, 33, 27, 0.94), rgba(14, 9, 7, 0.82)),
+    rgba(0, 0, 0, 0.5);
+}
+
+.battle-scene-world-map .battle-prev-node.selected {
+  border-color: #d8ad5f;
+  color: #f6dd9b;
+  box-shadow: 0 0 0 2px rgba(216, 173, 95, 0.26), 0 18px 56px rgba(0, 0, 0, 0.54);
+}
+
+.battle-scene-world-map .battle-prev-node span {
+  border-color: rgba(216, 173, 95, 0.34);
+  border-radius: 2px;
+}
+
+.battle-scene-world-map .battle-prev-node small {
+  color: #bea26e;
+}
+
+.battle-scene-overview-back svg,
+.battle-scene-back svg {
+  filter: drop-shadow(12px 0 0 #d8ad5f);
+}
+
+.battle-scene-role-intro > span,
+.battle-scene-detail-panel h3 {
+  border-left-color: #d8ad5f;
+  color: #e5bc63;
+  text-shadow: 0 2px 0 rgba(36, 13, 7, 0.72);
+}
+
+.battle-scene-role-intro h1 {
+  color: rgba(239, 226, 193, 0.88);
+  text-shadow: 0 4px 0 rgba(35, 13, 7, 0.65);
+}
+
+.battle-scene-role-intro p {
+  border-top-color: rgba(216, 173, 95, 0.36);
+  color: rgba(239, 226, 193, 0.74);
+}
+
+.battle-scene-role-thumbs img {
+  border-color: rgba(216, 173, 95, 0.78);
+}
+
+.battle-scene-detail-panel {
+  scrollbar-color: rgba(216, 173, 95, 0.78) rgba(92, 34, 24, 0.22);
+}
+
+.battle-scene-detail-panel::-webkit-scrollbar-track {
+  background: rgba(92, 34, 24, 0.22);
+}
+
+.battle-scene-detail-panel::-webkit-scrollbar-thumb {
+  background: rgba(216, 173, 95, 0.78);
+}
+
+.battle-scene-detail-panel header p {
+  border-bottom-color: rgba(216, 173, 95, 0.28);
+  color: rgba(216, 197, 160, 0.74);
+  background:
+    linear-gradient(90deg, rgba(48, 24, 15, 0.92), rgba(20, 17, 13, 0.9)),
+    rgba(27, 22, 16, 0.9);
+}
+
+.battle-scene-stat {
+  border-bottom-color: rgba(216, 173, 95, 0.24);
+  color: rgba(226, 208, 172, 0.76);
+}
+
+.battle-scene-stat > strong {
+  color: #f3dfb3;
+}
+
+.battle-scene-stat em.missing,
+.battle-scene-item-list b {
+  color: #e5654f;
+}
+
+.battle-scene-config-box,
+.battle-scene-config-box.items {
+  border-color: rgba(216, 173, 95, 0.25);
+  background:
+    linear-gradient(135deg, rgba(86, 27, 22, 0.2), rgba(8, 7, 5, 0.58)),
+    rgba(7, 7, 8, 0.55);
+}
+
+.battle-scene-config-box button {
+  border-color: #d8ad5f;
+  color: #f0cd7a;
+  background: linear-gradient(180deg, rgba(83, 29, 22, 0.54), rgba(10, 8, 6, 0.66));
+}
+
+.battle-scene-skill-slot {
+  border-color: rgba(216, 173, 95, 0.62);
+  background: rgba(8, 6, 4, 0.72);
+}
+
+.battle-scene-config-copy {
+  border-bottom-color: rgba(216, 173, 95, 0.26);
+}
+
+.battle-scene-config-copy strong,
+.battle-scene-config-box.items header {
+  color: #f0dfb9;
+}
+
+.battle-scene-config-copy span {
+  color: rgba(216, 197, 160, 0.72);
+}
+
+.battle-scene-pocket-row span {
+  border-color: rgba(216, 173, 95, 0.2);
+  color: rgba(239, 226, 193, 0.76);
+  background: linear-gradient(180deg, rgba(35, 54, 43, 0.34), rgba(13, 12, 9, 0.56));
+}
+
+.battle-scene-pocket-row span.filled {
+  border-color: rgba(216, 173, 95, 0.68);
+  color: #f4d78d;
+  background: rgba(90, 57, 25, 0.58);
+}
+
+.battle-scene-popover {
+  border-color: rgba(216, 173, 95, 0.46);
+  background:
+    linear-gradient(135deg, rgba(66, 24, 18, 0.96), rgba(9, 10, 8, 0.94)),
+    rgba(12, 18, 18, 0.9);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.58), inset 0 0 0 1px rgba(255, 232, 158, 0.08);
+}
+
+.role-popover button,
+.battle-scene-item-list button {
+  border-color: rgba(216, 173, 95, 0.34);
+  background:
+    linear-gradient(90deg, rgba(37, 54, 43, 0.36), rgba(13, 12, 9, 0.84)),
+    rgba(9, 13, 14, 0.84);
+}
+
+.role-popover button.selected,
+.battle-scene-item-list button.selected {
+  border-color: #d8ad5f;
+  background: rgba(95, 59, 24, 0.74);
+}
+
+.role-popover strong,
+.battle-scene-item-list strong {
+  border-bottom-color: rgba(216, 173, 95, 0.38);
+  color: #f1dfb6;
+}
+
+.role-popover em,
+.battle-scene-item-list em {
+  color: rgba(220, 199, 159, 0.72);
+}
+
+.item-popover > header {
+  color: #2c180b;
+  background:
+    linear-gradient(90deg, rgba(244, 222, 165, 0.92), rgba(196, 152, 84, 0.9));
+}
+
+.battle-item-token {
+  border-color: rgba(216, 173, 95, 0.46);
+  color: #deb86e;
+  background: linear-gradient(180deg, rgba(66, 48, 27, 0.78), rgba(15, 12, 9, 0.72));
+}
+
+.battle-item-token.quality-1,
+.battle-item-token.quality-2 {
+  color: #7fb79b;
+}
+
+.battle-item-token.quality-3 {
+  color: #8fb4c6;
+}
+
+.battle-item-token.quality-4,
+.battle-item-token.quality-5 {
+  color: #e0b562;
+}
+
+.item-popover > footer {
+  color: rgba(238, 219, 178, 0.82);
+  background: linear-gradient(90deg, rgba(69, 24, 19, 0.96), rgba(15, 12, 9, 0.96));
+}
+
+.battle-scene-footer {
+  background: linear-gradient(180deg, transparent, rgba(9, 6, 4, 0.9) 18%);
+}
+
+.battle-scene-version-strip {
+  border: 1px solid rgba(216, 173, 95, 0.16);
+  border-radius: 4px;
+  background:
+    linear-gradient(90deg, rgba(42, 20, 12, 0.78), rgba(5, 5, 4, 0.82)),
+    rgba(0, 0, 0, 0.68);
+}
+
+.battle-scene-version-strip button {
+  border-left-color: rgba(216, 173, 95, 0.22);
+  color: rgba(219, 196, 155, 0.54);
+}
+
+.battle-scene-version-strip button.selected {
+  border-color: #d8ad5f;
+  color: #271506;
+  background:
+    linear-gradient(135deg, rgba(255, 241, 185, 0.28), transparent 34% 66%, rgba(79, 146, 123, 0.18)),
+    linear-gradient(180deg, #e5bf6d, #b98232);
+}
+
+.battle-scene-start {
+  color: #2b1708;
+  background:
+    linear-gradient(135deg, rgba(255, 247, 202, 0.22), transparent 22% 78%, rgba(112, 37, 31, 0.18)),
+    linear-gradient(180deg, #e5bf6d, #b8792f);
+  box-shadow: inset 0 0 0 2px rgba(255, 241, 185, 0.28), 0 10px 28px rgba(0, 0, 0, 0.34);
+}
+
+.battle-scene-start.locked {
+  color: rgba(225, 207, 168, 0.58);
+  background: rgba(86, 61, 40, 0.32);
+  box-shadow: none;
+}
+
 .home-grid,
 .lobby-layout {
   max-width: 1480px;

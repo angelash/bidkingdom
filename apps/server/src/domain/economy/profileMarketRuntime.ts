@@ -13,7 +13,19 @@ import type {
   AuctionHouseTradeInfoSnapshot,
   AuctionHouseUnlockLanchSlotResponse,
   AuctionHouseUnlanchItemResponse,
+  ExchangeBuyItemResponse,
+  ExchangeCollectItemListSnapshot,
+  ExchangeCollectItemResponse,
+  ExchangeInfoSnapshot,
+  ExchangeItemTradeInfoListSnapshot,
+  ExchangeLanchItemResponse,
+  ExchangeLunchItemListSnapshot,
+  ExchangeLunchItemSnapshot,
+  ExchangeTradeInfoListSnapshot,
+  ExchangeTradeInfoSnapshot,
+  ExchangeUnlanchItemResponse,
   MarketOrderAuctionHouseBidState,
+  MarketOrderSourceExchangeTrade,
   MarketOrderSourceAuctionHouseLaunch,
   MarketOrdersSnapshot,
   PlayerProfile,
@@ -30,12 +42,14 @@ import {
   bidKingMarketOrderDurationMs,
   bidKingMarketPublicDelayMs,
   bidKingMarketRuleRuntime,
-  bidKingMarketSnapshotLimit
+  bidKingMarketSnapshotLimit,
+  constantNumber
 } from '@bitkingdom/match-core';
 import { randomUUID } from 'node:crypto';
 import { addInventory, consumeInventory, inventoryQuantity } from '../profile/profileInventory';
 import { ensureProfileShape } from '../profile/profileShape';
 import {
+  assertCanAddStockItemsToWarehouse,
   bidKingSourceBoxIdForProfileStockBox,
   extractStockItemsForInventoryRef,
   isStockBackedInventoryRef,
@@ -88,6 +102,46 @@ export type AuctionHouseExpiredSettlementApplier = (
   now: number
 ) => boolean;
 
+type MarketOrderPriceBreakdownSnapshot = ReturnType<typeof marketOrderPriceBreakdown>;
+
+function sourceMarketOrderPriceBreakdown(
+  breakdown: MarketOrderPriceBreakdownSnapshot,
+  orderType: 'trade' | 'auction'
+): MarketOrderPriceBreakdownSnapshot {
+  if (orderType !== 'trade') {
+    return breakdown;
+  }
+  return {
+    ...breakdown,
+    listingCost: breakdown.listingFee,
+    fee: breakdown.tax,
+    netPrice: Math.max(0, breakdown.totalPrice - breakdown.listingFee - breakdown.tax)
+  };
+}
+
+function marketOrderSettlementFee(
+  order: PlayerProfile['marketOrders'][number],
+  unitPrice: number,
+  quantity: number
+): number {
+  if (order.orderType === 'trade') {
+    return marketOrderPriceBreakdown(order.refId, unitPrice, quantity).tax;
+  }
+  return marketOrderFee(order.refId, unitPrice);
+}
+
+function marketOrderSettlementNetPrice(
+  order: PlayerProfile['marketOrders'][number],
+  totalPrice: number
+): number {
+  const fee = Math.max(0, Math.floor(order.fee ?? 0));
+  if (order.orderType === 'trade') {
+    const listingCost = Math.max(0, Math.floor(order.listingCost ?? order.listingFee ?? 0));
+    return Math.max(0, totalPrice - listingCost - fee);
+  }
+  return Math.max(0, totalPrice - fee);
+}
+
 export function createMarketOrderForProfile(
   profile: PlayerProfile,
   refId: string,
@@ -97,22 +151,26 @@ export function createMarketOrderForProfile(
   recordTransaction: ProfileTransactionRecorder,
   note = '',
   applyNumberChange?: ProfileNumberChangeApplier
-): void {
+): PlayerProfile['marketOrders'][number] {
   ensureProfileShape(profile);
   const safeQuantity = Math.max(1, Math.floor(quantity));
   const safePrice = Math.max(1, Math.floor(price));
   const safeNote = sanitizeText(note).trim().slice(0, 80);
   const quantityLimit = marketOrderQuantityLimit(refId);
   const durationHours = bidKingMarketOrderDurationHours(orderType);
-  const breakdown = marketOrderPriceBreakdown(refId, safePrice, safeQuantity, durationHours);
+  const breakdown = sourceMarketOrderPriceBreakdown(
+    marketOrderPriceBreakdown(refId, safePrice, safeQuantity, durationHours),
+    orderType
+  );
   const before = inventoryQuantity(profile, refId);
   const now = Date.now();
   if (safeQuantity > quantityLimit) {
     throw new Error(`单笔上架数量不能超过 ${quantityLimit}`);
   }
-  const activeListings = activeMarketOrderCount(profile);
-  const listingSlotLimit = marketListingSlotLimit(profile);
-  if (activeListings >= listingSlotLimit) {
+  const activeListings = activeMarketOrderSlotCount(profile, orderType);
+  const requiredSlots = marketOrderListingSlotUsage(refId, safeQuantity, orderType);
+  const listingSlotLimit = marketListingSlotLimit(profile, orderType);
+  if (activeListings + requiredSlots > listingSlotLimit) {
     throw new Error(`上架槽位已满，当前 ${activeListings}/${listingSlotLimit}`);
   }
   const mailLimit = bidKingMailMaxCount();
@@ -169,6 +227,12 @@ export function createMarketOrderForProfile(
     netPrice: breakdown.netPrice,
     ...itemMetadata,
     ...(lockedStockBoxes.length > 0 ? { lockedStockBoxes } : {}),
+    ...(orderType === 'trade' ? {
+      sourceExchangeLunchItemUid: bidKingExchangeLunchItemUidForOrderId(orderId),
+      sourceExchangeTradeCount: 0,
+      sourceExchangeTotalPrice: breakdown.totalPrice,
+      sourceExchangeTrades: []
+    } : {}),
     ...(sourceAuctionHouseLaunches.length > 0 ? { sourceAuctionHouseLaunches } : {}),
     sourceAuctionHouseLanchItemUid: bidKingAuctionHouseLanchItemUidForOrderId(orderId),
     ...(safeNote ? { note: safeNote } : {}),
@@ -184,6 +248,7 @@ export function createMarketOrderForProfile(
   profile.marketOrders.unshift(order);
   recordTransaction(profile, `market:${profile.playerId}:${order.id}`, 'market_list_item', 'item', before, -safeQuantity);
   profile.updatedAt = now;
+  return order;
 }
 
 export function settleMarketOrderForProfile(
@@ -202,20 +267,31 @@ export function settleMarketOrderForProfile(
   }
   const now = Date.now();
   if (isMarketOrderExpired(order, now)) {
+    if (isExpiredExchangeOrderAwaitingAction(order)) {
+      throw new Error('交易信息过期');
+    }
     expireMarketOrder(profile, order, recordTransaction, now);
     return true;
   }
-  order.fee = order.fee ?? marketOrderFee(order.refId, order.price);
   const totalPrice = marketOrderTotalPrice(order);
+  order.fee = marketOrderSettlementFee(order, order.price, order.quantity);
   order.totalPrice = totalPrice;
-  order.netPrice = Math.max(0, totalPrice - order.fee);
+  order.netPrice = marketOrderSettlementNetPrice(order, totalPrice);
+  const lockedStockBoxes = order.lockedStockBoxes ?? [];
   if (buyerProfile && buyerProfile.playerId !== profile.playerId) {
     ensureProfileShape(buyerProfile);
     if (buyerProfile.coins < totalPrice) {
       throw new Error('买家铜钱不足');
     }
+    if (lockedStockBoxes.length > 0) {
+      assertCanAddStockItemsToWarehouse(
+        buyerProfile,
+        lockedStockBoxes.map((box) => box.item.cid),
+        now,
+        '仓库空间不足，无法购买交易品'
+      );
+    }
   }
-  const lockedStockBoxes = order.lockedStockBoxes ?? [];
   order.status = 'locked';
   order.lockedAt = now;
   order.updatedAt = now;
@@ -267,9 +343,10 @@ export function cancelMarketOrderForProfile(
     return true;
   }
   const before = inventoryQuantity(profile, order.refId);
+  const returnQuantity = marketOrderRemainingQuantity(order);
   refundAuctionHouseBidEscrow?.(order, now);
   returnMarketOrderInventory(profile, order, now, `market:${profile.playerId}:${order.id}:cancel`);
-  recordTransaction(profile, `market:${profile.playerId}:${order.id}:cancel`, 'market_order_cancel', 'item', before, order.quantity);
+  recordTransaction(profile, `market:${profile.playerId}:${order.id}:cancel`, 'market_order_cancel', 'item', before, returnQuantity);
   order.status = 'cancelled';
   order.cancelledAt = now;
   order.updatedAt = order.cancelledAt;
@@ -289,6 +366,9 @@ export function expireMarketOrdersForProfile(
   for (const order of profile.marketOrders) {
     if (order.status === 'listed' && isMarketOrderExpired(order, now)) {
       if (isExpiredAuctionHouseOrderAwaitingUnlanch(order)) {
+        continue;
+      }
+      if (isExpiredExchangeOrderAwaitingAction(order)) {
         continue;
       }
       expireMarketOrder(profile, order, recordTransaction, now, refundAuctionHouseBidEscrow, settleExpiredAuctionHouseOrder);
@@ -312,6 +392,7 @@ export function buildMarketOrdersSnapshot(
           ...order,
           playerId: profile.playerId,
           playerName: profile.name,
+          ...(order.orderType === 'trade' ? { sourceExchangeLunchItem: buildExchangeLunchItem(order) } : {}),
           ...(order.orderType === 'auction' ? { sourceAuctionHouseLanchItem: buildAuctionHouseLanchItem(order) } : {})
         }));
     })
@@ -328,6 +409,302 @@ export function buildMarketOrdersSnapshot(
   };
 }
 
+export function createExchangeLanchItemForProfile(
+  profile: PlayerProfile,
+  itemCid: number,
+  count: number,
+  totalPrice: number,
+  recordTransaction: ProfileTransactionRecorder,
+  applyNumberChange: ProfileNumberChangeApplier
+): ExchangeLanchItemResponse {
+  const safeItemCid = Math.max(1, Math.floor(itemCid));
+  const safeCount = Math.max(1, Math.floor(count));
+  const safeTotalPrice = Math.max(1, Math.floor(totalPrice));
+  const refId = String(safeItemCid);
+  const unitPrice = Math.max(1, Math.floor(safeTotalPrice / safeCount));
+  const chunks = splitExchangeListingQuantity(safeCount, sourceExchangeListingChunkSize(refId));
+  const activeSlots = activeMarketOrderSlotCount(profile, 'trade');
+  const listingSlotLimit = marketListingSlotLimit(profile, 'trade');
+  if (activeSlots + chunks.length > listingSlotLimit) {
+    throw new Error(`上架槽位已满，当前 ${activeSlots}/${listingSlotLimit}`);
+  }
+  if (inventoryQuantity(profile, refId) < safeCount) {
+    throw new Error('库存不足，无法上架');
+  }
+  const orders: PlayerProfile['marketOrders'][number][] = [];
+  for (const chunkCount of chunks) {
+    const order = createMarketOrderForProfile(
+      profile,
+      refId,
+      chunkCount,
+      unitPrice,
+      'trade',
+      recordTransaction,
+      '',
+      applyNumberChange
+    );
+    const chunkTotalPrice = unitPrice * chunkCount;
+    order.totalPrice = chunkTotalPrice;
+    order.sourceExchangeTotalPrice = chunkTotalPrice;
+    order.sourceExchangeLunchItemUid = order.sourceExchangeLunchItemUid ?? bidKingExchangeLunchItemUidForOrderId(order.id);
+    order.sourceExchangeTradeCount = 0;
+    order.sourceExchangeTrades = [];
+    orders.push(order);
+  }
+  const order = orders[0];
+  if (!order) {
+    throw new Error('交易品不存在');
+  }
+  const lunchItemUid = order.sourceExchangeLunchItemUid ?? bidKingExchangeLunchItemUidForOrderId(order.id);
+  order.sourceExchangeLunchItemUid = lunchItemUid;
+  return {
+    errorCode: 0,
+    lunchItemUid,
+    orderId: order.id
+  };
+}
+
+export function reExchangeLanchItemForProfile(
+  profile: PlayerProfile,
+  itemUid: number,
+  now = Date.now()
+): ExchangeLanchItemResponse {
+  ensureProfileShape(profile);
+  const safeItemUid = Math.max(1, Math.floor(itemUid));
+  const order = findExchangeOrderByItemUid(profile, safeItemUid);
+  if (!order) {
+    throw new Error('交易品不存在');
+  }
+  if (!isMarketOrderExpired(order, now)) {
+    throw new Error('交易品尚未过期');
+  }
+  order.status = 'listed';
+  order.createdAt = now;
+  order.updatedAt = now;
+  order.expiresAt = now + bidKingMarketOrderDurationMs('trade');
+  order.publicAt = now;
+  order.expiredAt = undefined;
+  order.sourceExchangeLunchItemUid = order.sourceExchangeLunchItemUid ?? bidKingExchangeLunchItemUidForOrderId(order.id);
+  order.sourceExchangeTradeCount = Math.min(
+    Math.max(0, Math.floor(order.sourceExchangeTradeCount ?? 0)),
+    Math.max(1, Math.floor(order.quantity))
+  );
+  profile.updatedAt = now;
+  return {
+    errorCode: 0,
+    lunchItemUid: order.sourceExchangeLunchItemUid,
+    orderId: order.id,
+    reLanchItemUid: safeItemUid
+  };
+}
+
+export function cancelExchangeLanchItemForProfile(
+  profile: PlayerProfile,
+  itemUid: number,
+  recordTransaction: ProfileTransactionRecorder
+): ExchangeUnlanchItemResponse {
+  ensureProfileShape(profile);
+  const safeItemUid = Math.max(1, Math.floor(itemUid));
+  const order = findExchangeOrderByItemUid(profile, safeItemUid);
+  if (!order) {
+    throw new Error('交易品不存在');
+  }
+  const changed = cancelMarketOrderForProfile(profile, order.id, recordTransaction);
+  if (!changed && order.status !== 'cancelled' && order.status !== 'expired') {
+    throw new Error('交易品无法下架');
+  }
+  return {
+    errorCode: 0,
+    itemUid: safeItemUid,
+    orderId: order.id
+  };
+}
+
+export function buildExchangeLanchItemListSnapshot(
+  profile: PlayerProfile,
+  now = Date.now()
+): ExchangeLunchItemListSnapshot {
+  ensureProfileShape(profile);
+  return {
+    generatedAt: now,
+    errorCode: 0,
+    lunchItemList: profile.marketOrders
+      .filter(isActiveExchangeOrder)
+      .map((order) => buildExchangeLunchItem(order))
+  };
+}
+
+export function buildExchangeInfoSnapshot(
+  profiles: Iterable<PlayerProfile>,
+  now = Date.now()
+): ExchangeInfoSnapshot {
+  const minPriceByItemCid = new Map<number, number>();
+  for (const candidate of exchangeLiveOrderCandidates(profiles, undefined, now)) {
+    const currentMin = minPriceByItemCid.get(candidate.itemCid);
+    if (currentMin === undefined || candidate.unitPrice < currentMin) {
+      minPriceByItemCid.set(candidate.itemCid, candidate.unitPrice);
+    }
+  }
+  return {
+    generatedAt: now,
+    errorCode: 0,
+    allItemPriceInfo: [...minPriceByItemCid.entries()]
+      .map(([itemCid, price]) => ({ itemCid, price }))
+      .sort((left, right) => left.itemCid - right.itemCid)
+  };
+}
+
+export function buildExchangeItemTradeInfoListSnapshot(
+  profiles: Iterable<PlayerProfile>,
+  itemCid: number,
+  now = Date.now()
+): ExchangeItemTradeInfoListSnapshot {
+  const safeItemCid = Math.max(1, Math.floor(itemCid));
+  const countByPrice = new Map<number, number>();
+  for (const candidate of exchangeLiveOrderCandidates(profiles, safeItemCid, now)) {
+    countByPrice.set(candidate.unitPrice, (countByPrice.get(candidate.unitPrice) ?? 0) + candidate.availableCount);
+  }
+  return {
+    generatedAt: now,
+    errorCode: 0,
+    tradeInfoList: [...countByPrice.entries()]
+      .map(([price, peopleCount]) => ({ price, peopleCount }))
+      .sort((left, right) => left.price - right.price)
+  };
+}
+
+export function buyExchangeItemForProfiles(
+  profiles: Iterable<PlayerProfile>,
+  buyerProfile: PlayerProfile,
+  itemCid: number,
+  itemCount: number,
+  estimatePrice: number,
+  applyNumberChange: ProfileNumberChangeApplier,
+  recordTransaction: ProfileTransactionRecorder,
+  now = Date.now()
+): ExchangeBuyItemResponse {
+  ensureProfileShape(buyerProfile);
+  const profileList = [...profiles];
+  const safeItemCid = Math.max(1, Math.floor(itemCid));
+  const safeItemCount = Math.max(1, Math.floor(itemCount));
+  const safeEstimatePrice = Math.max(0, Math.floor(estimatePrice));
+  const plan = buildExchangeBuyFillPlan(profileList, buyerProfile.playerId, safeItemCid, safeItemCount, now);
+  if (plan.remainingCount > 0 || plan.totalPrice !== safeEstimatePrice || safeEstimatePrice <= 0) {
+    throw new Error('交易信息过期');
+  }
+  if (buyerProfile.coins < plan.totalPrice) {
+    throw new Error('买家铜钱不足');
+  }
+  const stockItemCidsToReceive = plan.fills.flatMap((fill) =>
+    (fill.order.lockedStockBoxes ?? [])
+      .slice(0, fill.count)
+      .map((box) => box.item.cid)
+  );
+  assertCanAddStockItemsToWarehouse(
+    buyerProfile,
+    stockItemCidsToReceive,
+    now,
+    '仓库空间不足，无法购买交易品'
+  );
+  const buyerSource = `exchange:${buyerProfile.playerId}:${now}:buy:${safeItemCid}:${safeItemCount}:${plan.totalPrice}`;
+  applyNumberChange(buyerProfile, `${buyerSource}:coins`, 'exchange_buy_spend', 'coins', -plan.totalPrice);
+  for (const [index, fill] of plan.fills.entries()) {
+    const fillSource = `${buyerSource}:fill:${index}:${fill.order.id}`;
+    const buyerBefore = inventoryQuantity(buyerProfile, fill.order.refId);
+    transferExchangeOrderItemsToBuyer(fill.order, buyerProfile, fill.count, now, `${fillSource}:item`);
+    recordTransaction(buyerProfile, `${fillSource}:item`, 'exchange_bought_item', 'item', buyerBefore, fill.count);
+
+    const fee = marketOrderPriceBreakdown(fill.order.refId, fill.unitPrice, fill.count).tax;
+    applyNumberChange(fill.sellerProfile, `${fillSource}:sold`, 'exchange_order_sold', 'coins', fill.totalPrice);
+    if (fee > 0) {
+      applyNumberChange(fill.sellerProfile, `${fillSource}:fee`, 'exchange_order_fee', 'coins', -fee);
+    }
+    applyExchangeOrderFill(fill.sellerProfile, fill.order, buyerProfile, fill.count, fill.totalPrice, now);
+    incrementTradeConditionStat(fill.sellerProfile, 'tradeSoldCount');
+  }
+  incrementTradeConditionStat(buyerProfile, 'tradeBoughtCount');
+  buyerProfile.updatedAt = now;
+  return {
+    errorCode: 0,
+    itemCid: safeItemCid,
+    itemCount: safeItemCount,
+    estimatePrice: safeEstimatePrice
+  };
+}
+
+export function buildExchangeTradeInfoListSnapshot(
+  profile: PlayerProfile,
+  profiles: Iterable<PlayerProfile>,
+  now = Date.now()
+): ExchangeTradeInfoListSnapshot {
+  ensureProfileShape(profile);
+  const trades = [...profiles].flatMap((sellerProfile) => {
+    ensureProfileShape(sellerProfile);
+    return sellerProfile.marketOrders.flatMap((order) => order.sourceExchangeTrades ?? []);
+  });
+  const tradeInfoInList = trades
+    .filter((trade) => trade.buyerId === profile.playerId)
+    .map((trade) => buildExchangeTradeInfoSnapshot(trade))
+    .sort(compareExchangeTradeInfoByTime);
+  const tradeInfoOutList = trades
+    .filter((trade) => trade.sellerId === profile.playerId)
+    .map((trade) => buildExchangeTradeInfoSnapshot(trade))
+    .sort(compareExchangeTradeInfoByTime);
+  return {
+    generatedAt: now,
+    errorCode: 0,
+    tradeInfoInList,
+    tradeInfoOutList
+  };
+}
+
+export function collectExchangeItemForProfile(
+  profile: PlayerProfile,
+  itemCid: number,
+  collected: boolean,
+  recordTransaction: ProfileTransactionRecorder,
+  now = Date.now()
+): ExchangeCollectItemResponse {
+  ensureProfileShape(profile);
+  const safeItemCid = assertExchangeCollectItemCid(itemCid);
+  profile.exchangeCollections ??= [];
+  const existing = profile.exchangeCollections.includes(safeItemCid);
+  if (existing !== collected) {
+    const before = existing ? 1 : 0;
+    profile.exchangeCollections = collected
+      ? [...profile.exchangeCollections, safeItemCid].sort((left, right) => left - right)
+      : profile.exchangeCollections.filter((candidate) => candidate !== safeItemCid);
+    profile.updatedAt = now;
+    recordTransaction(
+      profile,
+      `exchange_collect:${profile.playerId}:${safeItemCid}:${collected ? 'on' : 'off'}:${now}`,
+      collected ? 'exchange_collect_item' : 'exchange_uncollect_item',
+      'task',
+      before,
+      collected ? 1 : -1
+    );
+  }
+  return {
+    errorCode: 0,
+    itemCid: safeItemCid
+  };
+}
+
+export function buildExchangeCollectItemListSnapshot(
+  profile: PlayerProfile,
+  now = Date.now()
+): ExchangeCollectItemListSnapshot {
+  ensureProfileShape(profile);
+  return {
+    generatedAt: now,
+    errorCode: 0,
+    collectItemList: [...new Set(profile.exchangeCollections ?? [])]
+      .map((itemCid) => Math.max(1, Math.floor(itemCid)))
+      .filter((itemCid) => Item.some((row) => row.id === itemCid))
+      .sort((left, right) => left - right)
+  };
+}
+
 export function buildAuctionHouseLanchItemListSnapshot(
   profile: PlayerProfile,
   now = Date.now()
@@ -340,7 +717,7 @@ export function buildAuctionHouseLanchItemListSnapshot(
     generatedAt: now,
     errorCode: 0,
     lanchItemList,
-    lanchMax: marketListingSlotLimit(profile)
+    lanchMax: marketListingSlotLimit(profile, 'auction')
   };
 }
 
@@ -402,7 +779,7 @@ export function unlockAuctionHouseLanchSlotForProfile(
   if (!Number.isFinite(unlockCount) || safeUnlockCount < 1) {
     throw new Error('解锁数量需为正整数');
   }
-  const currentLanchMax = marketListingSlotLimit(profile);
+  const currentLanchMax = marketListingSlotLimit(profile, 'auction');
   const nextLanchMax = currentLanchMax + safeUnlockCount;
   const maxLanch = auctionHouseLanchSlotUnlockMax();
   if (currentLanchMax >= maxLanch || nextLanchMax > maxLanch) {
@@ -426,7 +803,7 @@ export function unlockAuctionHouseLanchSlotForProfile(
     errorCode: 0,
     unlockCount: safeUnlockCount,
     cost,
-    lanchMax: marketListingSlotLimit(profile)
+    lanchMax: marketListingSlotLimit(profile, 'auction')
   };
 }
 
@@ -637,6 +1014,14 @@ export function settleExpiredAuctionHouseOrderForProfile(
     return false;
   }
   const lockedStockBoxes = order.lockedStockBoxes ?? [];
+  if (lockedStockBoxes.length > 0) {
+    assertCanAddStockItemsToWarehouse(
+      bidderProfile,
+      lockedStockBoxes.map((box) => box.item.cid),
+      now,
+      '仓库空间不足，无法购买拍卖品'
+    );
+  }
   const buyerSource = `auction_house:${sellerProfile.playerId}:${order.id}:buyer:${bidderProfile.playerId}`;
   const buyerBefore = inventoryQuantity(bidderProfile, order.refId);
   if (lockedStockBoxes.length > 0) {
@@ -667,13 +1052,253 @@ export function settleExpiredAuctionHouseOrderForProfile(
   return true;
 }
 
-function activeMarketOrderCount(profile: PlayerProfile): number {
-  ensureProfileShape(profile);
-  return profile.marketOrders.filter((order) => order.status === 'listed' || order.status === 'locked').length;
+interface ExchangeLiveOrderCandidate {
+  sellerProfile: PlayerProfile;
+  order: PlayerProfile['marketOrders'][number];
+  itemCid: number;
+  unitPrice: number;
+  availableCount: number;
 }
 
-function marketListingSlotLimit(profile: PlayerProfile): number {
+interface ExchangeBuyFill {
+  sellerProfile: PlayerProfile;
+  order: PlayerProfile['marketOrders'][number];
+  unitPrice: number;
+  count: number;
+  totalPrice: number;
+}
+
+interface ExchangeBuyFillPlan {
+  fills: ExchangeBuyFill[];
+  remainingCount: number;
+  totalPrice: number;
+}
+
+function exchangeLiveOrderCandidates(
+  profiles: Iterable<PlayerProfile>,
+  itemCid: number | undefined,
+  now: number
+): ExchangeLiveOrderCandidate[] {
+  const safeItemCid = itemCid !== undefined ? Math.max(1, Math.floor(itemCid)) : undefined;
+  const candidates: ExchangeLiveOrderCandidate[] = [];
+  for (const sellerProfile of profiles) {
+    ensureProfileShape(sellerProfile);
+    for (const order of sellerProfile.marketOrders) {
+      if (!isActiveExchangeOrder(order) || isMarketOrderExpired(order, now)) {
+        continue;
+      }
+      const candidateItemCid = exchangeOrderItemCid(order);
+      if (candidateItemCid <= 0 || (safeItemCid !== undefined && candidateItemCid !== safeItemCid)) {
+        continue;
+      }
+      const availableCount = marketOrderRemainingQuantity(order);
+      if (availableCount <= 0) {
+        continue;
+      }
+      candidates.push({
+        sellerProfile,
+        order,
+        itemCid: candidateItemCid,
+        unitPrice: exchangeOrderUnitPrice(order),
+        availableCount
+      });
+    }
+  }
+  return candidates;
+}
+
+function buildExchangeBuyFillPlan(
+  profiles: Iterable<PlayerProfile>,
+  buyerPlayerId: string,
+  itemCid: number,
+  itemCount: number,
+  now: number
+): ExchangeBuyFillPlan {
+  const fills: ExchangeBuyFill[] = [];
+  let remainingCount = itemCount;
+  let totalPrice = 0;
+  const candidates = exchangeLiveOrderCandidates(profiles, itemCid, now)
+    .filter((candidate) => candidate.sellerProfile.playerId !== buyerPlayerId)
+    .sort(compareExchangeLiveOrderCandidatesForBuy);
+  for (const candidate of candidates) {
+    if (remainingCount <= 0) {
+      break;
+    }
+    const count = Math.min(remainingCount, candidate.availableCount);
+    if (count <= 0) {
+      continue;
+    }
+    const fillTotalPrice = candidate.unitPrice * count;
+    fills.push({
+      sellerProfile: candidate.sellerProfile,
+      order: candidate.order,
+      unitPrice: candidate.unitPrice,
+      count,
+      totalPrice: fillTotalPrice
+    });
+    remainingCount -= count;
+    totalPrice += fillTotalPrice;
+  }
+  return {
+    fills,
+    remainingCount,
+    totalPrice
+  };
+}
+
+function compareExchangeLiveOrderCandidatesForBuy(
+  left: ExchangeLiveOrderCandidate,
+  right: ExchangeLiveOrderCandidate
+): number {
+  if (left.unitPrice !== right.unitPrice) {
+    return left.unitPrice - right.unitPrice;
+  }
+  if (left.order.createdAt !== right.order.createdAt) {
+    return left.order.createdAt - right.order.createdAt;
+  }
+  return left.order.id.localeCompare(right.order.id);
+}
+
+function transferExchangeOrderItemsToBuyer(
+  order: PlayerProfile['marketOrders'][number],
+  buyerProfile: PlayerProfile,
+  count: number,
+  now: number,
+  sourceId: string
+): void {
+  const safeCount = Math.max(0, Math.floor(count));
+  if (safeCount <= 0) {
+    return;
+  }
+  const lockedStockBoxes = order.lockedStockBoxes ?? [];
+  const stockBoxesToMove = lockedStockBoxes.slice(0, safeCount);
+  if (stockBoxesToMove.length > 0) {
+    returnStockBoxesToWarehouse(buyerProfile, stockBoxesToMove, now, { preserveBoxIds: false });
+    incrementInventoryCounter(buyerProfile, 'warehouse', order.refId, stockBoxesToMove.length, now);
+    order.lockedStockBoxes = lockedStockBoxes.slice(stockBoxesToMove.length);
+  }
+  const looseQuantity = safeCount - stockBoxesToMove.length;
+  if (looseQuantity > 0) {
+    addInventory(buyerProfile, 'warehouse', order.refId, looseQuantity, sourceId);
+  }
+}
+
+function applyExchangeOrderFill(
+  sellerProfile: PlayerProfile,
+  order: PlayerProfile['marketOrders'][number],
+  buyerProfile: PlayerProfile,
+  count: number,
+  totalPrice: number,
+  now: number
+): void {
+  const safeCount = Math.max(1, Math.floor(count));
+  const safeTotalPrice = Math.max(1, Math.floor(totalPrice));
+  const itemCid = exchangeOrderItemCid(order);
+  const quantity = Math.max(1, Math.floor(order.quantity));
+  const tradeCount = Math.min(quantity, Math.max(0, Math.floor(order.sourceExchangeTradeCount ?? 0)) + safeCount);
+  const lunchItemUid = order.sourceExchangeLunchItemUid ?? bidKingExchangeLunchItemUidForOrderId(order.id);
+  const trade: MarketOrderSourceExchangeTrade = {
+    tradeTime: toSourceUnixSeconds(now),
+    itemCid,
+    itemCount: safeCount,
+    price: safeTotalPrice,
+    buyerId: buyerProfile.playerId,
+    buyerName: buyerProfile.name,
+    sellerId: sellerProfile.playerId,
+    sellerName: sellerProfile.name,
+    orderId: order.id,
+    lunchItemUid
+  };
+  order.sourceExchangeLunchItemUid = lunchItemUid;
+  order.sourceExchangeTradeCount = tradeCount;
+  order.sourceExchangeTrades = [...(order.sourceExchangeTrades ?? []), trade];
+  order.updatedAt = now;
+  if (tradeCount >= quantity) {
+    order.status = 'sold';
+    order.soldAt = now;
+    order.buyerId = buyerProfile.playerId;
+    order.buyerName = buyerProfile.name;
+    order.lockedStockBoxes = [];
+  }
+  sellerProfile.updatedAt = now;
+}
+
+function exchangeOrderUnitPrice(order: PlayerProfile['marketOrders'][number]): number {
+  const quantity = Math.max(1, Math.floor(order.quantity ?? 1));
+  const totalPrice = Math.max(1, Math.floor(order.sourceExchangeTotalPrice ?? order.totalPrice ?? order.price * quantity));
+  return Math.max(1, Math.floor(totalPrice / quantity));
+}
+
+function exchangeOrderItemCid(order: PlayerProfile['marketOrders'][number]): number {
+  return marketOrderItemCid(order);
+}
+
+function buildExchangeTradeInfoSnapshot(
+  trade: MarketOrderSourceExchangeTrade
+): ExchangeTradeInfoSnapshot {
+  return {
+    tradeTime: Math.max(0, Math.floor(trade.tradeTime)),
+    itemCid: Math.max(0, Math.floor(trade.itemCid)),
+    itemCount: Math.max(1, Math.floor(trade.itemCount)),
+    price: Math.max(0, Math.floor(trade.price))
+  };
+}
+
+function compareExchangeTradeInfoByTime(
+  left: ExchangeTradeInfoSnapshot,
+  right: ExchangeTradeInfoSnapshot
+): number {
+  if (left.tradeTime !== right.tradeTime) {
+    return right.tradeTime - left.tradeTime;
+  }
+  return right.price - left.price;
+}
+
+function activeMarketOrderSlotCount(profile: PlayerProfile, orderType: 'trade' | 'auction'): number {
+  ensureProfileShape(profile);
+  return profile.marketOrders
+    .filter((order) => order.orderType === orderType && (order.status === 'listed' || order.status === 'locked'))
+    .reduce((sum, order) => sum + marketOrderListingSlotUsage(order.refId, order.quantity, order.orderType), 0);
+}
+
+function marketListingSlotLimit(profile: PlayerProfile, orderType: 'trade' | 'auction'): number {
+  if (orderType === 'trade') {
+    return Math.max(1, Math.floor(constantNumber('listed_quantity', 10)));
+  }
   return Math.min(auctionHouseLanchSlotUnlockMax(), bidKingMarketListingSlotBase() + marketListingSlotUnlockCount(profile));
+}
+
+function marketOrderListingSlotUsage(
+  refId: string,
+  quantity: number,
+  orderType: 'trade' | 'auction'
+): number {
+  if (orderType !== 'trade') {
+    return 1;
+  }
+  const chunkSize = sourceExchangeListingChunkSize(refId);
+  if (!Number.isFinite(chunkSize)) {
+    return 1;
+  }
+  return Math.max(1, Math.ceil(Math.max(1, Math.floor(quantity)) / chunkSize));
+}
+
+function sourceExchangeListingChunkSize(refId: string): number {
+  const item = Item.find((row) => String(row.id) === String(refId));
+  const maxPerListing = Math.floor(Number(item?.max_per_listing) || 0);
+  return maxPerListing > 0 ? maxPerListing : Number.MAX_SAFE_INTEGER;
+}
+
+function splitExchangeListingQuantity(quantity: number, chunkSize: number): number[] {
+  const safeQuantity = Math.max(1, Math.floor(quantity));
+  const safeChunkSize = Number.isFinite(chunkSize)
+    ? Math.max(1, Math.floor(chunkSize))
+    : safeQuantity;
+  const chunks: number[] = [];
+  for (let remaining = safeQuantity; remaining > 0; remaining -= safeChunkSize) {
+    chunks.push(Math.min(safeChunkSize, remaining));
+  }
+  return chunks;
 }
 
 function marketListingSlotUnlockCount(profile: PlayerProfile): number {
@@ -707,6 +1332,14 @@ function marketOrderTotalPrice(order: PlayerProfile['marketOrders'][number]): nu
   return Math.max(1, Math.floor(order.totalPrice ?? order.price * Math.max(1, order.quantity)));
 }
 
+function marketOrderRemainingQuantity(order: PlayerProfile['marketOrders'][number]): number {
+  const quantity = Math.max(0, Math.floor(order.quantity ?? 0));
+  if (order.orderType !== 'trade') {
+    return quantity;
+  }
+  return Math.max(0, quantity - Math.max(0, Math.floor(order.sourceExchangeTradeCount ?? 0)));
+}
+
 function incrementTradeConditionStat(profile: PlayerProfile, key: 'tradeBoughtCount' | 'tradeSoldCount'): void {
   ensureProfileShape(profile);
   profile.conditionStats![key] = (profile.conditionStats![key] ?? 0) + 1;
@@ -721,6 +1354,10 @@ function isExpiredAuctionHouseOrderAwaitingUnlanch(order: PlayerProfile['marketO
   return order.orderType === 'auction' && highestAuctionHouseBidPrice(order) <= 0;
 }
 
+function isExpiredExchangeOrderAwaitingAction(order: PlayerProfile['marketOrders'][number]): boolean {
+  return order.orderType === 'trade';
+}
+
 function expireMarketOrder(
   profile: PlayerProfile,
   order: PlayerProfile['marketOrders'][number],
@@ -733,9 +1370,10 @@ function expireMarketOrder(
     return;
   }
   const before = inventoryQuantity(profile, order.refId);
+  const returnQuantity = marketOrderRemainingQuantity(order);
   refundAuctionHouseBidEscrow?.(order, now);
   returnMarketOrderInventory(profile, order, now, `market:${profile.playerId}:${order.id}:expire`);
-  recordTransaction(profile, `market:${profile.playerId}:${order.id}:expire`, 'market_order_expired_return', 'item', before, order.quantity);
+  recordTransaction(profile, `market:${profile.playerId}:${order.id}:expire`, 'market_order_expired_return', 'item', before, returnQuantity);
   order.status = 'expired';
   order.expiredAt = now;
   order.updatedAt = now;
@@ -749,13 +1387,28 @@ function returnMarketOrderInventory(
   sourceId: string
 ): void {
   const lockedStockBoxes = order.lockedStockBoxes ?? [];
-  if (lockedStockBoxes.length > 0) {
-    returnStockBoxesToWarehouse(profile, lockedStockBoxes, now, { preserveBoxIds: true });
-    incrementInventoryCounter(profile, 'warehouse', order.refId, order.quantity, now);
-    order.lockedStockBoxes = unlockedStockBoxes(lockedStockBoxes);
+  const returnQuantity = marketOrderRemainingQuantity(order);
+  if (returnQuantity <= 0) {
     return;
   }
-  addInventory(profile, order.orderType, order.refId, order.quantity, sourceId);
+  if (lockedStockBoxes.length > 0) {
+    const boxesToReturn = lockedStockBoxes.slice(0, returnQuantity);
+    assertCanAddStockItemsToWarehouse(
+      profile,
+      boxesToReturn.map((box) => box.item.cid),
+      now,
+      '仓库空间不足，无法返还上架藏品'
+    );
+    returnStockBoxesToWarehouse(profile, boxesToReturn, now, { preserveBoxIds: true });
+    incrementInventoryCounter(profile, 'warehouse', order.refId, boxesToReturn.length, now);
+    const looseQuantity = returnQuantity - boxesToReturn.length;
+    if (looseQuantity > 0) {
+      addInventory(profile, order.orderType, order.refId, looseQuantity, sourceId);
+    }
+    order.lockedStockBoxes = unlockedStockBoxes(boxesToReturn);
+    return;
+  }
+  addInventory(profile, order.orderType, order.refId, returnQuantity, sourceId);
 }
 
 function marketOrderItemMetadata(
@@ -844,9 +1497,51 @@ function buildAuctionHouseLanchItem(
   };
 }
 
+function buildExchangeLunchItem(
+  order: PlayerProfile['marketOrders'][number]
+): ExchangeLunchItemSnapshot {
+  const item = Item.find((row) => String(row.id) === String(order.refId) || `compat_${row.id}` === String(order.refId));
+  const itemCount = Math.max(1, Math.floor(order.quantity ?? 1));
+  return {
+    lunchItemUid: order.sourceExchangeLunchItemUid ?? bidKingExchangeLunchItemUidForOrderId(order.id),
+    itemCid: order.itemCid ?? item?.id ?? (Number(order.refId) || 0),
+    startLunchTime: toSourceUnixSeconds(order.createdAt),
+    endLunchTime: toSourceUnixSeconds(order.expiresAt ?? order.createdAt + bidKingMarketOrderDurationMs(order.orderType)),
+    itemCount,
+    totalPrice: Math.max(1, Math.floor(order.sourceExchangeTotalPrice ?? order.totalPrice ?? order.price * itemCount)),
+    tradeCount: Math.min(itemCount, Math.max(0, Math.floor(order.sourceExchangeTradeCount ?? 0)))
+  };
+}
+
 function auctionHouseOrderItemCid(order: PlayerProfile['marketOrders'][number]): number {
+  return marketOrderItemCid(order);
+}
+
+function marketOrderItemCid(order: PlayerProfile['marketOrders'][number]): number {
   const item = Item.find((row) => String(row.id) === String(order.refId) || `compat_${row.id}` === String(order.refId));
   return order.itemCid ?? item?.id ?? (Number(order.refId) || 0);
+}
+
+function assertExchangeCollectItemCid(itemCid: number): number {
+  const rawItemCid = Number(itemCid);
+  if (!Number.isFinite(rawItemCid) || rawItemCid <= 0) {
+    throw new Error('收藏藏品不存在');
+  }
+  const safeItemCid = Math.floor(rawItemCid);
+  if (!Item.some((row) => row.id === safeItemCid)) {
+    throw new Error('收藏藏品不存在');
+  }
+  return safeItemCid;
+}
+
+function findExchangeOrderByItemUid(
+  profile: PlayerProfile,
+  itemUid: number
+): PlayerProfile['marketOrders'][number] | undefined {
+  return profile.marketOrders.find((candidate) => (
+    isActiveExchangeOrder(candidate) &&
+    (candidate.sourceExchangeLunchItemUid ?? bidKingExchangeLunchItemUidForOrderId(candidate.id)) === itemUid
+  ));
 }
 
 function findAuctionHouseOrderByUid(
@@ -868,6 +1563,10 @@ function findAuctionHouseOrderByUid(
 
 function isActiveAuctionHouseOrder(order: Pick<PlayerProfile['marketOrders'][number], 'orderType' | 'status'>): boolean {
   return order.orderType === 'auction' && (order.status === 'listed' || order.status === 'locked');
+}
+
+function isActiveExchangeOrder(order: Pick<PlayerProfile['marketOrders'][number], 'orderType' | 'status'>): boolean {
+  return order.orderType === 'trade' && (order.status === 'listed' || order.status === 'locked');
 }
 
 function minimumAuctionHouseBidPrice(order: PlayerProfile['marketOrders'][number]): number {
@@ -986,6 +1685,13 @@ function toSourceUnixSeconds(value: number): number {
 function bidKingAuctionHouseLanchItemUidForOrderId(orderId: string): number {
   const high = stableHash(`${orderId}:hi`) & 0x1fffff;
   const low = stableHash(`${orderId}:lo`);
+  const uid = high * 0x100000000 + low;
+  return Math.max(1, Math.min(Number.MAX_SAFE_INTEGER, uid));
+}
+
+function bidKingExchangeLunchItemUidForOrderId(orderId: string): number {
+  const high = stableHash(`${orderId}:exchange:hi`) & 0x1fffff;
+  const low = stableHash(`${orderId}:exchange:lo`);
   const uid = high * 0x100000000 + low;
   return Math.max(1, Math.min(Number.MAX_SAFE_INTEGER, uid));
 }

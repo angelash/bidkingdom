@@ -102,6 +102,20 @@ function isProtectedProfileRoute(method: string, rawUrl: string): boolean {
     return true;
   }
   if (
+    path === '/api/exchange/lanch-items' ||
+    path === '/api/exchange/info' ||
+    path === '/api/exchange/item-trade-info' ||
+    path === '/api/exchange/buy-item' ||
+    path === '/api/exchange/trade-info' ||
+    path === '/api/exchange/collect-items' ||
+    path === '/api/exchange/collect-item' ||
+    path === '/api/exchange/uncollect-item' ||
+    path === '/api/exchange/lanch-item' ||
+    path === '/api/exchange/unlanch-item'
+  ) {
+    return true;
+  }
+  if (
     path === '/api/auction-house/lanch-items' ||
     path === '/api/auction-house/items' ||
     path === '/api/auction-house/item-price-info' ||

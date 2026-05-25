@@ -304,7 +304,7 @@ describe('BidKing market, rank, and social restore coverage', () => {
     expect(ranking.entries[0]).toEqual(expect.objectContaining({ playerId: contender.playerId, rank: 1 }));
     expect(profiles.getSnapshot(seller.playerId).profile.claimedRankRewards).toContain(topReward.id);
     expect(inventoryQuantity(profiles.getSnapshot(seller.playerId).profile.inventory, topReward.columns[2]!)).toBe(0);
-    expect(settled).toEqual(expect.objectContaining({ status: 'sold', listingFee: 44, tax: 1010, fee: 1054, netPrice: 7746 }));
+    expect(settled).toEqual(expect.objectContaining({ status: 'sold', listingFee: 44, listingCost: 44, tax: 1010, fee: 1010, netPrice: 7746 }));
     expect(marketSnapshot.orders[0]).toEqual(expect.objectContaining({ id: listed.id, playerId: seller.playerId, orderType: 'trade' }));
   });
 
