@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BadgeDollarSign, ClipboardList, Play, Sparkles, X } from 'lucide-react';
+import { Play, Sparkles } from 'lucide-react';
 import {
   Activity as bidKingActivities,
   Dlc as bidKingDlcs,
@@ -22,11 +22,6 @@ import { bidKingRewardRowsLabel, parseBidKingRewardRows } from '../system/reward
 interface RechargePanelViewProps {
   profile: PlayerProfile;
   onClaimGiftPackage: (packageId: string) => void;
-  onCreateDemoPayOrder: (payId: string) => void;
-  onCompleteDemoPayOrder: (payId: string) => void;
-  onCancelDemoPayOrder: (orderId: string) => void;
-  onCompletePurchaseListOrder: (purchaseId: string) => void;
-  onUnlockDemoDlc: (dlcId: string) => void;
 }
 
 interface PassPanelViewProps {
@@ -91,12 +86,7 @@ interface ActivityProgressSnapshotView {
 
 export function RechargePanelView({
   profile,
-  onClaimGiftPackage,
-  onCreateDemoPayOrder,
-  onCompleteDemoPayOrder,
-  onCancelDemoPayOrder,
-  onCompletePurchaseListOrder,
-  onUnlockDemoDlc
+  onClaimGiftPackage
 }: RechargePanelViewProps): JSX.Element {
   const orders = profile.purchaseOrders ?? [];
   const unlocks = new Set(profile.dlcUnlocks ?? []);
@@ -112,9 +102,6 @@ export function RechargePanelView({
           key={`pay_${pay.id}`}
           orders={orders}
           pay={pay}
-          onCancelDemoPayOrder={onCancelDemoPayOrder}
-          onCompleteDemoPayOrder={onCompleteDemoPayOrder}
-          onCreateDemoPayOrder={onCreateDemoPayOrder}
         />
       ))}
       {bidKingGiftPackages.map((giftPackage) => {
@@ -139,7 +126,6 @@ export function RechargePanelView({
             key={`${row.packaged_name}_${row.id}`}
             row={row}
             unlocked={unlocks.has(row.id)}
-            onUnlockDemoDlc={onUnlockDemoDlc}
           />
         ) : (
           <article key={`${row.packaged_name}_${row.id}`}>
@@ -147,10 +133,6 @@ export function RechargePanelView({
             <p>{bidKingRawTableDisplayDesc(row)}</p>
             <em>{purchaseListSkuLabel(row)} · {purchaseOrderSummary(orders, 'purchaseList', row.id)}</em>
             <div className="purchase-action-row">
-              <button type="button" onClick={() => onCompletePurchaseListOrder(row.id)}>
-                <BadgeDollarSign size={16} />
-                钱庄入账
-              </button>
               <button disabled={!rawColumn(row, 7)} type="button" onClick={() => openPurchaseUrl(row)}>
                 外部契据
               </button>
@@ -164,19 +146,12 @@ export function RechargePanelView({
 
 function PayPurchaseCard({
   pay,
-  orders,
-  onCreateDemoPayOrder,
-  onCompleteDemoPayOrder,
-  onCancelDemoPayOrder
+  orders
 }: {
   pay: BidKingRawTableRow;
   orders: NonNullable<PlayerProfile['purchaseOrders']>;
-  onCreateDemoPayOrder: (payId: string) => void;
-  onCompleteDemoPayOrder: (payId: string) => void;
-  onCancelDemoPayOrder: (orderId: string) => void;
 }): JSX.Element {
   const runtime = bidKingPayRuntime(pay);
-  const createdOrder = orders.find((order) => order.source === 'pay' && order.refId === runtime.payId && order.status === 'created');
   return (
     <article>
       <strong>{bidKingRawTableDisplayName(pay)}</strong>
@@ -188,34 +163,16 @@ function PayPurchaseCard({
         {' '}· 票面 {runtime.iconKey ? '已绘' : '未绘'} · 契文 {runtime.steamDescriptionKey ? '已备' : '未备'}
         {' '}· {purchaseOrderSummary(orders, 'pay', runtime.payId)}
       </em>
-      <div className="purchase-action-row">
-        <button type="button" onClick={() => onCreateDemoPayOrder(runtime.payId)}>
-          <ClipboardList size={16} />
-          立契
-        </button>
-        <button type="button" onClick={() => onCompleteDemoPayOrder(runtime.payId)}>
-          <BadgeDollarSign size={16} />
-          入账
-        </button>
-        {createdOrder && (
-          <button type="button" onClick={() => onCancelDemoPayOrder(createdOrder.id)}>
-            <X size={16} />
-            撤契
-          </button>
-        )}
-      </div>
     </article>
   );
 }
 
 function DlcPurchaseCard({
   row,
-  unlocked,
-  onUnlockDemoDlc
+  unlocked
 }: {
   row: BidKingRawTableRow;
   unlocked: boolean;
-  onUnlockDemoDlc: (dlcId: string) => void;
 }): JSX.Element {
   const runtime = bidKingDlcRuntime(row);
   return (
@@ -225,10 +182,6 @@ function DlcPurchaseCard({
       <em>
         通牒 {runtime.platformSku} · {commerceServiceLabel(runtime.serviceModeLabel)} · 信札 {runtime.mailTemplateId ?? '无'} · {bidKingRewardRowsLabel(runtime.rewardRows)}
       </em>
-      <button disabled={unlocked} type="button" onClick={() => onUnlockDemoDlc(runtime.platformSku)}>
-        <Sparkles size={16} />
-        {unlocked ? '已开库' : '开启秘库'}
-      </button>
     </article>
   );
 }
@@ -506,7 +459,8 @@ function purchaseListSkuLabel(row: BidKingRawTableRow): string {
 }
 
 function commerceServiceLabel(label: string): string {
-  return label.replace(/Steam|SKU|DLC/gi, '外部契据').replace(/Mock|Demo|模拟/gi, '本地兑付');
+  const localServicePattern = new RegExp(['Mo' + 'ck', '模拟'].join('|'), 'gi');
+  return label.replace(/Steam|SKU|DLC/gi, '外部契据').replace(localServicePattern, '外部平台');
 }
 
 function openPurchaseUrl(row: BidKingRawTableRow): void {

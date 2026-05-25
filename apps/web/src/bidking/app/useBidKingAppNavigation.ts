@@ -12,7 +12,6 @@ interface UseBidKingAppNavigationArgs {
   bidComposer: BidComposerActions;
   liveIntel: LiveIntelActions;
   replay: ReplayActions;
-  selectedSkillTargetId?: string;
   setRoom: (room?: RoomSnapshot) => void;
   setSelfPlayerId: (playerId?: string) => void;
   setSkillTargetId: (playerId?: string) => void;
@@ -27,7 +26,6 @@ export function useBidKingAppNavigation({
   bidComposer,
   liveIntel,
   replay,
-  selectedSkillTargetId,
   setRoom,
   setSelfPlayerId,
   setSkillTargetId,
@@ -64,17 +62,12 @@ export function useBidKingAppNavigation({
     socket
   ]);
 
-  const useSkillClick = useCallback((): void => {
-    socket?.emit('useSkill', { targetPlayerId: selectedSkillTargetId });
-  }, [selectedSkillTargetId, socket]);
-
   const useBattleItemClick = useCallback((itemId: number, targetPlayerId?: string): void => {
     socket?.emit('useBattleItem', { itemId, targetPlayerId });
   }, [socket]);
 
   return {
     returnHome,
-    useBattleItemClick,
-    useSkillClick
+    useBattleItemClick
   };
 }

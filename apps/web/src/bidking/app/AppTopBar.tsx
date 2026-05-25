@@ -26,7 +26,7 @@ export function AppTopBar({
   return (
     <header className="topbar">
       <div>
-        <span className="brand-kicker">BitKingdom</span>
+        <span className="brand-kicker">三国珍宝</span>
         <h1>珍宝局</h1>
       </div>
       <div className="topbar-actions">

@@ -58,7 +58,7 @@ export async function createBitKingdomServer(options: BitKingdomServerOptions = 
 
   io.on('connection', (socket) => {
     app.log.info({ socketId: socket.id }, 'socket connected');
-    socket.emit('toast', { tone: 'info', message: '已连接到珍宝局 Demo 服务' });
+    socket.emit('toast', { tone: 'info', message: '已连接到珍宝局服务' });
     rooms.bindSocket(socket);
   });
 

@@ -5,7 +5,6 @@ import {
   bidKingItemDisplayName,
   bidKingSkillDisplayName,
   Drop,
-  dropsForGroup,
   getBidKingCloseThreshold,
   Hero,
   Item,
@@ -22,7 +21,6 @@ import {
   type BidKingSkillRow
 } from '@bitkingdom/bidking-compat';
 import type { Clue, PublicContainerInfo, RevealedItem, Rarity, SkillFeedEntry } from '@bitkingdom/shared';
-import { buildPrivateClues, buildPublicClues } from '../clues';
 import { sumItemValue } from '../scoring';
 import type { ContainerInstance, MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } from '../types';
 import {
@@ -34,7 +32,6 @@ import {
   bidKingKnowledgeByItemIdFromSkillFeed,
   bidKingSourceHitBoxList,
   bidKingSourceHitBoxListForCategories,
-  bidKingSourceTargetCount,
   selectBidKingSlotsBySkill
 } from './skillTargeting';
 
@@ -44,27 +41,6 @@ export function createBidKingCoreWarehouseInstance(state: MatchRuntimeState, now
   const bidMap = resolveBidMapForState(state);
   const hiddenItems = drawItemsForBidMap(state, bidMap);
   return createContainerFromBidMap(state, bidMap, hiddenItems, now, bidKingRoundRuleForBidMap(bidMap, state.roundIndex, state));
-}
-
-export function buildBidKingOpeningCandidates(
-  state: MatchRuntimeState,
-  selected: PublicContainerInfo,
-  now: number
-): PublicContainerInfo[] {
-  const selectedBidMap = BidMap.find((row) => selected.templateId === templateIdForBidMap(row));
-  const others = shuffleByRng(
-    eligibleBidMapsForState(state).filter((row) => row.id !== selectedBidMap?.id),
-    state
-  ).slice(0, 7);
-  const maps = shuffleByRng(
-    [selectedBidMap, ...others].filter((row): row is BidKingBidMapRow => Boolean(row)),
-    state
-  );
-  return maps.map((bidMap, index) => (
-    selectedBidMap && bidMap.id === selectedBidMap.id
-      ? selected
-      : buildBidMapPreview(bidMap, now, index)
-  ));
 }
 
 export function applyBidKingRoundRule(
@@ -82,6 +58,35 @@ export function applyBidKingRoundRule(
     auctionDurationMs: rule.auctionDurationMs,
     minimumBid: rule.minimumBid
   };
+}
+
+export function buildBidKingOpeningCandidates(
+  state: MatchRuntimeState,
+  selected: PublicContainerInfo,
+  now: number
+): PublicContainerInfo[] {
+  const selectedTemplateId = selected.templateId;
+  const alternatives = shuffleByRng(
+    eligibleBidMapsForState(state).filter((row) => templateIdForBidMap(row) !== selectedTemplateId),
+    state
+  );
+  const rows = alternatives.length > 0
+    ? alternatives
+    : shuffleByRng(BidMap.filter((row) => row.is_visiable === 1), state);
+  const candidates: PublicContainerInfo[] = rows
+    .slice(0, 7)
+    .map((row, index) => openingCandidateInfo(row, now + index + 1));
+  while (candidates.length < 7 && rows.length > 0) {
+    const row = rows[candidates.length % rows.length]!;
+    candidates.push(openingCandidateInfo(row, now + candidates.length + 1));
+  }
+  return [
+    ...candidates,
+    {
+      ...selected,
+      tags: [...selected.tags]
+    }
+  ];
 }
 
 export function buildBidKingAutoSkillClues(
@@ -164,96 +169,6 @@ export function buildBidKingRoundStartSkillFeed(
   return entries;
 }
 
-export interface BidKingManualSkillResult {
-  clue?: Clue;
-  publishTo: 'public' | 'private';
-  insuranceActive: boolean;
-  cooldownRounds: number;
-  effectPlan: BidKingSkillEffectPlan;
-}
-
-export interface BidKingSkillEffectPlan {
-  skillId: number;
-  skillName: string;
-  skillTarget: number;
-  skillTargetValue: readonly number[];
-  secondaryTargets: readonly {
-    target: number;
-    values: readonly number[];
-  }[];
-  requestedTargetCount: number;
-  targetCount: number;
-  durationRounds: number;
-  cooldownRounds: number;
-  effectId: number;
-  effectCategory: number;
-  effectKey: string;
-  effectName: string;
-  targetItemIds: readonly string[];
-  trigger: 'auto' | 'manual' | 'map' | 'item';
-  description: string;
-}
-
-export function buildBidKingManualSkillResult(
-  state: MatchRuntimeState,
-  player: RuntimePlayer,
-  targetPlayerId?: string
-): BidKingManualSkillResult | undefined {
-  const round = state.currentRound;
-  if (!round) {
-    return undefined;
-  }
-  const hero = heroForPlayer(player, state);
-  const skill = skillForHero(hero, round.index);
-  if (!skill) {
-    return undefined;
-  }
-  const effect = effectForSkill(skill);
-  const clue = buildBidKingSkillClue(round.container, state, player, round.index, 'manual', targetPlayerId);
-  const cooldownRounds = Math.max(1, skill.skill_CD);
-  return {
-    clue,
-    publishTo: 'private',
-    insuranceActive: false,
-    cooldownRounds,
-    effectPlan: buildBidKingSkillEffectPlan(skill, effect, clue, 'manual', cooldownRounds)
-  };
-}
-
-export function buildBidKingManualSkillFeedEntry(
-  state: MatchRuntimeState,
-  player: RuntimePlayer,
-  clue: Clue | undefined,
-  now: number
-): SkillFeedEntry | undefined {
-  const round = state.currentRound;
-  if (!round) {
-    return undefined;
-  }
-  const hero = heroForPlayer(player, state);
-  const skill = skillForHero(hero, round.index);
-  if (!skill) {
-    return undefined;
-  }
-  const effect = effectForSkill(skill);
-  const skillName = bidKingSkillDisplayName(skill);
-  const targetItemIds = clueTargetItemIds(clue);
-  return {
-    id: `${round.id}_manual_skill_${player.id}_${skill.id}_${round.skillFeed.length + 1}`,
-    round: round.index + 1,
-    playerId: player.id,
-    source: 'manual',
-    sourceName: hero.packaged_name,
-    skillName,
-    ...skillFeedEffectMetadata(skill, effect, targetItemIds),
-    text: clue?.text ?? `${hero.packaged_name}使用${skillName}，获得一条专属情报。`,
-    iconKey: skill.skill_icon,
-    visibility: 'private',
-    targetItemIds,
-    createdAt: now
-  };
-}
-
 export function minimumBidForRound(round: RuntimeRound): number {
   return round.container.minimumBid ?? 0;
 }
@@ -277,30 +192,17 @@ function createContainerFromBidMap(
     risk: bidMap.risk,
     estimateMin,
     estimateMax,
+    estimateHidden: true,
     artKey: bidMap.art_key
   };
-  const publicClues = buildPublicClues({
-    source: publicInfo.source,
-    tags: publicInfo.tags,
-    risk: publicInfo.risk,
-    trueValue,
-    estimateMin,
-    estimateMax,
-    hiddenItems
-  });
   return {
     id: publicInfo.id,
     templateId: publicInfo.templateId,
     publicInfo,
     hiddenItems,
     warehouseSlots: buildWarehouseSlots(hiddenItems),
-    publicClues,
-    privateCluesByPlayerId: Object.fromEntries(
-      state.players.map((player) => [
-        player.id,
-        buildPrivateClues({ player, hiddenItems, trueValue, rng: state.rng })
-      ])
-    ),
+    publicClues: [],
+    privateCluesByPlayerId: Object.fromEntries(state.players.map((player) => [player.id, []])),
     auctionDurationMs: roundRule.auctionDurationMs,
     minimumBid: roundRule.minimumBid
   };
@@ -393,6 +295,30 @@ function eligibleBidMapsForPlayerCount(playerCount: number, maxMinimumBid?: numb
     return affordable.length > 0 ? affordable : multiplayer;
   }
   return BidMap;
+}
+
+function openingCandidateInfo(bidMap: BidKingBidMapRow, idSeed: number): PublicContainerInfo {
+  return {
+    id: `${templateIdForBidMap(bidMap)}_opening_${idSeed}`,
+    templateId: templateIdForBidMap(bidMap),
+    name: bidKingBidMapDisplayName(bidMap),
+    source: bidKingBidMapDisplayDesc(bidMap),
+    tags: [...bidMap.packaged_tags],
+    risk: bidMap.risk,
+    estimateMin: 0,
+    estimateMax: 0,
+    estimateHidden: true,
+    artKey: bidMap.art_key
+  };
+}
+
+function shuffleByRng<T>(items: readonly T[], state: MatchRuntimeState): T[] {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const target = state.rng.int(0, index);
+    [shuffled[index], shuffled[target]] = [shuffled[target]!, shuffled[index]!];
+  }
+  return shuffled;
 }
 
 function weightedRangeValue(ranges: readonly (readonly number[])[], state?: MatchRuntimeState): number | undefined {
@@ -516,8 +442,6 @@ function toRevealedItem(row: BidKingItemRow, instanceIndex: number): RevealedIte
     rarity: rarityFromQuality(row),
     value: row.base_value,
     displayValue: row.base_value,
-    isFake: false,
-    repairCost: 0,
     setId: row.collection > 0 ? `compat_collection_${row.collection}` : undefined,
     iconKey: row.packaged_icon_key,
     footprint
@@ -542,24 +466,15 @@ function buildBidKingSkillClue(
   const effectSummary = skillEffectSummaryLabel(skill, effect);
   const clueId = `${core.id}_${trigger}_${player.id}_${roundIndex + 1}_${hero.id}_${skill.id}`;
   const selectedSlots = selectSlotsBySkill(core, state, skill, trigger, player.id, extraSkillFeed);
-  const scanSlots = selectedSlots.slice(0, trigger === 'manual' ? 3 : 2);
   const selectedItemIds = slotItemIds(selectedSlots);
   const skillName = bidKingSkillDisplayName(skill);
 
   if (selectedSlots.length === 0 && skillUsesKnowledgeStateTarget(skill)) {
-    return {
-      id: clueId,
-      kind: 'category',
-      text: `${hero.packaged_name}·${skillName}：未命中符合条件的藏品。`,
-      accuracy: 1,
-      targetItemIds: [],
-      source: 'skill',
-      isTruthful: true
-    };
+    return buildBidKingNoHitSkillClue(clueId, hero.packaged_name, skillName);
   }
 
   if ([8, 9, 10].includes(effect.Category)) {
-    const targetItems = selectedSlots.length > 0 ? selectedSlots.map((slot) => slot.item) : core.hiddenItems;
+    const targetItems = selectedSlots.map((slot) => slot.item);
     const targetValue = targetItems.reduce((sum, item) => sum + item.value, 0);
     const cells = Math.max(1, targetItems.reduce((sum, item) => sum + item.footprint.w * item.footprint.h, 0));
     const value =
@@ -569,12 +484,15 @@ function buildBidKingSkillClue(
           ? Math.round(targetValue / cells)
           : targetValue;
     const precision = trigger === 'manual' ? 0.08 : 0.16 - Math.min(0.08, roundIndex * 0.015);
-    const low = Math.max(1000, Math.round(value * (0.9 - precision)));
-    const high = Math.max(low + 1000, Math.round(value * (1.1 + precision)));
+    const low = targetItems.length === 0 ? 0 : Math.max(1000, Math.round(value * (0.9 - precision)));
+    const high = targetItems.length === 0 ? 0 : Math.max(low + 1000, Math.round(value * (1.1 + precision)));
+    const label = effect.Category === 8 ? '平均价值' : effect.Category === 9 ? '每格均价' : '总价值';
     return {
       id: clueId,
       kind: 'value',
-      text: `${hero.packaged_name}·${skillName}：命中样本价值约在 ${low.toLocaleString()} ～ ${high.toLocaleString()}。`,
+      text: targetItems.length === 0
+        ? `${hero.packaged_name}·${skillName}：${label}为 0。`
+        : `${hero.packaged_name}·${skillName}：命中样本价值约在 ${low.toLocaleString()} ～ ${high.toLocaleString()}。`,
       accuracy: trigger === 'manual' ? 0.9 : 0.82,
       valueHint: { min: low, max: high },
       targetItemIds: selectedItemIds,
@@ -584,7 +502,7 @@ function buildBidKingSkillClue(
   }
 
   if ([2, 3, 4].includes(effect.Category)) {
-    const targetItems = selectedSlots.length > 0 ? selectedSlots.map((slot) => slot.item) : core.hiddenItems;
+    const targetItems = selectedSlots.map((slot) => slot.item);
     const totalCells = targetItems.reduce((sum, item) => sum + item.footprint.w * item.footprint.h, 0);
     const value = effect.Category === 2
       ? totalCells
@@ -608,9 +526,9 @@ function buildBidKingSkillClue(
   }
 
   if (effect.Category === 5) {
-    const target = selectedSlots[0] ?? [...core.warehouseSlots].sort((left, right) => right.item.value - left.item.value)[0];
+    const target = selectedSlots[0];
     if (!target) {
-      return undefined;
+      return buildBidKingNoHitSkillClue(clueId, hero.packaged_name, skillName);
     }
     return {
       id: clueId,
@@ -618,7 +536,7 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：命中一个候选格，${target.item.category}，价值约 ${target.item.value.toLocaleString()}。`,
       accuracy: 0.88,
       targetItemId: target.item.id,
-      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
+      targetItemIds: selectedItemIds,
       valueHint: {
         min: Math.max(1000, Math.round(target.item.value * 0.9)),
         max: Math.max(2000, Math.round(target.item.value * 1.1))
@@ -629,9 +547,9 @@ function buildBidKingSkillClue(
   }
 
   if (effect.Category === 6) {
-    const target = selectedSlots[0] ?? scanSlots[0];
+    const target = selectedSlots[0];
     if (!target) {
-      return undefined;
+      return buildBidKingNoHitSkillClue(clueId, hero.packaged_name, skillName);
     }
     return {
       id: clueId,
@@ -639,16 +557,16 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：显示藏品本体，${target.item.name}，${target.item.category}，品质接近${rarityNameForText(target.item.rarity)}。`,
       accuracy: 0.9,
       targetItemId: target.item.id,
-      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
+      targetItemIds: selectedItemIds,
       source: 'skill',
       isTruthful: true
     };
   }
 
   if (effect.Category === 7) {
-    const target = selectedSlots[0] ?? scanSlots[0];
+    const target = selectedSlots[0];
     if (!target) {
-      return undefined;
+      return buildBidKingNoHitSkillClue(clueId, hero.packaged_name, skillName);
     }
     return {
       id: clueId,
@@ -656,16 +574,16 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：揭示一个命中格的${effectSummary}，品质接近${rarityNameForText(target.item.rarity)}。`,
       accuracy: 0.86,
       targetItemId: target.item.id,
-      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
+      targetItemIds: selectedItemIds,
       source: 'skill',
       isTruthful: true
     };
   }
 
   if (effect.Category === 12) {
-    const target = selectedSlots[0] ?? scanSlots[0];
+    const target = selectedSlots[0];
     if (!target) {
-      return undefined;
+      return buildBidKingNoHitSkillClue(clueId, hero.packaged_name, skillName);
     }
     return {
       id: clueId,
@@ -673,16 +591,16 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：本场竞拍最高品质为${rarityNameForText(target.item.rarity)}。`,
       accuracy: 0.86,
       targetItemId: target.item.id,
-      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
+      targetItemIds: selectedItemIds,
       source: 'skill',
       isTruthful: true
     };
   }
 
   if (effect.Category === 14) {
-    const target = selectedSlots[0] ?? [...core.warehouseSlots].sort((left, right) => right.item.value - left.item.value)[0];
+    const target = selectedSlots[0];
     if (!target) {
-      return undefined;
+      return buildBidKingNoHitSkillClue(clueId, hero.packaged_name, skillName);
     }
     const digits = Math.max(1, String(Math.max(0, Math.floor(target.item.value))).length);
     const min = digits === 1 ? 0 : 10 ** (digits - 1);
@@ -693,7 +611,7 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：命中格价格为 ${digits} 位数。`,
       accuracy: 0.82,
       targetItemId: target.item.id,
-      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
+      targetItemIds: selectedItemIds,
       valueHint: { min, max },
       source: 'skill',
       isTruthful: true
@@ -701,7 +619,10 @@ function buildBidKingSkillClue(
   }
 
   if ([1, 11, 22].includes(effect.Category)) {
-    const targets = selectedSlots.length > 0 ? selectedSlots : shuffleByRng(core.warehouseSlots, state).slice(0, trigger === 'manual' ? 3 : 2);
+    const targets = selectedSlots;
+    if (targets.length === 0) {
+      return buildBidKingNoHitSkillClue(clueId, hero.packaged_name, skillName);
+    }
     return {
       id: clueId,
       kind: 'category',
@@ -714,9 +635,9 @@ function buildBidKingSkillClue(
   }
 
   if (effect.Category === 13) {
-    const target = selectedSlots[0] ?? scanSlots[0];
+    const target = selectedSlots[0];
     if (!target) {
-      return undefined;
+      return buildBidKingNoHitSkillClue(clueId, hero.packaged_name, skillName);
     }
     return {
       id: clueId,
@@ -724,13 +645,16 @@ function buildBidKingSkillClue(
       text: `${hero.packaged_name}·${skillName}：目标品类为${target.item.category}。`,
       accuracy: 0.86,
       targetItemId: target.item.id,
-      targetItemIds: selectedItemIds.length > 0 ? selectedItemIds : [target.item.id],
+      targetItemIds: selectedItemIds,
       source: 'skill',
       isTruthful: true
     };
   }
 
-  const targetItems = (scanSlots.length > 0 ? scanSlots.map((slot) => slot.item) : core.hiddenItems).slice(0, 3);
+  const targetItems = selectedSlots.slice(0, 3).map((slot) => slot.item);
+  if (targetItems.length === 0) {
+    return buildBidKingNoHitSkillClue(clueId, hero.packaged_name, skillName);
+  }
   const targetValue = targetItems.reduce((sum, item) => sum + item.value, 0);
   return {
     id: clueId,
@@ -742,6 +666,18 @@ function buildBidKingSkillClue(
     source: 'skill',
     isTruthful: true,
     riskHint: 'safe'
+  };
+}
+
+function buildBidKingNoHitSkillClue(clueId: string, heroName: string, skillName: string): Clue {
+  return {
+    id: clueId,
+    kind: 'category',
+    text: `${heroName}·${skillName}：未命中符合条件的藏品。`,
+    accuracy: 1,
+    targetItemIds: [],
+    source: 'skill',
+    isTruthful: true
   };
 }
 
@@ -813,7 +749,7 @@ function compositeHeroSkillFeedSpecs(heroId: number, skillId: number): Composite
       values: [102],
       count: 4,
       effectId: 1000,
-      text: (count) => `显示 ${count} 件矿物珠宝类藏品的轮廓。`
+      text: (count) => `显示 ${count} 件矿玉珠宝类藏品的轮廓。`
     }];
   }
   if (heroId === 106 && skillId === 100106) {
@@ -823,7 +759,7 @@ function compositeHeroSkillFeedSpecs(heroId: number, skillId: number): Composite
       values: [103, 107],
       count: 0,
       effectId: 1000,
-      text: (count) => `显示 ${count} 件时尚潮流与数码电子类藏品的轮廓。`
+      text: (count) => `显示 ${count} 件锦衣冠服与机巧器具类藏品的轮廓。`
     }];
   }
   if (heroId === 203 && skillId === 100203) {
@@ -833,7 +769,7 @@ function compositeHeroSkillFeedSpecs(heroId: number, skillId: number): Composite
       values: [106],
       count: 2,
       effectId: 7000,
-      text: (count) => `显示 ${count} 件文玩古董类藏品的品质。`
+      text: (count) => `显示 ${count} 件文玩古器类藏品的品质。`
     }];
   }
   if (heroId === 206 && skillId === 100206) {
@@ -843,7 +779,7 @@ function compositeHeroSkillFeedSpecs(heroId: number, skillId: number): Composite
       values: [110],
       count: 0,
       effectId: 1000,
-      text: (count) => `显示 ${count} 件书籍绘画类藏品的轮廓。`
+      text: (count) => `显示 ${count} 件书画典籍类藏品的轮廓。`
     }];
   }
   return [];
@@ -933,42 +869,6 @@ function skillFeedEffectMetadata(
   };
 }
 
-function buildBidKingSkillEffectPlan(
-  skill: BidKingSkillRow,
-  effect: BidKingSkillEffectRow,
-  clue: Clue | undefined,
-  trigger: BidKingSkillEffectPlan['trigger'],
-  cooldownRounds = Math.max(0, skill.skill_CD)
-): BidKingSkillEffectPlan {
-  const targetItemIds = clueTargetItemIds(clue);
-  const requestedTargetCount = skill.skill_count_type === 2
-    ? targetItemIds.length
-    : bidKingSourceTargetCount(skill);
-  const skillName = bidKingSkillDisplayName(skill);
-  const effectName = skillEffectSummaryLabel(skill, effect);
-  return {
-    skillId: skill.id,
-    skillName,
-    skillTarget: skill.skilltarget,
-    skillTargetValue: skill.skilltargetvalue,
-    secondaryTargets: [
-      { target: skill.skilltarget2, values: skill.skilltargetvalue2 },
-      { target: skill.skilltarget3, values: skill.skilltargetvalue3 }
-    ],
-    requestedTargetCount,
-    targetCount: targetItemIds.length,
-    durationRounds: Math.max(0, skill.skill_round),
-    cooldownRounds,
-    effectId: effect.EffectId,
-    effectCategory: effect.Category,
-    effectKey: effect.effect_key,
-    effectName,
-    targetItemIds,
-    trigger,
-    description: `${skillName}/${effectName} 命中 ${targetItemIds.length} 个目标`
-  };
-}
-
 function clueTargetItemIds(clue: Clue | undefined): string[] {
   if (!clue) {
     return [];
@@ -1047,8 +947,7 @@ function rarityNameForText(rarity: Rarity): string {
     common: '普通',
     fine: '精品',
     rare: '稀有',
-    legendary: '传世',
-    fake: '特殊'
+    legendary: '传世'
   };
   return names[rarity];
 }
@@ -1136,63 +1035,6 @@ function markSourceWarehousePlacement(
       occupied[(placement.y + dy) * width + placement.x + dx] = true;
     }
   }
-}
-
-function buildBidMapPreview(
-  bidMap: BidKingBidMapRow,
-  now: number,
-  index: number
-): PublicContainerInfo {
-  const [, routeGroupId] = bidMap.drop_group_id;
-  const drops = routeGroupId !== undefined ? collectDropLeaves(routeGroupId).slice(0, 12) : [];
-  const sampleRows = drops
-    .slice(0, 8)
-    .map((drop) => itemById(drop.item_id))
-    .filter((item): item is BidKingItemRow => Boolean(item));
-  const averageValue = sampleRows.length
-    ? sampleRows.reduce((sum, item) => sum + item.base_value, 0) / sampleRows.length
-    : 22000;
-  const averageCount = (bidMap.item_count_min + bidMap.item_count_max) / 2;
-  const previewValue = averageValue * averageCount;
-  return {
-    id: `${templateIdForBidMap(bidMap)}_preview_${now}_${index}`,
-    templateId: templateIdForBidMap(bidMap),
-    name: bidKingBidMapDisplayName(bidMap),
-    source: bidKingBidMapDisplayDesc(bidMap),
-    tags: [...bidMap.packaged_tags],
-    risk: bidMap.risk,
-    estimateMin: Math.max(1000, Math.round(previewValue * bidMap.public_estimate_min_rate)),
-    estimateMax: Math.max(2000, Math.round(previewValue * bidMap.public_estimate_max_rate)),
-    artKey: bidMap.art_key
-  };
-}
-
-function collectDropLeaves(groupId: number, depth = 0, seen = new Set<number>()): BidKingDropItemRow[] {
-  if (depth > 8 || seen.has(groupId)) {
-    return [];
-  }
-  seen.add(groupId);
-  const result: BidKingDropItemRow[] = [];
-  for (const drop of dropsForGroup(groupId)) {
-    if (drop.item_type === 9999) {
-      result.push(...collectDropLeaves(drop.item_id, depth + 1, new Set(seen)));
-    } else {
-      result.push(drop);
-    }
-    if (result.length >= 64) {
-      break;
-    }
-  }
-  return result;
-}
-
-function shuffleByRng<T>(items: readonly T[], state: MatchRuntimeState): T[] {
-  const copy = [...items];
-  for (let index = copy.length - 1; index > 0; index -= 1) {
-    const swapIndex = state.rng.int(0, index);
-    [copy[index], copy[swapIndex]] = [copy[swapIndex]!, copy[index]!];
-  }
-  return copy;
 }
 
 function templateIdForBidMap(bidMap: BidKingBidMapRow): string {

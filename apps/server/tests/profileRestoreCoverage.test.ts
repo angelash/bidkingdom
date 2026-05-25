@@ -32,8 +32,10 @@ import {
   ShopItem,
   Ticket,
   WareHouse,
+  bidKingPayRuntime,
   bidKingGuildResourceRuntime
 } from '@bitkingdom/bidking-compat';
+import type { PlayerProfile } from '@bitkingdom/shared';
 import { parseBidKingNumberRows } from '@bitkingdom/match-core';
 import { describe, expect, it } from 'vitest';
 import { languageNamesFromSeed } from '../src/domain/profile/languageNameRuntime';
@@ -69,6 +71,62 @@ function cabinetAcceptsItem(cabinet: (typeof Cabinet)[number], item: (typeof Ite
 
 function cabinetPlaceLimit(cabinet: (typeof Cabinet)[number]): number {
   return cabinet.place_max > 0 ? cabinet.place_max : 15;
+}
+
+function seedFriend(profile: PlayerProfile, seed = 1): void {
+  profile.friends.push({
+    id: `friend_${profile.playerId}_${seed}`,
+    name: languageNamesFromSeed(seed, 1)[0] ?? `friend_${seed}`,
+    headId: Head[1]?.id ?? Head[0]?.id ?? '0',
+    areaId: GuildArea[0]?.id ?? '0',
+    createdAt: Date.now()
+  });
+  profile.updatedAt = Date.now();
+}
+
+function seedExternalPayOrder(profile: PlayerProfile, payId: string): void {
+  const pay = Pay.find((row) => row.id === payId);
+  expect(pay).toBeDefined();
+  const runtime = bidKingPayRuntime(pay!);
+  const now = Date.now();
+  profile.purchaseOrders ??= [];
+  if (profile.purchaseOrders.some((order) => order.source === 'pay' && order.refId === runtime.payId && order.status === 'completed')) {
+    return;
+  }
+  profile.purchaseOrders.push({
+    id: `external_pay_${profile.playerId}_${runtime.payId}`,
+    source: 'pay',
+    refId: runtime.payId,
+    status: 'completed',
+    coins: runtime.totalCoins,
+    price: runtime.rmb,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: now
+  });
+  profile.updatedAt = now;
+}
+
+function seedGuildApplication(
+  profile: PlayerProfile,
+  seed = 1
+): NonNullable<NonNullable<PlayerProfile['guildMembership']>['pendingApplications']>[number] {
+  if (!profile.guildMembership) {
+    throw new Error('guild membership is required');
+  }
+  const application = {
+    playerId: `applicant_${profile.playerId}_${seed}`,
+    name: languageNamesFromSeed(seed, 1)[0] ?? `applicant_${seed}`,
+    roleId: '3',
+    areaId: profile.guildMembership.areaId,
+    points: 0,
+    status: 'pending' as const,
+    requestedAt: Date.now()
+  };
+  profile.guildMembership.pendingApplications ??= [];
+  profile.guildMembership.pendingApplications.push(application);
+  profile.updatedAt = Date.now();
+  return application;
 }
 
 describe('BidKing profile restore coverage', () => {
@@ -181,7 +239,7 @@ describe('BidKing profile restore coverage', () => {
       }
     }
     profiles.claimCollectionIncome(profile.playerId);
-    profiles.addDemoFriend(profile.playerId);
+    seedFriend(profile);
     profiles.joinGuild(profile.playerId, GuildArea[0]!.id);
     profiles.markNoticeRead(profile.playerId, Notice[0]!.id);
     profiles.completeGuide(profile.playerId, Guide[0]!.id);
@@ -198,7 +256,6 @@ describe('BidKing profile restore coverage', () => {
     expect(eventCounts['economy.shop_buy_item']).toBeGreaterThan(0);
     expect(eventCounts['collection.cabinet_place']).toBeGreaterThan(0);
     expect(eventCounts['collection.collection_income_claim']).toBeGreaterThan(0);
-    expect(eventCounts['social.friend_add']).toBeGreaterThan(0);
     expect(eventCounts['social.guild_join_area']).toBeGreaterThan(0);
     expect(eventCounts['system.notice_read']).toBeGreaterThan(0);
     expect(eventCounts['system.guide_complete']).toBeGreaterThan(0);
@@ -240,26 +297,17 @@ describe('BidKing commerce restore coverage', () => {
     expect(exchange.pools.every((pool) => pool.offers.every((offer) => ShopItem.some((row) => row.id === offer.shopItemId)))).toBe(true);
   });
 
-  it('applies GiftPackage, Pay, PurchaseList, and Dlc rows once through profile ledger state', () => {
+  it('keeps GiftPackage rewards gated by external Pay metadata', () => {
     const profiles = createProfileService(createMemoryStore());
     const profile = profiles.getOrCreateProfile('p_commerce_rewards', '掌柜商业奖励');
 
     for (const pay of Pay) {
-      profiles.createDemoPayOrder(profile.playerId, pay.id);
-      profiles.completeDemoPayOrder(profile.playerId, pay.id);
-      profiles.completeDemoPayOrder(profile.playerId, pay.id);
+      seedExternalPayOrder(profile, pay.id);
+      seedExternalPayOrder(profile, pay.id);
     }
     for (const giftPackage of GiftPackage) {
       profiles.claimGiftPackage(profile.playerId, giftPackage.id);
       profiles.claimGiftPackage(profile.playerId, giftPackage.id);
-    }
-    for (const purchase of PurchaseList) {
-      profiles.completePurchaseListOrder(profile.playerId, purchase.id);
-      profiles.completePurchaseListOrder(profile.playerId, purchase.id);
-    }
-    for (const dlc of Dlc) {
-      profiles.unlockDemoDlc(profile.playerId, dlc.id);
-      profiles.unlockDemoDlc(profile.playerId, dlc.id);
     }
 
     const snapshot = profiles.getSnapshot(profile.playerId);
@@ -269,15 +317,14 @@ describe('BidKing commerce restore coverage', () => {
       .reduce((sum, [, , quantity = 0]) => sum + quantity, 0);
 
     expect(snapshot.profile.purchaseOrders?.filter((order) => order.source === 'pay' && order.status === 'completed')).toHaveLength(Pay.length);
-    expect(snapshot.profile.purchaseOrders?.filter((order) => order.source === 'purchaseList' && order.status === 'completed')).toHaveLength(PurchaseList.length);
-    expect(snapshot.profile.dlcUnlocks).toHaveLength(Dlc.length);
+    expect(snapshot.profile.purchaseOrders?.filter((order) => order.source === 'purchaseList')).toHaveLength(0);
+    expect(snapshot.profile.dlcUnlocks).toHaveLength(0);
+    expect(PurchaseList.length).toBeGreaterThan(0);
+    expect(Dlc.length).toBeGreaterThan(0);
     expect(inventoryQuantity(snapshot.profile.inventory, '2')).toBeGreaterThanOrEqual(expectedGiftItem2);
     expect(snapshot.transactions.map((transaction) => transaction.reason)).toEqual(
       expect.arrayContaining([
-        'gift_package_claim',
-        'pay_demo_complete',
-        'purchase_list_demo_complete',
-        'dlc_unlock'
+        'gift_package_claim'
       ])
     );
   });
@@ -319,13 +366,13 @@ describe('BidKing market, rank, and social restore coverage', () => {
     const donationAmount = donationRange[0] ?? 50_000;
 
     profile.coins = Math.max(profile.coins, donationAmount + 10_000);
-    profiles.addDemoFriend(profile.playerId);
+    seedFriend(profile);
     profiles.joinGuild(profile.playerId, guildArea.id);
     profiles.donateGuildCoins(profile.playerId, donationAmount);
     profiles.claimGuildResource(profile.playerId, resource.id);
     profiles.useGuildResource(profile.playerId, resource.id);
     profiles.claimAreaResource(profile.playerId, guildArea.id);
-    const guildApplicant = profiles.addDemoGuildApplication(profile.playerId).profile.guildMembership!.pendingApplications![0]!;
+    const guildApplicant = seedGuildApplication(profile);
     profiles.approveGuildMember(profile.playerId, guildApplicant.playerId);
     profiles.kickGuildMember(profile.playerId, guildApplicant.playerId);
     profiles.applyLanguageName(profile.playerId, 0);
@@ -363,7 +410,6 @@ describe('BidKing market, rank, and social restore coverage', () => {
         'guild_resource_claim',
         'guild_resource_use',
         'guild_area_resource_claim',
-        'guild_member_apply',
         'guild_member_approve',
         'guild_member_kick',
         'language_name_apply'

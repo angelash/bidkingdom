@@ -1,9 +1,8 @@
-export type AuctionMode = 'open' | 'sealed' | 'second_price' | 'deposit_open' | 'flash';
+export type AuctionMode = 'open' | 'sealed';
 
-export type CoreAuctionMode = Extract<AuctionMode, 'open' | 'sealed'>;
+export type CoreAuctionMode = AuctionMode;
 
 export type RoundPhase =
-  | 'container'
   | 'warehouse_roll'
   | 'warehouse_selected'
   | 'auctioneer_reveal'
@@ -17,17 +16,14 @@ export type PlayerKind = 'human' | 'bot';
 
 export type PlayerStatus = 'connected' | 'disconnected' | 'ready' | 'playing' | 'settled';
 
-export type Rarity = 'junk' | 'common' | 'fine' | 'rare' | 'legendary' | 'fake';
+export type Rarity = 'junk' | 'common' | 'fine' | 'rare' | 'legendary';
 
-export type ClueKind = 'value' | 'risk' | 'category' | 'set' | 'opponent' | 'false';
+export type ClueKind = 'value' | 'risk' | 'category' | 'set' | 'opponent';
 
 export type SkillId =
   | 'appraise_value'
   | 'single_treasure'
-  | 'read_intent'
-  | 'spread_rumor'
-  | 'repair_audit'
-  | 'loss_insurance';
+  | 'read_intent';
 
 export type SkillFeedSource = 'map' | 'hero' | 'item' | 'manual' | 'auto';
 
@@ -108,8 +104,6 @@ export interface ItemConfig {
   rarity: Rarity;
   value: number;
   displayValue: number;
-  isFake: boolean;
-  repairCost: number;
   setId?: string;
   iconKey: string;
   footprint: ItemFootprint;
@@ -144,8 +138,8 @@ export interface Clue {
     min: number;
     max: number;
   };
-  riskHint?: 'fake' | 'repair' | 'safe' | 'unknown';
-  source: 'public' | 'private' | 'skill' | 'rumor';
+  riskHint?: 'safe' | 'unknown';
+  source: 'public' | 'private' | 'skill';
   isTruthful: boolean;
 }
 
@@ -158,6 +152,7 @@ export interface PublicContainerInfo {
   risk: 'low' | 'medium' | 'high';
   estimateMin: number;
   estimateMax: number;
+  estimateHidden?: boolean;
   artKey: string;
 }
 
@@ -168,8 +163,6 @@ export interface RevealedItem {
   rarity: Rarity;
   value: number;
   displayValue: number;
-  isFake: boolean;
-  repairCost: number;
   setId?: string;
   iconKey: string;
   footprint: ItemFootprint;
@@ -346,11 +339,8 @@ export interface RoundSettlement {
   isFinal?: boolean;
   winnerId?: string;
   payment: number;
-  depositCost: number;
-  insuranceRefund: number;
   lossRebateRefund?: number;
   trueValue: number;
-  repairCost: number;
   setBonus: number;
   profit: number;
   title: string;
@@ -419,12 +409,8 @@ export interface WarehouseSlotView {
 export interface RoundParticipantSettlement {
   playerId: string;
   payment: number;
-  depositPaid: number;
-  depositRefund: number;
-  insuranceRefund: number;
   lossRebateRefund?: number;
   trueValue: number;
-  repairCost: number;
   setBonus: number;
   profit: number;
   title: string;
@@ -523,7 +509,7 @@ export interface ClueReview {
   clueId: string;
   text: string;
   result: string;
-  verdict: 'hit' | 'partial' | 'miss' | 'rumor';
+  verdict: 'hit' | 'partial' | 'miss';
 }
 
 export interface PublicRoundState {
@@ -555,7 +541,6 @@ export interface PrivatePlayerState {
   skillCooldown: number;
   skillUsesRemaining: number;
   skillUsedThisRound: boolean;
-  insuranceActive: boolean;
   battleItemUseLimitThisRound?: number;
   battleItemUsesThisRound?: number;
   battleItemUsesRemainingThisRound?: number;
@@ -662,7 +647,7 @@ export type AdminEquivalentStatus =
   | 'Verified'
   | 'Equivalent'
   | 'Visual Substitute'
-  | 'Service Simulated'
+  | 'External Service Boundary'
   | 'Manual Review Required';
 
 export interface AdminConfigParityRow {
@@ -1540,17 +1525,17 @@ export interface AdminReviewSnapshot {
     verifiedTables: number;
     equivalentTables: number;
     visualSubstituteTables: number;
-    serviceSimulatedTables: number;
+    externalServiceTables: number;
     manualReviewTables: number;
     closureStatus: 'closed' | 'needs_review';
     equivalentTableNames: string[];
     visualSubstituteTableNames: string[];
-    serviceSimulatedTableNames: string[];
+    externalServiceTableNames: string[];
     manualReviewTableNames: string[];
   };
   equivalentBoundaries: Array<{
     table: string;
-    status: Extract<AdminEquivalentStatus, 'Visual Substitute' | 'Service Simulated'>;
+    status: Extract<AdminEquivalentStatus, 'Visual Substitute' | 'External Service Boundary'>;
     reason: string;
     cleanRoomBoundary: string;
     evidence: string;

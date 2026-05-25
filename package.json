@@ -20,7 +20,7 @@
     "test:playwright": "playwright test -c apps/web/playwright/playwright.config.ts --workers=1",
     "validate:config": "npm run validate -w @bitkingdom/config",
     "validate:bidking-compat": "npm run validate -w @bitkingdom/bidking-compat",
-    "art:validate:bidking-items": "python tools/validate-bidking-item-art.py --sample",
+    "art:validate:bidking-items": "python tools/validate-bidking-item-art.py --validation-set",
     "art:validate:bidking-items:all": "python tools/validate-bidking-item-art.py --all",
     "start": "npm run start -w @bitkingdom/server"
   },

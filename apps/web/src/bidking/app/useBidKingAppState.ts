@@ -52,7 +52,6 @@ export function useBidKingAppState() {
   const [coreAuctionMode, setCoreAuctionMode] = useState<CoreAuctionMode>(() => loadCoreAuctionMode());
   const [selectedBidMapId, setSelectedBidMapId] = useState<number | undefined>(() => loadSelectedBidMapId());
   const [profile, setProfile] = useState<PlayerProfile>(() => loadProfile());
-  const [tutorialDismissed, setTutorialDismissed] = useState(localStorage.getItem('bk_tutorial_dismissed') === '1');
 
   function applyProfileSnapshot(nextProfile?: ProfileSnapshot): void {
     if (!nextProfile) {
@@ -82,11 +81,6 @@ export function useBidKingAppState() {
   function switchView(nextView: AppView): void {
     setView(nextView);
     window.history.replaceState(null, '', nextView === 'admin' ? '/admin' : '/');
-  }
-
-  function dismissTutorial(): void {
-    localStorage.setItem('bk_tutorial_dismissed', '1');
-    setTutorialDismissed(true);
   }
 
   function updatePlayerName(value: string): void {
@@ -241,7 +235,6 @@ export function useBidKingAppState() {
     coreAuctionMode,
     continueAsGuest,
     changeAccountPassword,
-    dismissTutorial,
     loginAccount,
     logoutAccount,
     logoutAllAccounts,
@@ -262,7 +255,6 @@ export function useBidKingAppState() {
     setView,
     skillTargetId,
     switchView,
-    tutorialDismissed,
     view
   };
 }

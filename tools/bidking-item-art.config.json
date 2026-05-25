@@ -38,7 +38,7 @@
       "description": "机巧器具、车马舟楫、书画典籍；重点处理原数码/交通/书画类到古代机关、车马舟楫、卷轴典籍的映射。"
     }
   ],
-  "sampleItems": [
+  "validationItems": [
     {
       "itemId": 1011001,
       "reason": "baseline 1x1 low-value household collectible"

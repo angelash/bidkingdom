@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PackageCheck, Save, UserCheck, UserPlus, UserX } from 'lucide-react';
+import { PackageCheck, Save, UserCheck, UserX } from 'lucide-react';
 import {
   GuildArea as bidKingGuildAreas,
   GuildPermissions as bidKingGuildPermissions,
@@ -18,7 +18,6 @@ interface ClubPanelViewProps {
   serverUrl: string;
   onJoinGuild: (areaId?: string) => void;
   onSetGuildRole: (roleId: string) => void;
-  onAddDemoGuildApplication: () => void;
   onApproveGuildMember: (applicantId: string) => void;
   onKickGuildMember: (memberId: string) => void;
   onUpdateGuildNotice: (notice: string) => void;
@@ -49,7 +48,6 @@ export function ClubPanelView({
   serverUrl,
   onJoinGuild,
   onSetGuildRole,
-  onAddDemoGuildApplication,
   onApproveGuildMember,
   onKickGuildMember,
   onUpdateGuildNotice,
@@ -150,10 +148,6 @@ export function ClubPanelView({
           <p>成员 {membership.members?.length ?? 1} · 待审批 {membership.pendingApplications?.length ?? 0}</p>
           <em>{canApproveMember ? '可审批入会' : '无审批权限'} · {canKickMember ? '可移除成员' : '无踢人权限'}</em>
           <div className="inline-action-row">
-            <button disabled={!canApproveMember} onClick={onAddDemoGuildApplication} type="button">
-              <UserPlus size={16} />
-              新拜帖
-            </button>
             {(membership.pendingApplications ?? []).slice(0, 3).map((member) => (
               <button disabled={!canApproveMember} key={`guild_approve_${member.playerId}`} onClick={() => onApproveGuildMember(member.playerId)} type="button">
                 <UserCheck size={16} />
@@ -305,7 +299,7 @@ function guildResourceNameById(id: string): string | undefined {
     2005: '鉴宝会铜匣',
     2006: '鉴宝会金匣',
     2007: '名士荐书',
-    2008: '珍阁修缮令',
+    2008: '珍阁整备令',
     2009: '铜雀秘荐'
   };
   return names[id];

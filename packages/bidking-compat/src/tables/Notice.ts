@@ -254,8 +254,8 @@ export const Notice: BidKingRawTableRow[] = [
       "",
       ""
     ],
-    "packaged_name": "保险锁定",
-    "packaged_desc": "出价超过出价保险设定值，请关闭保险开关后再试"
+    "packaged_name": "竞价确认",
+    "packaged_desc": "出价超过确认阈值，请重新确认后再试"
   },
   {
     "id": "1001",

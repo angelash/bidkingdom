@@ -28,16 +28,6 @@ export function registerSocialRoutes(app: FastifyInstance, profiles: ProfileServ
   app.get('/api/area/snapshot', async () => profiles.getAreaSnapshot());
 
   app.post<{
-    Body: { playerId?: string };
-  }>('/api/social/friend/add', async (request, reply) => {
-    if (!request.body.playerId) {
-      reply.code(400);
-      return { error: 'playerId is required' };
-    }
-    return profiles.addDemoFriend(request.body.playerId);
-  });
-
-  app.post<{
     Body: { playerId?: string; friendId?: string };
   }>('/api/social/friend/remove', async (request, reply) => {
     if (!request.body.playerId || !request.body.friendId) {
@@ -89,21 +79,6 @@ export function registerSocialRoutes(app: FastifyInstance, profiles: ProfileServ
     } catch (error) {
       reply.code(400);
       return { error: error instanceof Error ? error.message : 'guild role failed' };
-    }
-  });
-
-  app.post<{
-    Body: { playerId?: string };
-  }>('/api/guild/application/demo', async (request, reply) => {
-    if (!request.body.playerId) {
-      reply.code(400);
-      return { error: 'playerId is required' };
-    }
-    try {
-      return profiles.addDemoGuildApplication(request.body.playerId);
-    } catch (error) {
-      reply.code(400);
-      return { error: error instanceof Error ? error.message : 'guild application failed' };
     }
   });
 

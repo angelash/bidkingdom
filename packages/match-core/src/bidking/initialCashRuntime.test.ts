@@ -96,7 +96,7 @@ describe('BidKing initial cash runtime', () => {
         { id: 'p1', name: '甲', kind: 'human', roleId: 'appraiser' },
         { id: 'p2', name: '乙', kind: 'bot', roleId: 'smuggler' },
         { id: 'p3', name: '丙', kind: 'bot', roleId: 'psychologist' },
-        { id: 'p4', name: '丁', kind: 'bot', roleId: 'rumormonger' }
+        { id: 'p4', name: '丁', kind: 'bot', roleId: 'table_strategist' }
       ],
       coreMode: true,
       coreBidMapId: 2601

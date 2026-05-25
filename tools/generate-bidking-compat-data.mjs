@@ -341,6 +341,9 @@ function localizedTextForKey(key) {
 
 function packagedRawRowName(table, label, row, rowId) {
   if (table === 'Notice') {
+    if (String(rowId) === '15') {
+      return '竞价确认';
+    }
     const typeKey = String(row[4] ?? '');
     const typeLabel = localizedTextForKey(typeKey);
     const explicitTitle = firstDisplayText([row[2]]);
@@ -370,6 +373,9 @@ function packagedRawRowName(table, label, row, rowId) {
 
 function packagedRawRowDescription(table, label, row, index) {
   if (table === 'Notice') {
+    if (String(row[0] ?? '') === '15') {
+      return '出价超过确认阈值，请重新确认后再试';
+    }
     return localizedTextForKey(row[5])
       || firstDisplayText([row[8], row[2]])
       || `${label} ${index + 1}`;
@@ -642,7 +648,7 @@ const rankAis = readTable('RankAi').map((row) => {
   };
 });
 
-const battleItemNames = ['掌眼令', '验伪灯', '铁算盘', '封箱签', '试探牌', '传闻札', '修缮券', '稳盘符'];
+const battleItemNames = ['掌眼令', '观局灯', '铁算盘', '封箱签', '试探牌', '观局札', '稳盘券', '稳盘符'];
 const battleItems = readTable('BattleItem').map((row, index) => {
   const name = battleItemNames[index % battleItemNames.length];
   return {
@@ -1041,7 +1047,7 @@ const prompts = items
         `Composition: single object only, no frame, no UI badge, no text, no label, no watermark; the object silhouette should fill the ${fp.w}:${fp.h} footprint with 8-12% transparent padding and respect the non-square aspect ratio.`,
         'Background: transparent alpha. If using chroma-key workflow, render on a perfectly flat solid #00ff00 background with no shadow, then remove the key to alpha.',
         'Lighting: clean catalog lighting baked into the object only, crisp readable edges for warehouse-grid placement.',
-        'Avoid: modern UI plate, square icon card, scene background, cast shadow, price tag, damage/fake markings, broken-state styling.'
+        'Avoid: modern UI plate, square icon card, scene background, cast shadow, price tag, imitation markings, broken-state styling.'
       ].join('\n')
     };
   });

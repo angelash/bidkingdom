@@ -3,8 +3,7 @@ import {
   passAuction,
   pushEvent,
   submitBid,
-  useBattleItem,
-  useSkill
+  useBattleItem
 } from '@bitkingdom/match-core';
 import { BattleItem, bidKingEmojiPresentation, emojiSoundId, findBidKingEmoji } from '@bitkingdom/bidking-compat';
 import type { Room } from './roomLifecycleRuntime';
@@ -28,9 +27,6 @@ export function runBotAuctionForRoom(room: Room): void {
           submitBid(match, player.id, action.amount, now);
         } else if (action.type === 'pass') {
           passAuction(match, player.id, now);
-        } else if (action.type === 'skill') {
-          useSkill(match, player.id, action.targetPlayerId, now);
-          followUp = match.currentRound?.phase === 'auction';
         } else if (action.type === 'battle_item' && action.itemId !== undefined) {
           const item = BattleItem.find((candidate) => candidate.id === action.itemId);
           if (!item) {

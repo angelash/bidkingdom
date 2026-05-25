@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Archive, Eye, History, Info, Lock, Sparkles } from 'lucide-react';
 import { gameConfig } from '@bitkingdom/config';
 import type {
+  Clue,
   PlayerSnapshot,
+  PublicContainerInfo,
   PublicPlayer,
   Rarity,
   SkillFeedEntry,
@@ -24,98 +26,6 @@ export function CloseRuleLadder({ currentRound }: { currentRound: number }): JSX
         <span className={index === Math.min(currentRound, 4) ? 'active' : ''} key={rule}>{rule}</span>
       ))}
     </div>
-  );
-}
-
-export function MapIntroOverlay({ round }: { round: NonNullable<PlayerSnapshot['public']['currentRound']> }): JSX.Element {
-  const fallbackChoices = gameConfig.containers.slice(0, 8).map((container) => ({
-    id: `${container.id}_fallback`,
-    templateId: container.id,
-    name: container.name,
-    source: container.source,
-    tags: [...container.tags],
-    risk: container.risk,
-    estimateMin: round.container.estimateMin,
-    estimateMax: round.container.estimateMax,
-    artKey: container.artKey
-  }));
-  const containerChoices = round.openingCandidates?.length ? round.openingCandidates : fallbackChoices;
-  const selectedIndex = Math.max(0, containerChoices.findIndex((container) => (
-    container.id === round.container.id || container.templateId === round.container.templateId || container.artKey === round.container.artKey
-  )));
-  const loopCount = 4;
-  const stopIndex = containerChoices.length * 2 + selectedIndex;
-  const cardWidth = 184;
-  const cardGap = 22;
-  const cardStep = cardWidth + cardGap;
-  const trackStyle = {
-    '--card-width': `${cardWidth}px`,
-    '--card-gap': `${cardGap}px`,
-    '--start-shift': `${cardStep * 2.9}px`,
-    '--final-shift': `${-stopIndex * cardStep}px`
-  } as React.CSSProperties;
-  const rollingContainers = Array.from({ length: loopCount }, (_, loopIndex) => (
-    containerChoices.map((container, index) => ({
-      container,
-      rollIndex: loopIndex * containerChoices.length + index
-    }))
-  )).flat();
-  return (
-    <section className="map-intro-overlay">
-      <div className="map-intro-title">{round.phase === 'warehouse_selected' ? '藏宝仓已选中' : '随机藏宝仓抽选中...'}</div>
-      <div className="map-carousel-window">
-        <div className="map-selection-frame">
-          <strong>选中</strong>
-        </div>
-        <div className="map-track" style={trackStyle}>
-          {rollingContainers.map(({ container, rollIndex }) => {
-            const selected = rollIndex === stopIndex;
-            return (
-              <div className={`map-card ${selected ? 'selected' : ''}`} key={`${container.id}_${rollIndex}`}>
-                <img src={containerArtForKey(container.artKey)} alt="" />
-                <span>{selected ? round.container.name : container.name}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <div className="map-result">
-        <span>当前随机到的仓</span>
-        <strong>{round.container.name}</strong>
-        <p>{round.container.source} · {round.container.tags.join(' / ')}</p>
-        <em>{round.container.estimateMin.toLocaleString()} - {round.container.estimateMax.toLocaleString()}</em>
-      </div>
-    </section>
-  );
-}
-
-export function AuctioneerRevealOverlay({ round }: { round: NonNullable<PlayerSnapshot['public']['currentRound']> }): JSX.Element {
-  const clue = round.auctioneerClue;
-  const choices = round.auctioneerChoices?.length ? round.auctioneerChoices : clue ? [clue] : [];
-  const cardCount = Math.max(4, choices.length || 4);
-  return (
-    <section className="auctioneer-overlay">
-      <div className="auctioneer-panel">
-        <span>即将揭示情报</span>
-        <h2>掌眼人情报</h2>
-        <div className="auctioneer-card-row">
-          {Array.from({ length: cardCount }, (_, index) => {
-            const choice = choices[index];
-            const selected = Boolean(choice && clue && choice.id === clue.id);
-            return (
-              <div className={`auctioneer-card ${selected ? 'selected' : ''}`} key={choice?.id ?? `auctioneer_card_${index}`}>
-                <strong>{selected ? '选中' : `札${index + 1}`}</strong>
-                <small>{choice ? trimText(choice.text.replace(/^候选情报：/, ''), 22) : '待抽取'}</small>
-              </div>
-            );
-          })}
-        </div>
-        <div className="auctioneer-clue">
-          <Info size={18} />
-          <p>{clue?.text ?? '掌眼人正在整理本仓第一条公共情报。'}</p>
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -182,6 +92,86 @@ export function PlayerGrid({
   );
 }
 
+export function MapIntroOverlay({
+  round
+}: {
+  round: NonNullable<PlayerSnapshot['public']['currentRound']>;
+}): JSX.Element {
+  const candidates = mapCandidateReel(round);
+  const selected = round.container;
+  return (
+    <section className="map-intro-overlay" aria-live="polite">
+      <div className="map-intro-panel">
+        <div className="map-intro-title">
+          <Sparkles size={18} />
+          <span>{round.phase === 'warehouse_selected' ? '仓型确认' : '场景轮选'}</span>
+          <strong>{round.phase === 'warehouse_selected' ? selected.name : '正在抽取本局仓型'}</strong>
+        </div>
+        <div className="map-carousel-window">
+          <div className="map-selection-frame" />
+          <div className={`map-track ${round.phase === 'warehouse_selected' ? 'locked' : ''}`}>
+            {candidates.map((candidate, index) => (
+              <div
+                className={`map-card ${index === candidates.length - 1 ? 'selected' : ''}`}
+                key={`${candidate.id}_${index}`}
+                style={{ '--map-card-art': `url(${containerArtForKey(candidate.artKey)})` } as React.CSSProperties}
+              >
+                <span>{riskName(candidate.risk)}</span>
+                <strong>{candidate.name}</strong>
+                <em>{candidate.source}</em>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="map-result" style={{ '--map-card-art': `url(${containerArtForKey(selected.artKey)})` } as React.CSSProperties}>
+          <span />
+          <div>
+            <small>本局仓型</small>
+            <strong>{selected.name}</strong>
+            <em>{selected.source}</em>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function AuctioneerRevealOverlay({
+  round
+}: {
+  round: NonNullable<PlayerSnapshot['public']['currentRound']>;
+}): JSX.Element {
+  const selected = round.auctioneerClue ?? round.publicClues.at(-1);
+  const choices = auctioneerChoiceReel(round, selected);
+  return (
+    <section className="auctioneer-overlay" aria-live="polite">
+      <div className="auctioneer-panel">
+        <div className="map-intro-title">
+          <Info size={18} />
+          <span>竞拍信息</span>
+          <strong>唱牌官正在抽取本轮公开情报</strong>
+        </div>
+        <div className="auctioneer-card-row">
+          {choices.map((choice, index) => (
+            <div
+              className={`auctioneer-card ${selected?.id === choice.id ? 'selected' : ''}`}
+              key={`${choice.id}_${index}`}
+              style={{ '--card-delay': `${index * 120}ms` } as React.CSSProperties}
+            >
+              <span>{clueKindLabel(choice.kind)}</span>
+              <strong>{trimText(choice.text, 32)}</strong>
+            </div>
+          ))}
+        </div>
+        <div className="auctioneer-clue">
+          <small>本轮公开情报</small>
+          <p>{selected?.text ?? '正在整理拍场情报...'}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function BidComposerModal({
   amount,
   amountHidden,
@@ -189,7 +179,6 @@ export function BidComposerModal({
   canConfirm,
   error,
   previousBid,
-  recommendedBid,
   round,
   onPress,
   onBackspace,
@@ -197,7 +186,6 @@ export function BidComposerModal({
   onDouble,
   onUseMax,
   onUseMinimum,
-  onUseRecommended,
   onToggleHidden,
   onUsePrevious,
   onCancel,
@@ -209,7 +197,6 @@ export function BidComposerModal({
   canConfirm: boolean;
   error?: string;
   previousBid?: number;
-  recommendedBid?: number;
   round: NonNullable<PlayerSnapshot['public']['currentRound']>;
   onPress: (key: string) => void;
   onBackspace: () => void;
@@ -217,7 +204,6 @@ export function BidComposerModal({
   onDouble: () => void;
   onUseMax: () => void;
   onUseMinimum: () => void;
-  onUseRecommended: () => void;
   onToggleHidden: () => void;
   onUsePrevious: (amount: number) => void;
   onCancel: () => void;
@@ -255,7 +241,6 @@ export function BidComposerModal({
         <div className="bid-tools">
           <button onClick={onBackspace}>退格</button>
           <button onClick={onUseMinimum}>0</button>
-          <button disabled={recommendedBid === undefined} onClick={onUseRecommended}>推荐</button>
           <button onClick={onDouble}>x2.0</button>
           <button disabled={previousBid === undefined} onClick={() => previousBid !== undefined && onUsePrevious(previousBid)}>上一轮</button>
           <button onClick={onUseMax}>最大</button>
@@ -266,10 +251,9 @@ export function BidComposerModal({
         </div>
         <div className="bid-confirm-pane">
           <p>{bidRuleNotice(round)}</p>
-          <strong>{amountHidden ? '••••••' : Number(amount || 0).toLocaleString()}</strong>
+          <strong className={amount ? '' : 'empty'}>{amountHidden ? '••••••' : amount ? Number(amount).toLocaleString() : ''}</strong>
           <small>
             现金 {formatCompactCurrency(availableCash)}
-            {recommendedBid !== undefined ? ` · 推荐 ${formatCompactCurrency(recommendedBid)}` : ''}
           </small>
           {error && <em className="bid-draft-error">{error}</em>}
           <button className="primary" disabled={!canConfirm} onClick={onConfirm}>确认出价</button>
@@ -307,7 +291,7 @@ export function BidPanel({ players, snapshot }: { players: PublicPlayer[]; snaps
   if (!round) {
     return <></>;
   }
-  const isOpenLike = round.auctionMode === 'open' || round.auctionMode === 'deposit_open';
+  const isOpenLike = round.auctionMode === 'open';
   return (
     <section className="bid-block">
       <div className="section-title small">
@@ -414,7 +398,9 @@ export function WarehouseGrid({
         {slots.map((slot) => {
           const revealed = slot.itemId ? revealedById.get(slot.itemId) : undefined;
           const itemIcon = revealed ? itemIconForKey(revealed.item.iconKey) : slot.iconKey ? itemIconForKey(slot.iconKey) : undefined;
-          const shapeKey = `${Math.max(1, slot.w)}x${Math.max(1, slot.h)}`;
+          const layoutW = revealed || slot.visibleShape ? Math.max(1, slot.w) : 1;
+          const layoutH = revealed || slot.visibleShape ? Math.max(1, slot.h) : 1;
+          const shapeKey = `${layoutW}x${layoutH}`;
           const revealStyle = revealed
             ? {
                 '--reveal-duration': `${revealDurationForRarity(revealed.item.rarity)}ms`,
@@ -427,8 +413,8 @@ export function WarehouseGrid({
               key={slot.slotId}
               onClick={() => onInspectSlot?.(slot)}
               style={{
-                gridColumn: `span ${Math.max(1, slot.w)}`,
-                gridRow: `span ${Math.max(1, slot.h)}`,
+                gridColumn: `span ${layoutW}`,
+                gridRow: `span ${layoutH}`,
                 ...revealStyle
               }}
               title="查看掌眼候选"
@@ -466,9 +452,9 @@ export function useNow(): number {
 function phaseName(phase: string): string {
   const names: Record<string, string> = {
     container: '看货',
-    warehouse_roll: '随机仓',
+    warehouse_roll: '场景轮选',
     warehouse_selected: '仓型确认',
-    auctioneer_reveal: '掌眼情报',
+    auctioneer_reveal: '竞拍信息',
     intel: '情报',
     auction: '竞价',
     reveal: '开箱',
@@ -476,6 +462,52 @@ function phaseName(phase: string): string {
     ended: '结束'
   };
   return names[phase] ?? phase;
+}
+
+function mapCandidateReel(round: NonNullable<PlayerSnapshot['public']['currentRound']>): PublicContainerInfo[] {
+  const selected = round.container;
+  const pool = (round.openingCandidates && round.openingCandidates.length > 0 ? round.openingCandidates : [selected])
+    .filter((candidate) => candidate.id !== selected.id);
+  const reel = pool.slice(0, 7);
+  while (reel.length < 7) {
+    reel.push(pool[reel.length % Math.max(1, pool.length)] ?? selected);
+  }
+  return [...reel, selected];
+}
+
+function auctioneerChoiceReel(
+  round: NonNullable<PlayerSnapshot['public']['currentRound']>,
+  selected?: Clue
+): Clue[] {
+  const choices = round.auctioneerChoices && round.auctioneerChoices.length > 0
+    ? round.auctioneerChoices
+    : selected
+      ? [selected]
+      : [];
+  if (!selected || choices.some((choice) => choice.id === selected.id)) {
+    return choices.slice(0, 6);
+  }
+  return [...choices.slice(0, 5), selected];
+}
+
+function clueKindLabel(kind: string): string {
+  const labels: Record<string, string> = {
+    value: '估值',
+    risk: '风险',
+    category: '品类',
+    set: '套组',
+    opponent: '对手'
+  };
+  return labels[kind] ?? '情报';
+}
+
+function riskName(risk: PublicContainerInfo['risk']): string {
+  const names: Record<PublicContainerInfo['risk'], string> = {
+    low: '稳仓',
+    medium: '变仓',
+    high: '险仓'
+  };
+  return names[risk];
 }
 
 export function roundPhaseName(round: NonNullable<PlayerSnapshot['public']['currentRound']>): string {
@@ -488,10 +520,7 @@ export function roundPhaseName(round: NonNullable<PlayerSnapshot['public']['curr
 export function auctionModeName(mode: string): string {
   const names: Record<string, string> = {
     open: '明拍',
-    sealed: '暗拍',
-    second_price: '次高价',
-    deposit_open: '押金明拍',
-    flash: '闪拍'
+    sealed: '暗拍'
   };
   return names[mode] ?? mode;
 }
@@ -499,17 +528,14 @@ export function auctionModeName(mode: string): string {
 export function auctionRuleText(mode: string): string {
   const rules: Record<string, string> = {
     open: '明拍：本轮只显示谁已出价，轮后公开上一轮金额；按最高价与第二名比例判断是否成交。',
-    sealed: '暗拍：过程只显示提交与排名，拍成后进入价格与藏品结算。',
-    second_price: '最高出价者成交，但只支付第二高价 + 1,000。',
-    deposit_open: '押金明拍：本轮只显示谁已出价，轮后公开金额；首次出价先付押金。',
-    flash: '10秒暗拍，提交后不能修改，适合最后一轮翻盘。'
+    sealed: '暗拍：过程只显示提交与排名，拍成后进入价格与藏品结算。'
   };
   return rules[mode] ?? '特殊拍卖规则。';
 }
 
 function bidRuleNotice(round: NonNullable<PlayerSnapshot['public']['currentRound']>): string {
   const multiplier = closeRuleMultiplier(round.index);
-  if (round.auctionMode === 'open' || round.auctionMode === 'deposit_open') {
+  if (round.auctionMode === 'open') {
     return multiplier > 0
       ? `本轮不会公开当前价；轮后最高价需超过第二名 ${multiplier}% 才会直接成交。`
       : '本轮不会公开当前价；轮后最高价高于第二名即可成交，同价追加回合。';
@@ -610,8 +636,7 @@ function rarityName(rarity: Rarity): string {
     common: '普通',
     fine: '精品',
     rare: '稀有',
-    legendary: '传说',
-    fake: '特殊'
+    legendary: '传说'
   };
   return names[rarity];
 }
@@ -620,7 +645,6 @@ function revealDurationForRarity(rarity: Rarity): number {
   const durations: Record<Rarity, number> = {
     junk: 520,
     common: 620,
-    fake: 720,
     fine: 920,
     rare: 1350,
     legendary: 1900

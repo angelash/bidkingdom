@@ -266,7 +266,7 @@ function buildBotContext(
 ): BotContext {
   const role = state.config.roles.find((candidate) => candidate.id === player.roleId);
   const targetOpponent = pickRelevantOpponent(state, player);
-  const assessment = assessAuction(state, player, round, tuning, role);
+  const assessment = assessAuction(state, player, round, tuning);
   const skillIntent = buildSkillIntent(state, player, round, assessment, tuning, role, targetOpponent);
   return {
     state,
@@ -285,8 +285,7 @@ function assessAuction(
   state: MatchRuntimeState,
   player: RuntimePlayer,
   round: RuntimeRound,
-  tuning: BotTuning,
-  role?: GameConfig['roles'][number]
+  tuning: BotTuning
 ): BotAuctionAssessment {
   const publicEstimate = Math.max(1, (round.container.publicInfo.estimateMin + round.container.publicInfo.estimateMax) / 2);
   const valueRangeWidth = (round.container.publicInfo.estimateMax - round.container.publicInfo.estimateMin) / publicEstimate;
@@ -294,7 +293,7 @@ function assessAuction(
   const clueEstimate = estimateFromValueClues(visibleClues);
   const slotEstimate = estimateFromVisibleSlots(round.warehouseSlots, publicEstimate);
   const previous = previousRoundSignalForPlayer(state, player.id);
-  const riskPenalty = riskPenaltyFromVisibleInfo(round, visibleClues, player, role);
+  const riskPenalty = riskPenaltyFromVisibleInfo(round, visibleClues);
   const confidence = estimateConfidence({
     valueClueCount: visibleClues.filter((clue) => clue.valueHint).length,
     privateSkillClueCount: player.privateClues.filter((clue) => clue.source === 'skill').length,
@@ -350,9 +349,6 @@ function assessAuction(
 
 function visibleCluesForBot(round: RuntimeRound, player: RuntimePlayer): Clue[] {
   const clues = [...round.container.publicClues];
-  if (round.auctioneerClue && !['warehouse_roll', 'warehouse_selected'].includes(round.phase)) {
-    clues.unshift(round.auctioneerClue);
-  }
   clues.push(...player.privateClues);
   return clues;
 }
@@ -366,10 +362,8 @@ function estimateFromValueClues(clues: readonly Clue[]): number | undefined {
         ? 1.25
         : clue.source === 'private'
           ? 1.1
-          : clue.source === 'rumor'
-            ? 0.35
-            : 0.85;
-      const kindWeight = clue.kind === 'false' ? 0.4 : 1;
+          : 0.85;
+      const kindWeight = 1;
       return {
         value: midpoint,
         weight: Math.max(0.1, clue.accuracy * sourceWeight * kindWeight)
@@ -422,30 +416,23 @@ function rarityValueMultiplier(rarity: Rarity): number {
     common: 0.48,
     fine: 0.82,
     rare: 1.32,
-    legendary: 2.15,
-    fake: 0.2
+    legendary: 2.15
   };
   return multipliers[rarity];
 }
 
 function riskPenaltyFromVisibleInfo(
   round: RuntimeRound,
-  clues: readonly Clue[],
-  player: RuntimePlayer,
-  role?: GameConfig['roles'][number]
+  clues: readonly Clue[]
 ): number {
   const riskBase = round.container.publicInfo.risk === 'high'
     ? 0.18
     : round.container.publicInfo.risk === 'medium'
       ? 0.1
       : 0.04;
-  const hasFakeHint = clues.some((clue) => clue.riskHint === 'fake' || clue.kind === 'false' || clue.source === 'rumor');
-  const hasRepairHint = clues.some((clue) => clue.riskHint === 'repair');
   const hasSafeHint = clues.some((clue) => clue.riskHint === 'safe');
-  const repairRelief = role?.id === 'restorer' ? 0.04 : 0;
-  const insuranceRelief = player.insuranceActive || role?.skillId === 'loss_insurance' ? 0.03 : 0;
   return clamp(
-    riskBase + (hasFakeHint ? 0.1 : 0) + (hasRepairHint ? 0.07 : 0) - (hasSafeHint ? 0.04 : 0) - repairRelief - insuranceRelief,
+    riskBase - (hasSafeHint ? 0.04 : 0),
     0,
     0.38
   );
@@ -535,14 +522,9 @@ function targetBidForAssessment(params: {
   const confidenceAdjustment = (confidence - 0.5) * 0.2;
   const aggressionAdjustment = (tuning.bidAggression - 0.5) * 0.16;
   const pkAdjustment = (rankAiPkRatio(tuning, state.coreMode) - 1) * 0.08;
-  const modeAdjustment = round.auctionMode === 'second_price'
-    ? 0.08
-    : round.auctionMode === 'flash'
-      ? -0.08
-      : 0;
   const riskAdjustment = -riskPenalty * (state.coreMode ? 0.16 : 0.35);
   const commitment = clamp(
-    roundCommitment + rankAdjustment + confidenceAdjustment + aggressionAdjustment + pkAdjustment + modeAdjustment + riskAdjustment,
+    roundCommitment + rankAdjustment + confidenceAdjustment + aggressionAdjustment + pkAdjustment + riskAdjustment,
     state.coreMode ? 0.44 : 0.32,
     round.index >= 4 ? 1.2 : state.coreMode ? 1.1 : 1.02
   );
@@ -569,7 +551,7 @@ function targetBidForAssessment(params: {
 
 function commitmentForRound(state: MatchRuntimeState, round: RuntimeRound): number {
   if (!state.coreMode) {
-    return round.auctionMode === 'flash' ? 0.82 : 0.94;
+    return 0.94;
   }
   const coreCommitment = [0.66, 0.8, 0.92, 1.04, 1.12];
   if (round.index >= 5) {
@@ -617,13 +599,8 @@ function coreRankAiRoundTargetRatio(
         ? confidence > 0.62 ? 0.04 : -0.12
         : 0;
   const confidencePressure = clamp((confidence - 0.45) * 0.4, -0.08, 0.16);
-  const modePressure = round.auctionMode === 'second_price'
-    ? 0.08
-    : round.auctionMode === 'flash'
-      ? -0.06
-      : 0;
   const pressure = clamp(
-    0.36 + progress * 0.34 + historyPressure + confidencePressure + modePressure - riskPenalty * 0.18,
+    0.36 + progress * 0.34 + historyPressure + confidencePressure - riskPenalty * 0.18,
     0.15,
     round.index >= 4 ? 0.96 : 0.82
   );
@@ -661,12 +638,7 @@ function shouldBidAtFloor(
   if (coreMode && tuning && floor <= coreRankAiBidLimit(estimate, confidence, riskPenalty, tuning, round)) {
     return true;
   }
-  const edgeRatio = round.auctionMode === 'second_price'
-    ? -0.02
-    : 0.025 + riskPenalty * 0.18 + (1 - confidence) * 0.05;
-  if (round.auctionMode === 'flash' && confidence < 0.34 && riskPenalty > 0.18) {
-    return false;
-  }
+  const edgeRatio = 0.025 + riskPenalty * 0.18 + (1 - confidence) * 0.05;
   return estimate >= floor * (1 + edgeRatio);
 }
 
@@ -698,15 +670,6 @@ function buildSkillIntent(
     const hasOpponentPressure = Boolean(targetOpponent) && (assessment.previous?.rank === 2 || round.index >= 4);
     score += hasOpponentPressure ? 0.22 : 0.04;
     reason = 'opponent pressure matters';
-  } else if (skillId === 'spread_rumor') {
-    score += state.coreMode ? -0.16 : tuning.bluffChance * 0.28;
-    reason = state.coreMode ? 'rumor has limited core value' : 'bluff can distort public reads';
-  } else if (skillId === 'repair_audit') {
-    score += assessment.riskPenalty > 0.14 || round.container.publicInfo.risk === 'high' ? 0.22 : 0.03;
-    reason = 'repair or risk audit can prevent overpay';
-  } else if (skillId === 'loss_insurance') {
-    score += round.container.publicInfo.risk === 'high' && assessment.targetBid > assessment.availableCash * 0.45 ? 0.24 : 0.04;
-    reason = 'insurance helps near risky cash commitment';
   }
 
   if (player.skillUsesRemaining <= 1 && round.index <= 1) {
@@ -852,7 +815,7 @@ function rankAiBattleItemRng(context: BotContext, salt: string) {
 function chooseAuctionAction(context: BotContext): BotAction {
   const { round, player, assessment } = context;
 
-  if (round.auctionMode === 'open' || round.auctionMode === 'deposit_open') {
+  if (round.auctionMode === 'open') {
     return chooseOpenAuctionAction(context);
   }
 
@@ -906,13 +869,6 @@ function openBidAmount(context: BotContext): number {
 function sealedBidAmount(context: BotContext): number {
   const { state, round, assessment, tuning } = context;
   let amount = assessment.targetBid;
-  if (round.auctionMode === 'second_price') {
-    amount = Math.max(amount, assessment.estimate * (0.82 + assessment.confidence * 0.18));
-  }
-  if (round.auctionMode === 'flash') {
-    amount *= 0.88 + assessment.confidence * 0.08;
-  }
-
   const previous = assessment.previous;
   if (state.coreMode && previous?.ownBid && previous.ownBid > 0) {
     if (previous.rank === 1 && previous.decision === 'continue') {
@@ -1037,8 +993,7 @@ function coreRankAiBidLimit(
   const confidenceScale = 0.94 + confidence * 0.18;
   const roundPressure = 0.98 + Math.min(round.index, 4) * 0.015 + (round.index >= 4 ? 0.04 : 0);
   const riskScale = 1 - riskPenalty * (0.14 + (1 - tuning.riskAppetite) * 0.12);
-  const auctionModeScale = round.auctionMode === 'flash' ? 0.94 : round.auctionMode === 'second_price' ? 1.04 : 1;
-  return Math.max(0, estimate * sourceRatio * confidenceScale * roundPressure * riskScale * auctionModeScale);
+  return Math.max(0, estimate * sourceRatio * confidenceScale * roundPressure * riskScale);
 }
 
 function weightedRangeValue(
@@ -1087,7 +1042,7 @@ function desiredOpenCloseBid(
 ): number | undefined {
   void state;
   void closeThreshold;
-  if (!['open', 'deposit_open'].includes(round.auctionMode)) {
+  if (round.auctionMode !== 'open') {
     return undefined;
   }
   return undefined;
@@ -1111,11 +1066,9 @@ function previousRoundSignalForPlayer(state: MatchRuntimeState, playerId: string
 }
 
 function availableCashForBid(state: MatchRuntimeState, player: RuntimePlayer, round: RuntimeRound): number {
-  if (round.auctionMode !== 'deposit_open' || round.depositPaidByPlayerId[player.id]) {
-    return player.cash;
-  }
-  const deposit = round.container.depositValue ?? state.config.rules.depositValue;
-  return Math.max(0, player.cash - deposit);
+  void state;
+  void round;
+  return player.cash;
 }
 
 function pickRelevantOpponent(state: MatchRuntimeState, player: RuntimePlayer): RuntimePlayer | undefined {

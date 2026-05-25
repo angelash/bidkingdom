@@ -74,11 +74,6 @@ export interface ProfileService {
   claimRankReward(playerId: string, rank: number): ProfileSnapshot;
   claimActivityReward(playerId: string, activityId: string): ProfileSnapshot;
   claimGiftPackage(playerId: string, packageId: string): ProfileSnapshot;
-  createDemoPayOrder(playerId: string, payId: string): ProfileSnapshot;
-  completeDemoPayOrder(playerId: string, payId: string): ProfileSnapshot;
-  cancelDemoPayOrder(playerId: string, orderId: string): ProfileSnapshot;
-  completePurchaseListOrder(playerId: string, purchaseId: string): ProfileSnapshot;
-  unlockDemoDlc(playerId: string, dlcId: string): ProfileSnapshot;
   createMarketOrder(playerId: string, refId: string, quantity: number, price: number, orderType: 'trade' | 'auction', note?: string): ProfileSnapshot;
   lanchExchangeItem(playerId: string, itemCid: number, count: number, totalPrice: number, reLanchItemUid?: number): ProfileSnapshot & { sourceExchangeLanchItem: ExchangeLanchItemResponse };
   settleMarketOrder(playerId: string, orderId: string): ProfileSnapshot;
@@ -106,12 +101,10 @@ export interface ProfileService {
   recycleSendAuction(playerId: string, slotId: number): ProfileSnapshot & { sourceSendAuctionRecycle: SendAuctionRecycleResponse };
   listSendAuctions(playerId: string, includeHistory?: boolean): SendAuctionListSnapshot;
   listSendAuctionGames(playerId: string): SendAuctionGameListSnapshot;
-  addDemoFriend(playerId: string): ProfileSnapshot;
   removeFriend(playerId: string, friendId: string): ProfileSnapshot;
   setFriendRemark(playerId: string, friendId: string, remark: string): ProfileSnapshot;
   joinGuild(playerId: string, areaId?: string): ProfileSnapshot;
   setGuildRole(playerId: string, roleId: string): ProfileSnapshot;
-  addDemoGuildApplication(playerId: string): ProfileSnapshot;
   approveGuildMember(playerId: string, applicantId: string): ProfileSnapshot;
   kickGuildMember(playerId: string, memberId: string): ProfileSnapshot;
   updateGuildNotice(playerId: string, notice: string): ProfileSnapshot;

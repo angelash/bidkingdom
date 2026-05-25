@@ -24,9 +24,6 @@ export function validateGameConfig(config: GameConfig): ConfigValidationResult {
     if (item.setId && !setIds.has(item.setId)) {
       errors.push(`item ${item.id} references missing set ${item.setId}`);
     }
-    if (item.isFake && item.rarity !== 'fake') {
-      errors.push(`item ${item.id} is fake but rarity is ${item.rarity}`);
-    }
     const area = item.footprint.w * item.footprint.h;
     if (area > 6) {
       errors.push(`item ${item.id} footprint ${item.footprint.w}x${item.footprint.h} is too large for an auction crate`);
@@ -71,9 +68,6 @@ export function validateGameConfig(config: GameConfig): ConfigValidationResult {
       if (!itemIds.has(itemId)) {
         errors.push(`scripted round ${round.id} references missing item ${itemId}`);
       }
-    }
-    if (round.auctionMode === 'deposit_open' && !round.depositValue) {
-      errors.push(`scripted round ${round.id} uses deposit_open without depositValue`);
     }
   }
 

@@ -1,8 +1,6 @@
 import type { PostProfileAction } from './profileActionClient';
 
 export interface SocialProfileActions {
-  addDemoFriend: () => void;
-  addDemoGuildApplication: () => void;
   approveGuildMember: (applicantId: string) => void;
   claimAreaResource: (areaId?: string) => void;
   claimGuildResource: (resourceId: string) => void;
@@ -18,12 +16,6 @@ export interface SocialProfileActions {
 
 export function createSocialProfileActions(postProfileAction: PostProfileAction): SocialProfileActions {
   return {
-    addDemoFriend: () => {
-      postProfileAction('/api/social/friend/add', {});
-    },
-    addDemoGuildApplication: () => {
-      postProfileAction('/api/guild/application/demo', {});
-    },
     approveGuildMember: (applicantId) => {
       postProfileAction('/api/guild/member/approve', { applicantId });
     },

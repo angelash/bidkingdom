@@ -1,5 +1,5 @@
 import type { FinalMatchSummary, PlayerProfile } from '@bitkingdom/shared';
-import { Activity, Cabinet, Dlc, Hero, Item, Mission, Pay, Shop, ShopItem, bidKingDlcRuntime, bidKingPayRuntime } from '@bitkingdom/bidking-compat';
+import { Activity, Cabinet, GuildArea, Head, Hero, Item, Mission, Pay, Shop, ShopItem, bidKingPayRuntime } from '@bitkingdom/bidking-compat';
 import {
   bidKingHeroItemIdForHero,
   bidKingHeroTrialItemIdsForHero,
@@ -65,6 +65,61 @@ function firstCabinetIneligibleItem(): (typeof Item)[number] {
 
 function cabinetAcceptsItem(cabinet: (typeof Cabinet)[number], item: (typeof Item)[number]): boolean {
   return cabinet.quality_requirement.length === 0 || cabinet.quality_requirement.includes(item.item_quality);
+}
+
+function seedFriend(profile: PlayerProfile, seed = 1): PlayerProfile['friends'][number] {
+  const friend = {
+    id: `friend_${profile.playerId}_${seed}`,
+    name: languageNameFromSeed(seed),
+    headId: Head[1]?.id ?? Head[0]?.id ?? '0',
+    areaId: GuildArea[0]?.id ?? '0',
+    createdAt: Date.now()
+  };
+  profile.friends.push(friend);
+  profile.updatedAt = Date.now();
+  return friend;
+}
+
+function seedGuildApplication(
+  profile: PlayerProfile,
+  seed = 1
+): NonNullable<NonNullable<PlayerProfile['guildMembership']>['pendingApplications']>[number] {
+  if (!profile.guildMembership) {
+    throw new Error('guild membership is required');
+  }
+  const application = {
+    playerId: `applicant_${profile.playerId}_${seed}`,
+    name: languageNameFromSeed(seed),
+    roleId: '3',
+    areaId: profile.guildMembership.areaId,
+    points: 0,
+    status: 'pending' as const,
+    requestedAt: Date.now()
+  };
+  profile.guildMembership.pendingApplications ??= [];
+  profile.guildMembership.pendingApplications.push(application);
+  profile.updatedAt = Date.now();
+  return application;
+}
+
+function seedExternalPayOrder(profile: PlayerProfile, payId: string): void {
+  const pay = Pay.find((row) => row.id === payId);
+  expect(pay).toBeDefined();
+  const runtime = bidKingPayRuntime(pay!);
+  const now = Date.now();
+  profile.purchaseOrders ??= [];
+  profile.purchaseOrders.push({
+    id: `external_pay_${profile.playerId}_${runtime.payId}`,
+    source: 'pay',
+    refId: runtime.payId,
+    status: 'completed',
+    coins: runtime.totalCoins,
+    price: runtime.rmb,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: now
+  });
+  profile.updatedAt = now;
 }
 
 const SEND_AUCTION_TEST_ITEM_ID = 1015001;
@@ -141,14 +196,14 @@ describe('profile service', () => {
     const dbPath = join(mkdtempSync(join(tmpdir(), 'bitkingdom-sqlite-')), 'store.sqlite');
     const firstProfiles = createProfileService(createSQLiteStore(dbPath));
     firstProfiles.getOrCreateProfile('p_sqlite', '掌柜数据库');
-    firstProfiles.completeDemoPayOrder('p_sqlite', '1');
+    firstProfiles.claimActivityReward('p_sqlite', '10001');
 
     const secondProfiles = createProfileService(createSQLiteStore(dbPath));
     const snapshot = secondProfiles.getSnapshot('p_sqlite');
 
     expect(snapshot.profile.name).toBe('掌柜数据库');
-    expect(snapshot.profile.coins).toBe(DEFAULT_PROFILE_COINS + 700);
-    expect(snapshot.transactions.some((transaction) => transaction.reason === 'pay_demo_complete')).toBe(true);
+    expect(snapshot.profile.claimedActivityRewards).toContain('10001');
+    expect(snapshot.transactions.some((transaction) => transaction.reason.startsWith('activity_reward_'))).toBe(true);
   });
 
   it('persists account bindings and sessions through the SQLite store', () => {
@@ -412,10 +467,10 @@ describe('profile service', () => {
 
     const refreshed = profiles.refreshShop('p_shop_refresh', 4).profile;
     const restockedShopItemIds = refreshed.shopRestocks?.find((entry) => entry.shopId === 4)?.shopItemIds ?? [40001];
-    const funded = profiles.completeDemoPayOrder('p_shop_refresh', '6').profile;
+    profiles.getOrCreateProfile('p_shop_refresh').coins = 500_000;
     const restockedShopItemId = restockedShopItemIds.find((shopItemId) => {
       const row = ShopItem.find((candidate) => candidate.id === shopItemId);
-      return (row?.price[0]?.[1] ?? 0) <= funded.coins;
+      return (row?.price[0]?.[1] ?? 0) <= profiles.getSnapshot('p_shop_refresh').profile.coins;
     }) ?? restockedShopItemIds[0]!;
     const resetBought = refreshed.shopPurchases.find((entry) => entry.shopItemId === 40001)?.bought;
     const restockSize = refreshed.shopRestocks?.find((entry) => entry.shopId === 4)?.shopItemIds.length ?? 0;
@@ -1652,7 +1707,7 @@ describe('profile service', () => {
     const profiles = createProfileService(createMemoryStore());
     const profile = profiles.getOrCreateProfile('p_activity_progress', '掌柜活动进度');
     profile.rankPoints = 135;
-    profiles.addDemoFriend(profile.playerId);
+    seedFriend(profile);
     profiles.joinGuild(profile.playerId);
 
     const beforeClaim = profiles.getActivityProgress(profile.playerId);
@@ -1678,7 +1733,7 @@ describe('profile service', () => {
     profiles.getOrCreateProfile('p_gift', '掌柜礼包');
 
     expect(() => profiles.claimGiftPackage('p_gift', '1')).toThrow('礼包对应充值未到账');
-    profiles.completeDemoPayOrder('p_gift', '1');
+    seedExternalPayOrder(profiles.getOrCreateProfile('p_gift'), '1');
     profiles.claimGiftPackage('p_gift', '1');
     profiles.claimGiftPackage('p_gift', '1');
 
@@ -1687,78 +1742,11 @@ describe('profile service', () => {
     expect(profile.inventory.find((entry) => entry.refId === '2')?.quantity).toBe(60);
   });
 
-  it('completes demo pay orders once through Pay rows', () => {
+  it('writes friend and guild state', () => {
     const profiles = createProfileService(createMemoryStore());
-    profiles.getOrCreateProfile('p_pay', '掌柜充值');
-    const payRuntime = bidKingPayRuntime(Pay[0]!);
+    const createdProfile = profiles.getOrCreateProfile('p_social', '掌柜癸');
 
-    const created = profiles.createDemoPayOrder('p_pay', payRuntime.payId).profile;
-    expect(created.purchaseOrders?.[0]).toEqual(expect.objectContaining({
-      source: 'pay',
-      refId: payRuntime.payId,
-      status: 'created',
-      coins: payRuntime.totalCoins,
-      price: payRuntime.rmb
-    }));
-
-    profiles.completeDemoPayOrder('p_pay', payRuntime.payId);
-    profiles.completeDemoPayOrder('p_pay', payRuntime.payId);
-
-    const profile = profiles.getSnapshot('p_pay').profile;
-    expect(profile.coins).toBe(DEFAULT_PROFILE_COINS + payRuntime.totalCoins);
-    expect(profile.purchaseOrders?.filter((order) => order.source === 'pay' && order.refId === payRuntime.payId && order.status === 'completed')).toHaveLength(1);
-  });
-
-  it('cancels created demo pay orders before completion', () => {
-    const profiles = createProfileService(createMemoryStore());
-    const created = profiles.createDemoPayOrder('p_pay_cancel', '2').profile;
-    const order = created.purchaseOrders?.[0];
-
-    expect(order).toBeDefined();
-    profiles.cancelDemoPayOrder('p_pay_cancel', order!.id);
-
-    const profile = profiles.getSnapshot('p_pay_cancel').profile;
-    expect(profile.purchaseOrders?.[0]?.status).toBe('cancelled');
-    expect(profile.coins).toBe(DEFAULT_PROFILE_COINS);
-  });
-
-  it('completes PurchaseList demo orders through mapped Pay rows', () => {
-    const profiles = createProfileService(createMemoryStore());
-    profiles.getOrCreateProfile('p_purchase', '掌柜平台');
-
-    profiles.completePurchaseListOrder('p_purchase', '1001');
-    profiles.completePurchaseListOrder('p_purchase', '1001');
-
-    const profile = profiles.getSnapshot('p_purchase').profile;
-    expect(profile.coins).toBe(DEFAULT_PROFILE_COINS + 700);
-    expect(profile.purchaseOrders?.filter((order) => order.source === 'purchaseList' && order.refId === '1001' && order.status === 'completed')).toHaveLength(1);
-  });
-
-  it('unlocks Dlc rows once and applies configured rewards', () => {
-    const profiles = createProfileService(createMemoryStore());
-    profiles.getOrCreateProfile('p_dlc', '掌柜扩展');
-    const dlcRuntime = bidKingDlcRuntime(Dlc[0]!);
-
-    profiles.unlockDemoDlc('p_dlc', dlcRuntime.platformSku);
-    profiles.unlockDemoDlc('p_dlc', dlcRuntime.platformSku);
-
-    const profile = profiles.getSnapshot('p_dlc').profile;
-    expect(profile.dlcUnlocks).toEqual([dlcRuntime.dlcId]);
-    expect(profile.purchaseOrders?.find((order) => order.source === 'dlc' && order.refId === dlcRuntime.platformSku)).toEqual(expect.objectContaining({
-      price: dlcRuntime.price,
-      status: 'completed'
-    }));
-    expect(profile.coins).toBe(DEFAULT_PROFILE_COINS + 2_000_000);
-    expect(profile.inventory.find((entry) => entry.refId === '7101')?.quantity).toBe(3);
-    expect(profile.inventory.find((entry) => entry.refId === '2')?.quantity).toBe(200);
-    expect(profile.mail.filter((mail) => mail.templateId === dlcRuntime.mailTemplateId)).toHaveLength(1);
-  });
-
-  it('writes local friend and guild state', () => {
-    const profiles = createProfileService(createMemoryStore());
-    profiles.getOrCreateProfile('p_social', '掌柜癸');
-
-    profiles.addDemoFriend('p_social');
+    seedFriend(createdProfile);
     profiles.joinGuild('p_social');
     profiles.donateGuildCoins('p_social', 1000);
 
@@ -1791,22 +1779,22 @@ describe('profile service', () => {
 
   it('adds and removes friends through profile state and ledger', () => {
     const profiles = createProfileService(createMemoryStore());
-    profiles.getOrCreateProfile('p_friend_state', '掌柜好友状态');
+    const profile = profiles.getOrCreateProfile('p_friend_state', '掌柜好友状态');
 
-    const added = profiles.addDemoFriend('p_friend_state').profile.friends[0]!;
+    const added = seedFriend(profile);
     const removed = profiles.removeFriend('p_friend_state', added.id);
 
     expect(removed.profile.friends).toHaveLength(0);
     expect(removed.transactions.map((transaction) => transaction.reason)).toEqual(
-      expect.arrayContaining(['friend_add', 'friend_remove'])
+      expect.arrayContaining(['friend_remove'])
     );
     expect(() => profiles.removeFriend('p_friend_state', added.id)).toThrow('好友不存在');
   });
 
   it('filters social remarks and guild notices through DirtyWords', () => {
     const profiles = createProfileService(createMemoryStore());
-    profiles.getOrCreateProfile('p_social_dirty', '掌柜社交过滤');
-    const friend = profiles.addDemoFriend('p_social_dirty').profile.friends[0]!;
+    const profile = profiles.getOrCreateProfile('p_social_dirty', '掌柜社交过滤');
+    const friend = seedFriend(profile);
 
     profiles.setFriendRemark('p_social_dirty', friend.id, 'hello dirtywords_2_1');
     profiles.joinGuild('p_social_dirty');
@@ -1825,9 +1813,9 @@ describe('profile service', () => {
 
   it('uses GuildPoints ranges for configured donation rewards', () => {
     const profiles = createProfileService(createMemoryStore());
-    profiles.getOrCreateProfile('p_guild_points', '掌柜协会积分');
+    const createdProfile = profiles.getOrCreateProfile('p_guild_points', '掌柜协会积分');
 
-    profiles.completeDemoPayOrder('p_guild_points', '6');
+    createdProfile.coins = 100_000;
     profiles.joinGuild('p_guild_points');
     profiles.donateGuildCoins('p_guild_points', 50_000);
 
@@ -1866,13 +1854,12 @@ describe('profile service', () => {
     expect(() => profiles.claimGuildResource('p_guild_role', '1001')).toThrow('协会权限不足');
   });
 
-  it('approves and kicks demo guild members through GuildPermissions', () => {
+  it('approves and kicks guild members through GuildPermissions', () => {
     const profiles = createProfileService(createMemoryStore());
-    profiles.getOrCreateProfile('p_guild_members', '掌柜成员');
+    const profile = profiles.getOrCreateProfile('p_guild_members', '掌柜成员');
 
     profiles.joinGuild('p_guild_members');
-    const requested = profiles.addDemoGuildApplication('p_guild_members').profile.guildMembership!;
-    const applicant = requested.pendingApplications?.[0]!;
+    const applicant = seedGuildApplication(profile);
 
     expect(applicant.status).toBe('pending');
     const approved = profiles.approveGuildMember('p_guild_members', applicant.playerId).profile.guildMembership!;
@@ -1886,11 +1873,11 @@ describe('profile service', () => {
     const kicked = profiles.kickGuildMember('p_guild_members', applicant.playerId);
     expect(kicked.profile.guildMembership?.members?.some((member) => member.playerId === applicant.playerId)).toBe(false);
     expect(kicked.transactions.map((transaction) => transaction.reason)).toEqual(
-      expect.arrayContaining(['guild_member_apply', 'guild_member_approve', 'guild_member_kick'])
+      expect.arrayContaining(['guild_member_approve', 'guild_member_kick'])
     );
 
     profiles.setGuildRole('p_guild_members', '3');
-    expect(() => profiles.addDemoGuildApplication('p_guild_members')).toThrow('协会权限不足');
+    expect(() => profiles.approveGuildMember('p_guild_members', 'missing_applicant')).toThrow('协会权限不足');
     expect(() => profiles.kickGuildMember('p_guild_members', 'missing_member')).toThrow('协会权限不足');
   });
 
@@ -1931,7 +1918,7 @@ describe('profile service', () => {
     const profiles = createProfileService(createMemoryStore());
     profiles.getOrCreateProfile('p_admin_ledger', '掌柜账本');
 
-    profiles.completeDemoPayOrder('p_admin_ledger', '1');
+    profiles.buyShopItem('p_admin_ledger', 40001);
     profiles.completeTask('p_admin_ledger', 'daily_complete_match');
     profiles.claimMissionReward('p_admin_ledger', 'daily_complete_match');
 
@@ -1940,7 +1927,7 @@ describe('profile service', () => {
 
     expect(allTransactions.length).toBeGreaterThanOrEqual(2);
     expect(playerTransactions.every((transaction) => transaction.playerId === 'p_admin_ledger')).toBe(true);
-    expect(playerTransactions.map((transaction) => transaction.reason)).toEqual(expect.arrayContaining(['pay_demo_complete', 'mission_reward_coins']));
+    expect(playerTransactions.map((transaction) => transaction.reason)).toEqual(expect.arrayContaining(['shop_buy_item', 'mission_reward_coins']));
   });
 
   it('applies match rewards once and marks basic mission tasks', () => {
@@ -1971,8 +1958,6 @@ describe('profile service', () => {
           rarity: 'rare',
           value: 1000,
           displayValue: 1000,
-          isFake: false,
-          repairCost: 0,
           iconKey: 'bidking_item_100102',
           footprint: { w: 1, h: 1 }
         }
@@ -1986,8 +1971,6 @@ describe('profile service', () => {
             rarity: 'rare',
             value: 1000,
             displayValue: 1000,
-            isFake: false,
-            repairCost: 0,
             iconKey: 'bidking_item_100102',
             footprint: { w: 1, h: 1 }
           }
@@ -2121,8 +2104,6 @@ describe('profile service', () => {
             rarity: 'rare',
             value: itemBaseValue,
             displayValue: itemBaseValue,
-            isFake: false,
-            repairCost: 0,
             iconKey: 'bidking_item_100102',
             footprint: { w: 1, h: 1 }
           },
@@ -2133,8 +2114,6 @@ describe('profile service', () => {
             rarity: 'rare',
             value: itemBaseValue,
             displayValue: itemBaseValue,
-            isFake: false,
-            repairCost: 0,
             iconKey: 'bidking_item_100102',
             footprint: { w: 1, h: 1 }
           }

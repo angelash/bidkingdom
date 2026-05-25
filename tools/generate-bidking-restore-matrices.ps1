@@ -99,7 +99,7 @@ function Get-ClassTarget([string]$Group) {
     'Hero' { return 'apps/web/src/bidking/hero + packages/match-core/src/bidking/skill' }
     'Item' { return 'apps/web/src/bidking/handbook + apps/web/src/bidking/package + apps/server/src/domain/inventory' }
     'WareHouse' { return 'apps/web/src/bidking/package + apps/server/src/domain/inventory' }
-    'PayDlc' { return 'apps/web/src/bidking/activity + apps/server/src/domain/payment-demo' }
+    'PayDlc' { return 'apps/web/src/bidking/activity + apps/server/src/domain/payment' }
     'Achievement' { return 'apps/web/src/bidking/mission + apps/server/src/domain/achievement' }
     'NoticeError' { return 'apps/web/src/bidking/system + apps/server/src/domain/notice' }
     'Setting' { return 'apps/web/src/bidking/system/settings + apps/server/src/domain/profile' }
@@ -204,9 +204,9 @@ function Get-TableNextAction([string]$Table) {
     'ItemRestock' { return '已接商店刷新快照和随机商品池；补刷新成本、自动刷新到期和 ExchangeRestock 联动' }
     'ExchangeRestock' { return '已接兑换刷新池快照；补兑换下单、库存扣减和刷新时间持久化' }
     'GiftPackage' { return '已接礼包奖励发放和幂等领取；补限购、时间窗口和购买链路' }
-    'Pay' { return '已接本地模拟订单创建、完成、取消和幂等到账；补真实支付适配边界和后台订单筛选' }
-    'PurchaseList' { return '已接平台商品模拟到账；补真实 SKU 关系、显示价格和购买限制' }
-    'Dlc' { return '已接本地模拟 DLC 解锁、奖励发放和重复购买防护；补 DLC 入口红点和平台 SKU 关联' }
+    'Pay' { return '保留价格、SKU 和奖励元数据；真实支付适配边界独立处理' }
+    'PurchaseList' { return '保留平台商品 SKU 关系、显示价格和购买限制' }
+    'Dlc' { return '保留 DLC 奖励、入口红点和平台 SKU 关联' }
     'Sim' { return '接入模拟局、Bot 压测和收益演算' }
     'Emoji' { return '已接 socket 表情表校验和 Bot 表情来源；补冷却、音效和角色限制' }
     'NumberTable' { return '已接收藏档位加成快照；补收益结算和称号/头像联动' }
@@ -250,7 +250,7 @@ function Get-UiRequirement([string]$Target) {
     '*rank*' { return '排行窗口接快照、排名、奖励和领奖状态' }
     '*guild*' { return '协会窗口接成员、职位、资源、权限和地区积分' }
     '*market*' { return '市场窗口接挂单、成交、撤单、竞价和交易记录' }
-    '*activity*' { return '活动/通行证/礼包窗口接时间、奖励、模拟购买和红点' }
+    '*activity*' { return '活动/通行证/礼包窗口接时间、奖励、外部服务边界和红点' }
     '*system*' { return '系统窗口接 Sound/Language/ErrorCode/TextGuard/Notice' }
     default { return '注册到 UIWnd windowRegistry，补打开/关闭/层级/遮罩/BGM 行为' }
   }
@@ -433,7 +433,7 @@ $acceptanceLines = @(
   '| M3 | 核心竞拍深化 | BattleItem 逐道具接 SkillGroup；回放同 seed 一致 | Behavior |',
   '| M4 | 服务端权威状态与存储 | SQLite store、ledger、event、admin 审计 | Behavior |',
   '| M5 | 局外成长闭环 | 任务、成就、等级、头像、仓库、收藏柜全操作 | Behavior |',
-  '| M6 | 商店票券礼包支付模拟 | 刷新池、礼包、购买列表、支付模拟完整 | Behavior |',
+  '| M6 | 商店票券礼包外部服务边界 | 刷新池、礼包、购买列表、外部服务元数据完整 | Behavior |',
   '| M7 | 市场拍卖行排行 | 订单、成交、撤单、手续费、排行快照完整 | Behavior |',
   '| M8 | 协会好友地区社交 | 权限、资源、积分、好友申请、文本过滤完整 | Behavior |',
   '| M9 | 活动通行证公告引导 | 活动时间、通行证、Notice、Guide 完整 | Behavior |',

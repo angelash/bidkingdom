@@ -77,7 +77,7 @@ const equivalentTables = [
 ] as const;
 
 const visualSubstituteTables = ['Emoji', 'Head', 'HeroSkin', 'LanguageListen', 'Sound'] as const;
-const serviceSimulatedTables = ['Dlc', 'Pay', 'PurchaseList'] as const;
+const externalServiceTables = ['Dlc', 'Pay', 'PurchaseList'] as const;
 const SEND_AUCTION_ROUTE_ITEM_ID = 1015001;
 
 async function withRouteRuntime(testBody: (runtime: BitKingdomServerRuntime) => Promise<void>): Promise<void> {
@@ -456,19 +456,19 @@ describe('server routes', () => {
       expect(parityPayload.rows.every((row) => row.runtimeStatus === 'Verified')).toBe(true);
       expect(parityPayload.rows.some((row) => row.equivalentStatus === 'Equivalent')).toBe(true);
       expect(parityPayload.rows.some((row) => row.equivalentStatus === 'Visual Substitute')).toBe(true);
-      expect(parityPayload.rows.some((row) => row.equivalentStatus === 'Service Simulated')).toBe(true);
+      expect(parityPayload.rows.some((row) => row.equivalentStatus === 'External Service Boundary')).toBe(true);
       const equivalentByTable = new Map(parityPayload.rows.map((row) => [row.table, row.equivalentStatus]));
       expect(parityPayload.rows.filter((row) => row.equivalentStatus === 'Equivalent')).toHaveLength(44);
       expect(parityPayload.rows.filter((row) => row.equivalentStatus === 'Visual Substitute')).toHaveLength(5);
-      expect(parityPayload.rows.filter((row) => row.equivalentStatus === 'Service Simulated')).toHaveLength(3);
+      expect(parityPayload.rows.filter((row) => row.equivalentStatus === 'External Service Boundary')).toHaveLength(3);
       for (const table of equivalentTables) {
         expect(equivalentByTable.get(table)).toBe('Equivalent');
       }
       for (const table of visualSubstituteTables) {
         expect(equivalentByTable.get(table)).toBe('Visual Substitute');
       }
-      for (const table of serviceSimulatedTables) {
-        expect(equivalentByTable.get(table)).toBe('Service Simulated');
+      for (const table of externalServiceTables) {
+        expect(equivalentByTable.get(table)).toBe('External Service Boundary');
       }
       expect(parityPayload.rows.filter((row) => row.equivalentStatus === 'Manual Review Required')).toHaveLength(0);
 
@@ -863,15 +863,14 @@ describe('server routes', () => {
       expect(activityPayload.activities.length).toBeGreaterThan(0);
       expect(activityPayload.redPointCount).toBeGreaterThanOrEqual(0);
 
-      const friend = await app.inject({
-        method: 'POST',
-        url: '/api/social/friend/add',
-        headers: auth.headers,
-        payload: { playerId }
+      const friendId = 'route_friend_1';
+      routeProfile.friends.push({
+        id: friendId,
+        name: '路由好友',
+        headId: '120000',
+        areaId: '101',
+        createdAt: Date.now()
       });
-      const friendPayload = JSON.parse(friend.payload) as { profile: { friends: Array<{ id: string; remark?: string }> } };
-      expect(friend.statusCode).toBe(200);
-      const friendId = friendPayload.profile.friends[0]!.id;
 
       const friendRemark = await app.inject({
         method: 'POST',
@@ -903,15 +902,16 @@ describe('server routes', () => {
       expect(areaResource.statusCode).toBe(200);
       expect(Object.values(areaResourcePayload.profile.guildMembership?.resources ?? {}).some((value) => value > 0)).toBe(true);
 
-      const guildApplication = await app.inject({
-        method: 'POST',
-        url: '/api/guild/application/demo',
-        headers: auth.headers,
-        payload: { playerId }
-      });
-      const guildApplicationPayload = JSON.parse(guildApplication.payload) as { profile: { guildMembership?: { pendingApplications?: Array<{ playerId: string }> } } };
-      expect(guildApplication.statusCode).toBe(200);
-      const applicantId = guildApplicationPayload.profile.guildMembership!.pendingApplications![0]!.playerId;
+      const applicantId = 'route_applicant_1';
+      routeProfile.guildMembership!.pendingApplications = [{
+        playerId: applicantId,
+        name: '路由申请人',
+        roleId: '3',
+        areaId,
+        points: 0,
+        status: 'pending',
+        requestedAt: Date.now()
+      }];
 
       const guildApprove = await app.inject({
         method: 'POST',
@@ -993,12 +993,12 @@ describe('server routes', () => {
       expect(reviewPayload.equivalentSummary.verifiedTables).toBe(52);
       expect(reviewPayload.equivalentSummary.equivalentTables).toBe(44);
       expect(reviewPayload.equivalentSummary.visualSubstituteTables).toBe(5);
-      expect(reviewPayload.equivalentSummary.serviceSimulatedTables).toBe(3);
+      expect(reviewPayload.equivalentSummary.externalServiceTables).toBe(3);
       expect(reviewPayload.equivalentSummary.manualReviewTables).toBe(0);
       expect(reviewPayload.equivalentSummary.closureStatus).toBe('closed');
       expect(reviewPayload.equivalentSummary.equivalentTableNames).toEqual([...equivalentTables]);
       expect(reviewPayload.equivalentSummary.visualSubstituteTableNames).toEqual([...visualSubstituteTables]);
-      expect(reviewPayload.equivalentSummary.serviceSimulatedTableNames).toEqual([...serviceSimulatedTables]);
+      expect(reviewPayload.equivalentSummary.externalServiceTableNames).toEqual([...externalServiceTables]);
       expect(reviewPayload.equivalentSummary.manualReviewTableNames).toEqual([]);
       expect(reviewPayload.equivalentBoundaries.map((row) => row.table)).toEqual([
         'Dlc',
@@ -1012,7 +1012,7 @@ describe('server routes', () => {
       ]);
       expect(reviewPayload.equivalentBoundaries.every((row) => row.reason && row.cleanRoomBoundary && row.evidence)).toBe(true);
       expect(reviewPayload.equivalentBoundaries.filter((row) => row.status === 'Visual Substitute')).toHaveLength(5);
-      expect(reviewPayload.equivalentBoundaries.filter((row) => row.status === 'Service Simulated')).toHaveLength(3);
+      expect(reviewPayload.equivalentBoundaries.filter((row) => row.status === 'External Service Boundary')).toHaveLength(3);
       expect(reviewPayload.validationCommands).toContain('npm run validate:bidking-compat');
     });
   });
@@ -1024,8 +1024,7 @@ describe('server routes', () => {
       profiles.claimActivityReward('p_ledger_left', activity.id);
       profiles.buyShopItem('p_ledger_left', 40001);
       profiles.joinGuild('p_ledger_left');
-      profiles.completeDemoPayOrder('p_ledger_left', '1');
-      profiles.completeDemoPayOrder('p_ledger_right', '1');
+      profiles.claimActivityReward('p_ledger_right', activity.id);
 
       const allLedger = await app.inject({ method: 'GET', url: '/api/admin/ledger?limit=200' });
       const allPayload = JSON.parse(allLedger.payload) as { transactions: { playerId: string }[] };

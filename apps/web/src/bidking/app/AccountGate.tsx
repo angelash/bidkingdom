@@ -38,7 +38,7 @@ export function AccountGate({
       <div className="account-gate-panel">
         <span className="account-gate-mark">珍</span>
         <div className="account-gate-title">
-          <span>BitKingdom</span>
+          <span>三国珍宝</span>
           <h1>珍宝局</h1>
         </div>
 

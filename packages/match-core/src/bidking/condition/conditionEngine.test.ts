@@ -8,7 +8,7 @@ describe('conditionEngine', () => {
     expect(checkBidKingAccess({ completedMatches: 0, level: 1 }, 0).ok).toBe(true);
   });
 
-  it('keeps unsupported access lenient for the current demo mode', () => {
+  it('keeps unsupported access lenient for the current local mode', () => {
     const result = checkBidKingAccess({ completedMatches: 0, level: 1 }, 'missing_access');
     expect(result.ok).toBe(true);
     expect(result.unsupported).toBe(true);

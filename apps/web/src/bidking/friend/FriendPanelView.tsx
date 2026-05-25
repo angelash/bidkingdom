@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { MessageCircle, Save, UserPlus, X } from 'lucide-react';
+import { MessageCircle, Save, X } from 'lucide-react';
 import {
   GuildArea as bidKingGuildAreas,
   Head as bidKingHeads,
@@ -11,7 +11,6 @@ import { socialEmojiActionsForProfile, type SocialEmojiAction } from './emojiSoc
 
 interface FriendPanelViewProps {
   profile: PlayerProfile;
-  onAddDemoFriend: () => void;
   onRemoveFriend: (friendId: string) => void;
   onSetFriendRemark: (friendId: string, remark: string) => void;
   onSelectHead: (headId: string) => void;
@@ -19,7 +18,6 @@ interface FriendPanelViewProps {
 
 export function FriendPanelView({
   profile,
-  onAddDemoFriend,
   onRemoveFriend,
   onSetFriendRemark,
   onSelectHead
@@ -44,10 +42,6 @@ export function FriendPanelView({
         <strong>同游列表</strong>
         <p>{profile.friends.length > 0 ? `${profile.friends.length} 位同游已入名册` : '暂无同游'}</p>
         <em>头像 {bidKingHeads.length} 枚 · 地区 {bidKingGuildAreas.length} 处</em>
-        <button onClick={onAddDemoFriend} type="button">
-          <UserPlus size={16} />
-          添加同游
-        </button>
       </article>
       <article className="social-emoji-panel">
         <strong>同游表情</strong>

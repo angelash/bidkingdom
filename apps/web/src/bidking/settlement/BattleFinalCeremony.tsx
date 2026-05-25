@@ -61,15 +61,11 @@ export function BattleFinalCeremony({
   const selfWon = Boolean(selfPlayerId && settlement.winnerId === selfPlayerId);
   const totalSlots = Math.max(round.warehouseSlots?.length ?? 0, round.revealedItems.length);
   const revealedValue = round.revealedItems.reduce((sum, item) => sum + item.value, 0);
-  const revealedRepair = round.revealedItems.reduce((sum, item) => sum + item.repairCost, 0);
   const allRevealed = totalSlots > 0 && round.revealedItems.length >= totalSlots;
   const progressiveProfit = allRevealed || round.phase === 'settlement'
     ? settlement.profit
     : revealedValue
       - settlement.payment
-      - settlement.depositCost
-      - revealedRepair
-      + settlement.insuranceRefund
       + (settlement.lossRebateRefund ?? 0);
   const latestItem = round.revealedItems.at(-1);
   const progress = totalSlots > 0 ? Math.min(100, Math.round((round.revealedItems.length / totalSlots) * 100)) : 0;
@@ -204,9 +200,7 @@ export function BattleFinalCeremony({
             </header>
             <LedgerLine label="成交" value={formatCurrency(settlement.payment)} />
             <LedgerLine label="真值" value={formatCurrency(settlement.trueValue)} />
-            <LedgerLine label="修复" value={settlement.repairCost > 0 ? `-${formatCurrency(settlement.repairCost)}` : '0'} tone={settlement.repairCost > 0 ? 'loss' : undefined} />
-            <LedgerLine label="押金" value={settlement.depositCost > 0 ? `-${formatCurrency(settlement.depositCost)}` : '0'} />
-            <LedgerLine label="保险/返利" value={formatCurrency(settlement.insuranceRefund + (settlement.lossRebateRefund ?? 0))} tone="profit" />
+            <LedgerLine label="返利" value={formatCurrency(settlement.lossRebateRefund ?? 0)} tone="profit" />
             <LedgerLine label="套装" value={formatCurrency(settlement.setBonus)} tone={settlement.setBonus > 0 ? 'profit' : undefined} />
             <LedgerLine label="总盈亏" value={formatSignedCurrency(settlement.profit)} tone={settlement.profit >= 0 ? 'profit' : 'loss'} strong />
           </section>
@@ -272,7 +266,7 @@ function CeremonyWarehouseSlot({
         gridRow: `span ${Math.max(1, slot.h)}`
       } as CSSProperties}
     >
-      {opened && <span className="ceremony-slot-flash" />}
+      {opened && <span className="ceremony-slot-sheen" />}
       <div>
         {itemIcon ? <img src={itemIcon} alt="" loading="lazy" /> : <span className="slot-shape" />}
         <strong>{item?.name ?? slot.itemName ?? slot.visibleCategory ?? '待揭露'}</strong>

@@ -45,8 +45,6 @@ function codexItemFromCompat(item: BidKingItemRow): CodexCatalogItem {
     rarity,
     value: item.base_value,
     displayValue: item.base_value,
-    isFake: false,
-    repairCost: 0,
     setId: item.collection > 0 ? `compat_collection_${item.collection}` : undefined,
     iconKey: item.packaged_icon_key,
     footprint,

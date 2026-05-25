@@ -16,14 +16,13 @@ export interface ReplayBundle {
 export function LootRevealSummary({ round }: { round: NonNullable<PlayerSnapshot['public']['currentRound']> }): JSX.Element {
   const settlement = round.settlement;
   const revealedValue = round.revealedItems.reduce((sum, item) => sum + item.value, 0);
-  const revealedRepair = round.revealedItems.reduce((sum, item) => sum + item.repairCost, 0);
   const totalSlots = round.warehouseSlots?.length ?? round.revealedItems.length;
   const allRevealed = Boolean(settlement?.isFinal && totalSlots > 0 && round.revealedItems.length >= totalSlots);
   const payment = settlement?.payment ?? 0;
   const progressiveProfit = settlement?.isFinal
     ? allRevealed
       ? settlement.profit
-      : revealedValue - payment - (settlement.depositCost ?? 0) - revealedRepair
+      : revealedValue - payment + (settlement.lossRebateRefund ?? 0)
     : 0;
   const isFinalReveal = Boolean(settlement?.isFinal);
   const profitClass = progressiveProfit >= 0 ? 'profit' : 'loss';
@@ -52,14 +51,12 @@ export function RareRevealBanner({ round }: { round: NonNullable<PlayerSnapshot[
     return <></>;
   }
   const latest = round.revealedItems.at(-1);
-  if (!latest || !['rare', 'legendary', 'fake'].includes(latest.rarity)) {
+  if (!latest || !['rare', 'legendary'].includes(latest.rarity)) {
     return <></>;
   }
   const label = latest.rarity === 'legendary'
     ? '传世出货'
-    : latest.rarity === 'rare'
-      ? '稀有现世'
-      : '风险暴露';
+    : '稀有现世';
   return (
     <section className={`rare-reveal-banner rarity-${latest.rarity}`}>
       <Sparkles size={18} />
@@ -151,10 +148,7 @@ export function SettlementPanel({
       <div className="settlement">
         <strong>{settlement.title}</strong>
         <span>成交 {settlement.payment.toLocaleString()}</span>
-        {settlement.depositCost > 0 && <span>押金 {settlement.depositCost.toLocaleString()}</span>}
         <span>真值 {settlement.trueValue.toLocaleString()}</span>
-        {settlement.repairCost > 0 && <span>修复 {settlement.repairCost.toLocaleString()}</span>}
-        {settlement.insuranceRefund > 0 && <span>保险返还 {settlement.insuranceRefund.toLocaleString()}</span>}
         {(settlement.lossRebateRefund ?? 0) > 0 && <span>亏损返利 {settlement.lossRebateRefund!.toLocaleString()}</span>}
         <span className={settlement.profit >= 0 ? 'profit' : 'loss'}>{settlement.profit.toLocaleString()}</span>
       </div>
@@ -169,8 +163,6 @@ export function SettlementPanel({
               <strong>{playerNameById(players, entry.playerId)}</strong>
               <span>{entry.title}</span>
               <span>成交 {entry.payment.toLocaleString()}</span>
-              <span>押金 {formatDeposit(entry.depositPaid, entry.depositRefund)}</span>
-              <span>修复 {entry.repairCost.toLocaleString()}</span>
               {(entry.lossRebateRefund ?? 0) > 0 && <span>返利 {entry.lossRebateRefund!.toLocaleString()}</span>}
               <em className={entry.profit >= 0 ? 'profit' : 'loss'}>
                 {entry.profit >= 0 ? '+' : ''}{entry.profit.toLocaleString()}
@@ -206,7 +198,7 @@ export function ClueReviewPanel({ settlement }: { settlement: NonNullable<Player
 export function ProgressPanel({ snapshot }: { snapshot: PlayerSnapshot }): JSX.Element {
   const round = snapshot.public.currentRound;
   const rareRevealed = round?.revealedItems.some((item) => ['rare', 'legendary'].includes(item.rarity)) ?? false;
-  const usedSkill = snapshot.private?.skillUsedThisRound ?? false;
+  const usedBattleItem = (snapshot.private?.battleItemUsesThisRound ?? 0) > 0;
   const hasBid = snapshot.public.players.find((player) => player.id === snapshot.private?.playerId)?.hasSubmittedBid ?? false;
   return (
     <section className="progress-block">
@@ -216,33 +208,8 @@ export function ProgressPanel({ snapshot }: { snapshot: PlayerSnapshot }): JSX.E
       </div>
       <TaskRow done={Boolean(round)} label="进入一轮拍场" />
       <TaskRow done={hasBid || Boolean(round?.bids.some((bid) => bid.playerId === snapshot.private?.playerId))} label="完成一次出价或暗拍" />
-      <TaskRow done={usedSkill} label="使用一次掌眼" />
+      <TaskRow done={usedBattleItem} label="使用一次试宝令" />
       <TaskRow done={rareRevealed} label="见到稀有或传世藏品" />
-    </section>
-  );
-}
-
-export function TutorialPanel({
-  snapshot,
-  recommendedBid,
-  onDismiss
-}: {
-  snapshot: PlayerSnapshot;
-  recommendedBid?: { safePrice: number; reason: string };
-  onDismiss: () => void;
-}): JSX.Element {
-  const round = snapshot.public.currentRound;
-  if (!round) {
-    return <></>;
-  }
-  return (
-    <section className="tutorial-panel">
-      <div>
-        <strong>{tutorialTitle(round)}</strong>
-        <p>{tutorialText(round)}</p>
-        {recommendedBid && <span>推荐安全价：{recommendedBid.safePrice.toLocaleString()}，{recommendedBid.reason}</span>}
-      </div>
-      <button onClick={onDismiss}>收起</button>
     </section>
   );
 }
@@ -467,63 +434,4 @@ function roundActionTitle(entry?: NonNullable<PublicPlayer['bidRanks']>[number])
     parts.push(`掌眼 ${entry.usedSkillName}`);
   }
   return parts.join(' · ');
-}
-
-function formatDeposit(paid: number, refund: number): string {
-  if (paid <= 0) {
-    return '0';
-  }
-  if (refund <= 0) {
-    return `-${paid.toLocaleString()}`;
-  }
-  return `-${paid.toLocaleString()} / +${refund.toLocaleString()}`;
-}
-
-function tutorialTitle(round: NonNullable<PlayerSnapshot['public']['currentRound']>): string {
-  if (round.settlement?.isFinal === false) {
-    return `第${round.index + 1}轮反馈`;
-  }
-  if (round.phase === 'auction') {
-    return `第${round.index + 1}轮出价提示`;
-  }
-  if ((round.phase === 'settlement' || round.phase === 'reveal') && round.isFinalAuction) {
-    return '最终开匣复盘';
-  }
-  return `第${round.index + 1}轮教学`;
-}
-
-function tutorialText(round: NonNullable<PlayerSnapshot['public']['currentRound']>): string {
-  const { index: roundIndex, auctionMode: mode, phase } = round;
-  if (round.settlement?.isFinal === false) {
-    return '本轮只公布出价走势，不揭晓仓内真值。把领先者、价格区间和新增线索合在一起，下一轮继续推断。';
-  }
-  if (!round.isFinalAuction && (phase === 'settlement' || phase === 'reveal')) {
-    return '同一仓库还没有成交，观察这轮反馈后再决定下一轮是压价、跟价还是停手。';
-  }
-  if (phase === 'auction') {
-    if (!round.isFinalAuction) {
-      return mode === 'sealed'
-        ? '暗拍阶段不会公开具体报价，重点是用自己的线索估出可承受上限。'
-        : '明拍阶段会暴露临时领先价，可以用它校准大家对同一仓库的判断。';
-    }
-    return mode === 'sealed'
-      ? '最终暗拍会决定整仓归属，只按自己推断出的净值上限出价，不要被前几轮领先者带偏。'
-      : '最终明拍会直接成交，确认真值、占格效率和现金余量后再加价。';
-  }
-  if (roundIndex === 0) {
-    return '先看公共估值和私人线索，目标是理解真实价值与成交价的差距。';
-  }
-  if (roundIndex === 1) {
-    return '这轮信息会逐步收窄。线索里出现低品质、低密度或估值偏低时，超过安全价后就要准备停手。';
-  }
-  if (mode === 'second_price') {
-    return '次高价拍卖不一定支付最高出价，但出高价会暴露意图，也可能被第二名抬高成交价。';
-  }
-  if (mode === 'deposit_open') {
-    return '押金明拍每次入场都有成本，抬价可以诱导对手，但自己也会付出押金代价。';
-  }
-  if (mode === 'flash') {
-    return '闪拍提交后不能修改。最后一轮可以翻盘，但最好先锁定一个自己能承受的价格。';
-  }
-  return '不是每轮都要赢，放弃并让别人高价接盘也是有效策略。';
 }

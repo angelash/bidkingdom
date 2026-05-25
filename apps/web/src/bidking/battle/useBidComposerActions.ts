@@ -3,7 +3,6 @@ import type { BidKingSocket } from '../socket/useBidKingSocket';
 
 interface UseBidComposerActionsArgs {
   previousBid?: number;
-  recommendedBid?: { safePrice: number; reason: string };
   selfCash?: number;
   socket: BidKingSocket | null;
 }
@@ -22,7 +21,6 @@ export interface BidComposerActions {
   closeConfirmBid: () => void;
   confirmBidAmount?: number;
   doubleBidDraft: () => void;
-  fillRecommendedBid: () => void;
   pressBidKey: (key: string) => void;
   requestBidConfirm: () => void;
   resetBidComposer: () => void;
@@ -35,22 +33,21 @@ export interface BidComposerActions {
 }
 
 export function useBidComposerActions({
-  previousBid,
-  recommendedBid,
   selfCash,
   socket
 }: UseBidComposerActionsArgs): BidComposerActions {
-  const [bidAmount, setBidAmount] = useState(10000);
+  const [bidAmount, setBidAmount] = useState(0);
   const [bidComposerOpen, setBidComposerOpen] = useState(false);
-  const [bidDraft, setBidDraft] = useState('0');
+  const [bidDraft, setBidDraft] = useState('');
   const [bidAmountHidden, setBidAmountHidden] = useState(false);
   const [confirmBidAmount, setConfirmBidAmount] = useState<number>();
   const [manualError, setManualError] = useState<string>();
 
   const availableCash = selfCash ?? Number.MAX_SAFE_INTEGER;
   const draftAmount = Number(bidDraft || 0);
-  const bidDraftError = manualError ?? validateDraft(draftAmount, availableCash);
-  const bidDraftValid = !bidDraftError;
+  const draftValidationError = bidDraft === '' ? undefined : validateDraft(draftAmount, availableCash);
+  const bidDraftError = manualError ?? draftValidationError;
+  const bidDraftValid = bidDraft !== '' && !bidDraftError;
 
   const setDraftAmount = useCallback((amount: number): void => {
     const nextAmount = Math.max(0, Math.round(amount));
@@ -58,36 +55,22 @@ export function useBidComposerActions({
     setManualError(undefined);
   }, []);
 
-  const preferredOpenAmount = useCallback((): number => {
-    if (previousBid !== undefined && previousBid > 0) {
-      return Math.min(availableCash, previousBid);
-    }
-    return Math.min(availableCash, Math.max(0, bidAmount));
-  }, [availableCash, bidAmount, previousBid]);
-
   const submitBidClick = useCallback((): void => {
-    setDraftAmount(preferredOpenAmount());
+    setBidDraft('');
+    setManualError(undefined);
     setBidComposerOpen(true);
-  }, [preferredOpenAmount, setDraftAmount]);
-
-  const fillRecommendedBid = useCallback((): void => {
-    if (!recommendedBid) {
-      return;
-    }
-    setDraftAmount(Math.min(availableCash, Math.max(0, recommendedBid.safePrice)));
-    setBidComposerOpen(true);
-  }, [availableCash, recommendedBid, setDraftAmount]);
+  }, []);
 
   const pressBidKey = useCallback((key: string): void => {
     setBidDraft((current) => {
       const next = `${current === '0' ? '' : current}${key}`.replace(/^0+(?=\d)/, '');
-      return next.slice(0, 9) || '0';
+      return next.slice(0, 9);
     });
     setManualError(undefined);
   }, []);
 
   const backspaceBidDraft = useCallback((): void => {
-    setBidDraft((current) => current.length > 1 ? current.slice(0, -1) : '0');
+    setBidDraft((current) => current.length > 1 ? current.slice(0, -1) : '');
     setManualError(undefined);
   }, []);
 
@@ -113,13 +96,14 @@ export function useBidComposerActions({
     setBidAmount(confirmBidAmount);
     socket?.emit('submitBid', { amount: confirmBidAmount });
     setConfirmBidAmount(undefined);
+    setBidDraft('');
   }, [confirmBidAmount, socket]);
 
   const resetBidComposer = useCallback((): void => {
-    setBidAmount(10000);
+    setBidAmount(0);
     setBidComposerOpen(false);
     setConfirmBidAmount(undefined);
-    setBidDraft('0');
+    setBidDraft('');
     setManualError(undefined);
   }, []);
 
@@ -145,7 +129,7 @@ export function useBidComposerActions({
     bidDraftValid,
     backspaceBidDraft,
     clearBidDraft: () => {
-      setBidDraft('0');
+      setBidDraft('');
       setManualError(undefined);
     },
     closeBidComposer: () => {
@@ -155,7 +139,6 @@ export function useBidComposerActions({
     closeConfirmBid: () => setConfirmBidAmount(undefined),
     confirmBidAmount,
     doubleBidDraft,
-    fillRecommendedBid,
     pressBidKey,
     requestBidConfirm,
     resetBidComposer,
@@ -176,7 +159,6 @@ export function useBidComposerActions({
     bidDraftValid,
     confirmBidAmount,
     doubleBidDraft,
-    fillRecommendedBid,
     pressBidKey,
     requestBidConfirm,
     resetBidComposer,

@@ -133,7 +133,6 @@ function revealKindLabel(kind: BattleItemEffectPlan['revealKind']): string {
     identity: '本体',
     quality: '品质',
     quantity: '数量',
-    risk: '风险',
     system: '系统',
     value: '估值'
   };
@@ -144,7 +143,6 @@ function targetModeLabel(mode: BattleItemEffectPlan['targetMode']): string {
   const labels: Record<BattleItemEffectPlan['targetMode'], string> = {
     highest_value: '高价值',
     largest_slots: '大格位',
-    risk_first: '风险优先',
     skill_target: '指定目标',
     system_effect: '系统效果'
   };

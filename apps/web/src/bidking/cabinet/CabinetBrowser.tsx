@@ -342,8 +342,7 @@ function rarityName(rarity: Rarity): string {
     common: '普通',
     fine: '精品',
     rare: '稀有',
-    legendary: '传说',
-    fake: '特殊'
+    legendary: '传说'
   };
   return names[rarity];
 }

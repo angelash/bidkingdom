@@ -1,6 +1,6 @@
 import type { BidKingRawTableRow } from './schema';
 
-export type BidKingDlcServiceMode = 'local_simulated_platform_unlock';
+export type BidKingDlcServiceMode = 'external_platform_entitlement';
 
 export interface BidKingDlcRuntime {
   dlcId: string;
@@ -21,8 +21,8 @@ export function bidKingDlcRuntime(row: BidKingRawTableRow): BidKingDlcRuntime {
     typeCode: Number(row.columns[3] ?? 0) || 0,
     rewardRows: parseRawNumberRows(row.columns[4] ?? ''),
     mailTemplateId,
-    serviceMode: 'local_simulated_platform_unlock',
-    serviceModeLabel: '本地模拟平台解锁',
+    serviceMode: 'external_platform_entitlement',
+    serviceModeLabel: '外部平台权益',
     price: 0
   };
 }

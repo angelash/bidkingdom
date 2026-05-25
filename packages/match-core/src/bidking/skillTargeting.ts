@@ -61,11 +61,8 @@ export function selectBidKingSlotsBySkill(
   let filtered = applyBidKingTarget(sourceSlots, state, skill.skilltarget, skill.skilltargetvalue, targetCount, sourceSlots, false, options);
   filtered = applyBidKingTarget(filtered, state, skill.skilltarget2, skill.skilltargetvalue2, targetCount, sourceSlots, true, options);
   filtered = applyBidKingTarget(filtered, state, skill.skilltarget3, skill.skilltargetvalue3, targetCount, sourceSlots, true, options);
-  if (filtered.length === 0 && !usesRequiredContextTarget(skill)) {
-    filtered = shuffleBidKingSlots(sourceSlots, state);
-  }
   const limit = bidKingSourceTargetCountForCandidateCount(skill, filtered.length);
-  return filtered.slice(0, Math.max(1, limit));
+  return filtered.slice(0, limit);
 }
 
 export function bidKingKnowledgeByItemIdFromSkillFeed(
@@ -377,13 +374,6 @@ function mergeSourceBoxInfo(boxes: readonly BidKingBoxInfoDataSnapshot[]): BidKi
 
 export function bidKingSkillRequiresTargetBox(skill: BidKingSkillRow): boolean {
   return skill.skilltarget === 8 || skill.skilltarget2 === 8 || skill.skilltarget3 === 8;
-}
-
-function usesRequiredContextTarget(skill: BidKingSkillRow): boolean {
-  return bidKingSkillRequiresTargetBox(skill)
-    || skill.skilltarget === 10
-    || skill.skilltarget2 === 10
-    || skill.skilltarget3 === 10;
 }
 
 function sourceHitBoxForSlot(entry: SkillFeedEntry, slot: WarehouseSlot): BidKingBoxInfoDataSnapshot | undefined {

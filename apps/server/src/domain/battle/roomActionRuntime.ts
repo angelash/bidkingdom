@@ -99,7 +99,6 @@ export function revealDelayForItem(item?: RevealedItem): number {
   const delays: Record<RevealedItem['rarity'], number> = {
     junk: 520,
     common: 620,
-    fake: 720,
     fine: 920,
     rare: 1350,
     legendary: 1900

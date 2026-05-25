@@ -15,14 +15,11 @@ interface MatchRouteProps {
   profile: PlayerProfile;
   replay: ReplayActions;
   snapshot?: PlayerSnapshot;
-  tutorialDismissed: boolean;
-  onDismissTutorial: () => void;
   onPassAuction: () => void;
   onReturnHome: () => void;
   onSelectSkillTarget: (playerId: string) => void;
   onSendEmote: (emote: string) => void;
   onUseBattleItem: (itemId: number, targetPlayerId?: string) => void;
-  onUseSkill: () => void;
 }
 
 export function MatchRoute({
@@ -32,21 +29,13 @@ export function MatchRoute({
   profile,
   replay,
   snapshot,
-  tutorialDismissed,
-  onDismissTutorial,
   onPassAuction,
   onReturnHome,
   onSelectSkillTarget,
   onSendEmote,
-  onUseBattleItem,
-  onUseSkill
+  onUseBattleItem
 }: MatchRouteProps): JSX.Element {
   const currentRound = matchState.currentRound;
-  const riskWarning = Boolean(
-    matchState.canBid &&
-    matchState.recommendedBid &&
-    bidComposer.bidAmount > matchState.recommendedBid.safePrice
-  );
   const showFinalCeremony = Boolean(
     snapshot &&
     currentRound &&
@@ -68,22 +57,16 @@ export function MatchRoute({
           <MatchShell
             canBid={matchState.canBid}
             canUseBattleItem={matchState.canUseBattleItem}
-            canUseSkill={matchState.canUseSkill}
             currentRound={currentRound}
             equippedBattleItems={matchState.equippedBattleItems}
             phaseRemaining={matchState.phaseRemaining}
             profile={profile}
-            recommendedBid={matchState.recommendedBid}
-            riskWarning={riskWarning}
             selectedSkillTargetId={matchState.selectedSkillTargetId}
             selfPlayer={matchState.selfPlayer}
             showAuctioneerReveal={matchState.showAuctioneerReveal}
             showMapIntro={matchState.showMapIntro}
             skillTargets={matchState.skillTargets}
             snapshot={snapshot}
-            tutorialDismissed={tutorialDismissed}
-            onDismissTutorial={onDismissTutorial}
-            onFillRecommendedBid={bidComposer.fillRecommendedBid}
             onInspectWarehouseSlot={liveIntel.inspectWarehouseSlot}
             onOpenLiveIntel={() => liveIntel.openLiveIntel()}
             onPassAuction={onPassAuction}
@@ -91,7 +74,6 @@ export function MatchRoute({
             onSendEmote={onSendEmote}
             onSubmitBid={bidComposer.submitBidClick}
             onUseBattleItem={onUseBattleItem}
-            onUseSkill={onUseSkill}
           />
         )
       )}
@@ -108,7 +90,6 @@ export function MatchRoute({
         liveIntelOpen={liveIntel.liveIntelOpen}
         liveIntelSeed={liveIntel.liveIntelSeed}
         previousBid={matchState.previousSelfBid}
-        recommendedBid={matchState.recommendedBid?.safePrice}
         onBackspaceBid={bidComposer.backspaceBidDraft}
         onCancelBidComposer={bidComposer.closeBidComposer}
         onCancelConfirmBid={bidComposer.closeConfirmBid}
@@ -121,7 +102,6 @@ export function MatchRoute({
         onSetBidToMax={bidComposer.setBidDraftToMax}
         onSetBidToMinimum={bidComposer.setBidDraftToMinimum}
         onToggleBidHidden={bidComposer.toggleBidAmountHidden}
-        onUseRecommendedBid={bidComposer.fillRecommendedBid}
         onUsePreviousBid={bidComposer.usePreviousBidAmount}
       />
 

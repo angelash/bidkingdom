@@ -70,7 +70,6 @@ export interface RuntimePlayer {
   skillUsesRemaining: number;
   skillUsedThisRound: boolean;
   battleItemCooldowns: Record<string, number>;
-  insuranceActive: boolean;
   privateClues: Clue[];
 }
 
@@ -83,7 +82,6 @@ export interface ContainerInstance {
   publicClues: Clue[];
   privateCluesByPlayerId: Record<string, Clue[]>;
   auctionModeOverride?: AuctionMode;
-  depositValue?: number;
   auctionDurationMs?: number;
   minimumBid?: number;
 }
@@ -104,7 +102,7 @@ export interface RuntimeRound {
   phase: PublicRoundState['phase'];
   auctionMode: AuctionMode;
   container: ContainerInstance;
-  openingCandidates?: PublicRoundState['openingCandidates'];
+  openingCandidates?: PublicContainerInfo[];
   auctioneerClue?: Clue;
   auctioneerChoices?: Clue[];
   bids: PublicRoundState['bids'];
@@ -117,7 +115,6 @@ export interface RuntimeRound {
   revealedItems: RevealedItem[];
   settlement?: RoundSettlement;
   phaseEndsAt: number;
-  depositPaidByPlayerId: Record<string, boolean>;
   historyRecorded?: boolean;
 }
 
@@ -129,6 +126,8 @@ export interface MatchRuntimeState {
   coreAuctionMode?: CoreAuctionMode;
   coreBidMapId?: number;
   bidKingActiveSystemSkillIds?: number[];
+  coreAuctioneerClue?: Clue;
+  coreAuctioneerChoices?: Clue[];
   roundIndex: number;
   totalRounds: number;
   players: RuntimePlayer[];
@@ -140,8 +139,6 @@ export interface MatchRuntimeState {
   roundHistory: RoundHistoryEntry[];
   finalSummary?: FinalMatchSummary;
   coreWarehouse?: ContainerInstance;
-  coreAuctioneerClue?: Clue;
-  coreAuctioneerChoices?: Clue[];
   createdAt: number;
   updatedAt: number;
 }

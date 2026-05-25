@@ -22,7 +22,7 @@ type ReviewConfigParity = AdminReviewSnapshot['configParity'];
 const equivalentBoundaryByTable: Record<string, Omit<ReviewBoundary, 'table' | 'status'>> = {
   Dlc: {
     reason: 'Original Dlc unlock depends on platform ownership and live entitlement checks.',
-    cleanRoomBoundary: 'Uses local demo unlock orders and Mail template delivery; no platform service is contacted.',
+    cleanRoomBoundary: 'Keeps entitlement metadata and Mail template delivery; no platform service is contacted.',
     evidence: 'packages/bidking-compat/src/dlcRuntime.test.ts + apps/server/tests/profileService.test.ts'
   },
   Emoji: {
@@ -47,12 +47,12 @@ const equivalentBoundaryByTable: Record<string, Omit<ReviewBoundary, 'table' | '
   },
   Pay: {
     reason: 'Original payment flow depends on live payment provider services.',
-    cleanRoomBoundary: 'Uses local demo orders for create/complete/cancel, preserving SKU, price, reward and ledger semantics.',
+    cleanRoomBoundary: 'Keeps SKU, price and reward metadata without local order completion endpoints.',
     evidence: 'packages/bidking-compat/src/payRuntime.test.ts + apps/server/tests/profileService.test.ts'
   },
   PurchaseList: {
     reason: 'Original platform store purchase flow depends on external storefront services.',
-    cleanRoomBoundary: 'Maps platform SKU metadata to local Pay simulation; no real store transaction is created.',
+    cleanRoomBoundary: 'Keeps storefront SKU metadata without local completion endpoints or local reward issuance.',
     evidence: 'apps/server/tests/profileRestoreCoverage.test.ts'
   },
   Sound: {
@@ -238,12 +238,12 @@ export function registerAdminRoutes(
     const configParity = buildAdminConfigParity();
     const equivalentRows = configParity.rows.filter((row) => row.equivalentStatus === 'Equivalent');
     const visualSubstituteRows = configParity.rows.filter((row) => row.equivalentStatus === 'Visual Substitute');
-    const serviceSimulatedRows = configParity.rows.filter((row) => row.equivalentStatus === 'Service Simulated');
+    const externalServiceRows = configParity.rows.filter((row) => row.equivalentStatus === 'External Service Boundary');
     const manualReviewRows = configParity.rows.filter((row) => row.equivalentStatus === 'Manual Review Required');
     const verifiedTables = configParity.rows.filter((row) => row.runtimeStatus === 'Verified' || row.runtimeStatus === 'Equivalent').length;
-    const classifiedTables = equivalentRows.length + visualSubstituteRows.length + serviceSimulatedRows.length + manualReviewRows.length;
+    const classifiedTables = equivalentRows.length + visualSubstituteRows.length + externalServiceRows.length + manualReviewRows.length;
     const restoreMatrixSummary = buildRestoreMatrixSummary(configParity, verifiedTables, manualReviewRows.length);
-    const equivalentBoundaries = buildEquivalentBoundaries([...visualSubstituteRows, ...serviceSimulatedRows]);
+    const equivalentBoundaries = buildEquivalentBoundaries([...visualSubstituteRows, ...externalServiceRows]);
     const validationCommands = [
       'npm run validate:bidking-compat',
       'npm run typecheck -ws --if-present',
@@ -266,12 +266,12 @@ export function registerAdminRoutes(
         verifiedTables,
         equivalentTables: equivalentRows.length,
         visualSubstituteTables: visualSubstituteRows.length,
-        serviceSimulatedTables: serviceSimulatedRows.length,
+        externalServiceTables: externalServiceRows.length,
         manualReviewTables: manualReviewRows.length,
         closureStatus: manualReviewRows.length === 0 && classifiedTables === configParity.tableCount ? 'closed' : 'needs_review',
         equivalentTableNames: sortedTableNames(equivalentRows),
         visualSubstituteTableNames: sortedTableNames(visualSubstituteRows),
-        serviceSimulatedTableNames: sortedTableNames(serviceSimulatedRows),
+        externalServiceTableNames: sortedTableNames(externalServiceRows),
         manualReviewTableNames: sortedTableNames(manualReviewRows)
       },
       equivalentBoundaries,
@@ -373,7 +373,7 @@ function buildEquivalentBoundaries(
   return rows
     .map((row) => {
       const boundary = equivalentBoundaryByTable[row.table];
-      if (!boundary || (row.equivalentStatus !== 'Visual Substitute' && row.equivalentStatus !== 'Service Simulated')) {
+      if (!boundary || (row.equivalentStatus !== 'Visual Substitute' && row.equivalentStatus !== 'External Service Boundary')) {
         return undefined;
       }
       return {
@@ -440,7 +440,7 @@ function buildFinalReviewChecklist(
 ): ReviewChecklistItem[] {
   const equivalentTables = configParity.rows.filter((row) => row.equivalentStatus === 'Equivalent').length;
   const visualSubstituteTables = configParity.rows.filter((row) => row.equivalentStatus === 'Visual Substitute').length;
-  const serviceSimulatedTables = configParity.rows.filter((row) => row.equivalentStatus === 'Service Simulated').length;
+  const externalServiceTables = configParity.rows.filter((row) => row.equivalentStatus === 'External Service Boundary').length;
   const manualReviewTables = configParity.rows.filter((row) => row.equivalentStatus === 'Manual Review Required').length;
   const hasMatrixClosure =
     matrixSummary.classMatrix.unknownClasses === 0 &&
@@ -451,8 +451,8 @@ function buildFinalReviewChecklist(
     configParity.status === 'ok' &&
     configParity.failures.length === 0 &&
     manualReviewTables === 0 &&
-    equivalentTables + visualSubstituteTables + serviceSimulatedTables === configParity.tableCount;
-  const hasBoundaryClosure = equivalentBoundaries.length === visualSubstituteTables + serviceSimulatedTables;
+    equivalentTables + visualSubstituteTables + externalServiceTables === configParity.tableCount;
+  const hasBoundaryClosure = equivalentBoundaries.length === visualSubstituteTables + externalServiceTables;
   return [
     {
       id: 'baseline-matrices',
@@ -470,14 +470,14 @@ function buildFinalReviewChecklist(
       id: 'config-classification',
       label: 'Config classification',
       status: hasConfigClosure ? 'pass' : 'blocked',
-      summary: `${equivalentTables} Equivalent, ${visualSubstituteTables} Visual Substitute, ${serviceSimulatedTables} Service Simulated, ${manualReviewTables} Manual Review Required.`,
+      summary: `${equivalentTables} Equivalent, ${visualSubstituteTables} Visual Substitute, ${externalServiceTables} External Service Boundary, ${manualReviewTables} Manual Review Required.`,
       evidence: ['apps/server/src/domain/config/adminConfigParity.ts', 'apps/server/tests/routes.test.ts']
     },
     {
       id: 'clean-room-boundaries',
       label: 'Clean-room boundaries',
       status: hasBoundaryClosure ? 'pass' : 'attention',
-      summary: `${equivalentBoundaries.length} visual substitute or service simulation boundary records are exported with reason and evidence.`,
+      summary: `${equivalentBoundaries.length} visual substitute or external service boundary records are exported with reason and evidence.`,
       evidence: equivalentBoundaries.map((row) => row.evidence)
     },
     {

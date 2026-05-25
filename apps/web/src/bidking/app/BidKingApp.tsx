@@ -41,7 +41,6 @@ export function BidKingApp(): JSX.Element {
     changeAccountPassword,
     coreAuctionMode,
     continueAsGuest,
-    dismissTutorial,
     loginAccount,
     logoutAccount,
     logoutAllAccounts,
@@ -61,7 +60,6 @@ export function BidKingApp(): JSX.Element {
     setView,
     skillTargetId,
     switchView,
-    tutorialDismissed,
     upgradeGuestAccount,
     view
   } = useBidKingAppState();
@@ -123,7 +121,6 @@ export function BidKingApp(): JSX.Element {
   });
   const bidComposer = useBidComposerActions({
     previousBid: matchState.previousSelfBid,
-    recommendedBid: matchState.recommendedBid,
     selfCash: matchState.selfPlayer?.cash,
     socket
   });
@@ -149,7 +146,7 @@ export function BidKingApp(): JSX.Element {
       return;
     }
     const phaseOverrunMs = now - round.phaseEndsAt;
-    const watchedPhase = ['warehouse_roll', 'warehouse_selected', 'auctioneer_reveal', 'intel', 'auction'].includes(round.phase);
+    const watchedPhase = ['intel', 'auction'].includes(round.phase);
     if (!watchedPhase || phaseOverrunMs < 8000) {
       phaseExceptionKeyRef.current = '';
       return;
@@ -209,7 +206,6 @@ export function BidKingApp(): JSX.Element {
     bidComposer,
     liveIntel,
     replay,
-    selectedSkillTargetId: matchState.selectedSkillTargetId,
     setRoom,
     setSelfPlayerId,
     setSkillTargetId,
@@ -310,14 +306,11 @@ export function BidKingApp(): JSX.Element {
           profile={profile}
           replay={replay}
           snapshot={snapshot}
-          tutorialDismissed={tutorialDismissed}
-          onDismissTutorial={dismissTutorial}
           onPassAuction={() => socket?.emit('passAuction')}
           onReturnHome={navigation.returnHome}
           onSelectSkillTarget={setSkillTargetId}
           onSendEmote={(emote) => socket?.emit('sendEmote', { emote })}
           onUseBattleItem={navigation.useBattleItemClick}
-          onUseSkill={navigation.useSkillClick}
         />
       )}
 
@@ -346,10 +339,7 @@ export function BidKingApp(): JSX.Element {
 function roundPhaseLabel(phase: string): string {
   const labels: Record<string, string> = {
     auction: '竞价阶段',
-    auctioneer_reveal: '掌眼情报阶段',
-    intel: '情报阶段',
-    warehouse_roll: '随机仓阶段',
-    warehouse_selected: '仓型确认阶段'
+    intel: '情报阶段'
   };
   return labels[phase] ?? '对局阶段';
 }

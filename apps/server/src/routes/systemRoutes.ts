@@ -27,7 +27,6 @@ export function registerSystemRoutes(app: FastifyInstance): void {
       shop: true,
       shopRefresh: true,
       giftPackage: true,
-      demoPay: true,
       mail: true,
       missions: true,
       rank: true,

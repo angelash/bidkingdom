@@ -9,10 +9,7 @@ import {
 import { revealDelayForItem } from './roomActionRuntime';
 import { runBotAuctionForRoom } from './roomBotRuntime';
 import {
-  CORE_AUCTIONEER_REVEAL_MS,
-  CORE_AUCTION_MS,
-  CORE_ROUND_INTEL_MS,
-  CORE_WAREHOUSE_SELECTED_MS
+  CORE_AUCTION_MS
 } from './roomRuntimeConfig';
 import {
   scheduleRoomTimer
@@ -46,22 +43,13 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
       return;
     }
     deps.logRoundEvent('core_round_pulse', roundLogContext(room));
-    if (round.phase === 'warehouse_roll') {
-      schedulePhaseTransition(room, 'warehouse_selected', CORE_WAREHOUSE_SELECTED_MS, 'select_core_warehouse');
-      return;
-    }
-    if (round.phase === 'warehouse_selected') {
-      schedulePhaseTransition(room, 'auctioneer_reveal', CORE_AUCTIONEER_REVEAL_MS, 'reveal_auctioneer_clue');
-      return;
-    }
-    if (round.phase === 'auctioneer_reveal') {
-      schedulePhaseTransition(room, 'intel', CORE_ROUND_INTEL_MS, 'start_intel_phase');
-      return;
-    }
     if (round.phase === 'intel') {
       runBotActionsOnceForPhase(room, 'intel');
       deps.broadcastMatch(room);
       schedulePhaseTransition(room, 'auction', auctionDurationMs(round), 'start_auction_phase');
+      return;
+    }
+    if (round.phase !== 'auction') {
       return;
     }
     runBotAuctionForRoom(room);
@@ -224,7 +212,8 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
   }
 
   function scheduleRoundTimer(room: Room, ms: number, reason: string, callback: () => void): void {
-    const key = roundTimerKey(room, reason);
+    const expected = roundTimerState(room);
+    const key = roundTimerKey(expected, reason);
     if (scheduledTimerKeys.has(key)) {
       return;
     }
@@ -237,6 +226,14 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
     });
     scheduleRoomTimer(room, ms, () => {
       scheduledTimerKeys.delete(key);
+      if (!roundTimerStillCurrent(room, expected)) {
+        deps.logRoundEvent('round_timer_stale', {
+          ...roundLogContext(room),
+          reason,
+          expected
+        });
+        return;
+      }
       deps.logRoundEvent('round_timer_fired', {
         ...roundLogContext(room),
         reason
@@ -252,13 +249,42 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
     });
   }
 
-  function roundTimerKey(room: Room, reason: string): string {
-    const round = room.match?.currentRound;
+  function roundTimerState(room: Room): {
+    matchId?: string;
+    roundId?: string;
+    phase?: ActiveRound['phase'];
+    phaseEndsAt?: number;
+  } {
+    const match = room.match;
+    const round = match?.currentRound;
+    return {
+      matchId: match?.id,
+      roundId: round?.id,
+      phase: round?.phase,
+      phaseEndsAt: round?.phaseEndsAt
+    };
+  }
+
+  function roundTimerStillCurrent(
+    room: Room,
+    expected: ReturnType<typeof roundTimerState>
+  ): boolean {
+    const current = roundTimerState(room);
+    return current.matchId === expected.matchId
+      && current.roundId === expected.roundId
+      && current.phase === expected.phase
+      && current.phaseEndsAt === expected.phaseEndsAt;
+  }
+
+  function roundTimerKey(
+    expected: ReturnType<typeof roundTimerState>,
+    reason: string
+  ): string {
     return [
-      room.id,
-      round?.id ?? 'no-round',
-      round?.phase ?? 'no-phase',
-      round?.phaseEndsAt ?? 0,
+      expected.matchId ?? 'no-match',
+      expected.roundId ?? 'no-round',
+      expected.phase ?? 'no-phase',
+      expected.phaseEndsAt ?? 0,
       reason
     ].join(':');
   }

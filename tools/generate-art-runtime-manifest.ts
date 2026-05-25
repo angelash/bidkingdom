@@ -15,11 +15,6 @@ const rootDir = dirname(fileURLToPath(new URL('../package.json', import.meta.url
 const publicDir = join(rootDir, 'apps/web/public');
 
 const containerFiles: Record<string, string> = {
-  container_sample_home: 'container_sample_home_v1.png',
-  container_sample_antique: 'container_sample_antique_v1.png',
-  container_sample_armory: 'container_sample_armory_v1.png',
-  container_sample_black_market: 'container_sample_black_market_v1.png',
-  container_sample_flash_palace: 'container_sample_flash_palace_v1.png',
   container_palace: 'container_palace_v1.png',
   container_battlefield: 'container_battlefield_v1.png',
   container_ship: 'container_ship_v1.png',
@@ -39,7 +34,7 @@ function artPath(folder: string, file: string, runtimeFolder: 'approved' | 'gene
   return `/art/${runtimeFolder}/${folder}/${file}`;
 }
 
-function asset(folder: string, file: string, type: string, ratio: string, qc = 'B: generated and wired for internal demo runtime.'): RuntimeAsset {
+function asset(folder: string, file: string, type: string, ratio: string, qc = 'B: generated and wired for BidKing runtime.'): RuntimeAsset {
   return {
     path: artPath(folder, file, 'approved'),
     generatedPath: artPath(folder, file, 'generated'),

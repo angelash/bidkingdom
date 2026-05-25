@@ -19,8 +19,8 @@ describe('BidKing Pay runtime helpers', () => {
       orderDescriptionKey: 'pay_orderdesc_1',
       iconKey: 'ui_purchase_pic_1',
       steamDescriptionKey: 'pay_steamdesc_1',
-      serviceMode: 'local_simulated_payment',
-      serviceModeLabel: '本地模拟支付到账'
+      serviceMode: 'external_payment_metadata',
+      serviceModeLabel: '外部支付元数据'
     }));
     expect(sixth.totalCoins).toBe(70750);
     expect(sixth.rmb).toBe(9999);

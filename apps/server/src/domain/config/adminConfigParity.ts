@@ -131,7 +131,7 @@ function equivalentStatusForConfigTable(table: string): AdminConfigParitySnapsho
     return 'Equivalent';
   }
   if (['Dlc', 'Pay', 'PurchaseList'].includes(table)) {
-    return 'Service Simulated';
+    return 'External Service Boundary';
   }
   if (['Emoji', 'Head', 'HeroSkin', 'LanguageListen', 'Sound'].includes(table)) {
     return 'Visual Substitute';

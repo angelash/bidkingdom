@@ -5,7 +5,6 @@ import { inventoryQuantity } from '../profile/profileInventory';
 import { lastSubmittedBidAmount } from './BattlePanels';
 import type { EquippedBattleItemView } from './MatchShell';
 import { buildBattleItemActionState } from './battleItemUi';
-import { calculateRecommendedBid } from './bidRecommendation';
 
 interface UseMatchDerivedStateArgs {
   now: number;
@@ -19,13 +18,11 @@ interface UseMatchDerivedStateArgs {
 export interface MatchDerivedState {
   canBid: boolean;
   canUseBattleItem: boolean;
-  canUseSkill: boolean;
   currentRound?: NonNullable<PlayerSnapshot['public']['currentRound']>;
   equippedBattleItems: EquippedBattleItemView[];
   isHost: boolean;
   phaseRemaining: number;
   previousSelfBid?: number;
-  recommendedBid?: { safePrice: number; reason: string };
   selectedSkillTargetId?: string;
   selfPlayer?: PublicPlayer;
   showAuctioneerReveal: boolean;
@@ -53,24 +50,15 @@ export function useMatchDerivedState({
     ? selfPlayer.bidRanks?.find((entry) => entry.round === currentRound.index + 1)
     : undefined;
   const selfAlreadyActed = Boolean(selfPlayer?.passed || selfPlayer?.hasSubmittedBid || selfCurrentBidRound?.submitted);
-  const isBidKingCoreRound = Boolean(currentRound?.container.templateId.startsWith('bidmap_'));
   const canBid = Boolean(currentRound?.phase === 'auction' && !selfAlreadyActed);
-  const canUseSkill = Boolean(
-    currentRound &&
-    !isBidKingCoreRound &&
-    ['intel', 'auction'].includes(currentRound.phase) &&
-    !(currentRound.phase === 'auction' && selfAlreadyActed) &&
-    !snapshot?.private?.skillUsedThisRound &&
-    snapshot?.private?.skillCooldown === 0 &&
-    (snapshot?.private?.skillUsesRemaining ?? 0) > 0
-  );
+  const showMapIntro = Boolean(currentRound && ['warehouse_roll', 'warehouse_selected'].includes(currentRound.phase));
+  const showAuctioneerReveal = Boolean(currentRound?.phase === 'auctioneer_reveal');
   const canUseBattleItem = Boolean(
     currentRound &&
     ['intel', 'auction'].includes(currentRound.phase) &&
     !(currentRound.phase === 'auction' && selfAlreadyActed) &&
     (snapshot?.private?.battleItemUsesRemainingThisRound ?? 1) > 0
   );
-  const recommendedBid = snapshot ? calculateRecommendedBid(snapshot) : undefined;
   const skillTargets = snapshot?.public.players.filter((player) => player.id !== selfPlayer?.id) ?? [];
   const selectedSkillTargetId = skillTargets.some((player) => player.id === skillTargetId) ? skillTargetId : skillTargets[0]?.id;
   const equippedBattleItems = profile.equippedBattleItems
@@ -101,17 +89,15 @@ export function useMatchDerivedState({
   return {
     canBid,
     canUseBattleItem,
-    canUseSkill,
     currentRound,
     equippedBattleItems,
     isHost,
     phaseRemaining,
     previousSelfBid,
-    recommendedBid,
     selectedSkillTargetId,
     selfPlayer,
-    showAuctioneerReveal: currentRound?.phase === 'auctioneer_reveal',
-    showMapIntro: Boolean(currentRound && ['warehouse_roll', 'warehouse_selected'].includes(currentRound.phase)),
+    showAuctioneerReveal,
+    showMapIntro,
     skillTargets
   };
 }

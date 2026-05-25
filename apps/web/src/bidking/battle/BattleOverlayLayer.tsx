@@ -17,7 +17,6 @@ interface BattleOverlayLayerProps {
   liveIntelOpen: boolean;
   liveIntelSeed?: LiveIntelSeed;
   previousBid?: number;
-  recommendedBid?: number;
   onBackspaceBid: () => void;
   onCancelBidComposer: () => void;
   onCancelConfirmBid: () => void;
@@ -29,7 +28,6 @@ interface BattleOverlayLayerProps {
   onRequestBidConfirm: () => void;
   onSetBidToMax: () => void;
   onSetBidToMinimum: () => void;
-  onUseRecommendedBid: () => void;
   onToggleBidHidden: () => void;
   onUsePreviousBid: (amount: number) => void;
 }
@@ -46,7 +44,6 @@ export function BattleOverlayLayer({
   liveIntelOpen,
   liveIntelSeed,
   previousBid,
-  recommendedBid,
   onBackspaceBid,
   onCancelBidComposer,
   onCancelConfirmBid,
@@ -58,7 +55,6 @@ export function BattleOverlayLayer({
   onRequestBidConfirm,
   onSetBidToMax,
   onSetBidToMinimum,
-  onUseRecommendedBid,
   onToggleBidHidden,
   onUsePreviousBid
 }: BattleOverlayLayerProps): JSX.Element {
@@ -72,7 +68,6 @@ export function BattleOverlayLayer({
           canConfirm={bidDraftValid}
           error={bidDraftError}
           previousBid={previousBid}
-          recommendedBid={recommendedBid}
           round={currentRound}
           onPress={onPressBidKey}
           onBackspace={onBackspaceBid}
@@ -80,7 +75,6 @@ export function BattleOverlayLayer({
           onDouble={onDoubleBid}
           onUseMax={onSetBidToMax}
           onUseMinimum={onSetBidToMinimum}
-          onUseRecommended={onUseRecommendedBid}
           onToggleHidden={onToggleBidHidden}
           onUsePrevious={onUsePreviousBid}
           onCancel={onCancelBidComposer}

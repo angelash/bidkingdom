@@ -40,7 +40,6 @@ interface LiveIntelModalProps {
 
 interface MarketIntelPanelProps {
   snapshot: PlayerSnapshot;
-  recommendedBid?: { safePrice: number; reason: string };
 }
 
 const intelCategoryOptions = bidKingItemTypes
@@ -162,21 +161,19 @@ export function LiveIntelModal({
   );
 }
 
-export function MarketIntelPanel({
-  snapshot,
-  recommendedBid
-}: MarketIntelPanelProps): JSX.Element {
+export function MarketIntelPanel({ snapshot }: MarketIntelPanelProps): JSX.Element {
   const round = snapshot.public.currentRound;
   if (!round) {
     return <></>;
   }
+  const showEstimate = !round.container.estimateHidden;
   const publicClues = round.publicClues.slice(-4);
   const privateClues = (snapshot.private?.privateClues ?? []).slice(-3);
   return (
     <section className="market-intel-panel">
       <div className="intel-header">
         <span>{round.container.tags.join(' / ')}</span>
-          <strong>当前仓估中值：{Math.round((round.container.estimateMin + round.container.estimateMax) / 2).toLocaleString()}</strong>
+          <strong>{showEstimate ? `当前仓估中值：${Math.round((round.container.estimateMin + round.container.estimateMax) / 2).toLocaleString()}` : round.container.name}</strong>
       </div>
       <div className="intel-list">
         {publicClues.map((clue) => (
@@ -192,13 +189,6 @@ export function MarketIntelPanel({
           </p>
         ))}
       </div>
-      {recommendedBid && (
-        <div className="intel-recommend">
-          <span>建议上限</span>
-          <strong>{recommendedBid.safePrice.toLocaleString()}</strong>
-          <em>{recommendedBid.reason}</em>
-        </div>
-      )}
     </section>
   );
 }
@@ -247,8 +237,7 @@ function clueSourceName(source: string): string {
   const names: Record<string, string> = {
     public: '公共',
     private: '私有',
-    skill: '掌眼',
-    rumor: '传言'
+    skill: '掌眼'
   };
   return names[source] ?? source;
 }
@@ -275,8 +264,7 @@ function rarityName(rarity: Rarity): string {
     common: '普通',
     fine: '精品',
     rare: '稀有',
-    legendary: '传说',
-    fake: '特殊'
+    legendary: '传说'
   };
   return names[rarity];
 }

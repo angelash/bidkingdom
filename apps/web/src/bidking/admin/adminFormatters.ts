@@ -37,11 +37,7 @@ export function eventName(type: string): string {
 
 export function transactionName(reason: string): string {
   const names: Record<string, string> = {
-    auction_deposit_paid: '支付押金',
-    auction_deposit_refund: '退回押金',
-    auction_payment: '成交付款',
-    repair_cost_paid: '支付修复费',
-    insurance_refund: '保险返还'
+    auction_payment: '成交付款'
   };
   return names[reason] ?? reason;
 }
@@ -50,8 +46,7 @@ export function clueSourceName(source: string): string {
   const names: Record<string, string> = {
     public: '公共',
     private: '私有',
-    skill: '掌眼',
-    rumor: '传言'
+    skill: '掌眼'
   };
   return names[source] ?? source;
 }
@@ -192,7 +187,6 @@ function targetModeName(mode: string): string {
   const names: Record<string, string> = {
     highest_value: '高价值优先',
     largest_slots: '大格位优先',
-    risk_first: '风险优先',
     skill_target: '指定目标',
     system_effect: '系统效果'
   };
@@ -202,9 +196,9 @@ function targetModeName(mode: string): string {
 export function phaseName(phase: string): string {
   const names: Record<string, string> = {
     container: '看货',
-    warehouse_roll: '随机仓',
+    warehouse_roll: '场景轮选',
     warehouse_selected: '仓型确认',
-    auctioneer_reveal: '掌眼情报',
+    auctioneer_reveal: '竞拍信息',
     intel: '情报',
     auction: '竞价',
     reveal: '开箱',
@@ -217,10 +211,7 @@ export function phaseName(phase: string): string {
 export function auctionModeName(mode: string): string {
   const names: Record<string, string> = {
     open: '明拍',
-    sealed: '暗拍',
-    second_price: '次高价',
-    deposit_open: '押金明拍',
-    flash: '闪拍'
+    sealed: '暗拍'
   };
   return names[mode] ?? mode;
 }

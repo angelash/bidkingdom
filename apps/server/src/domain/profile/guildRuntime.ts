@@ -1,7 +1,6 @@
-import { GuildArea, GuildPermissions, GuildPoints, GuildResources, Head } from '@bitkingdom/bidking-compat';
+import { GuildArea, GuildPermissions, GuildPoints, GuildResources } from '@bitkingdom/bidking-compat';
 import type { GuildMemberState, PlayerProfile, ProfileTransaction } from '@bitkingdom/shared';
 import { sanitizeText } from '../system/textGuard';
-import { languageNameFromSeed } from './languageNameRuntime';
 import { parseNumberArray } from './profileNumber';
 
 export type GuildTransactionRecorder = (
@@ -45,30 +44,6 @@ export function guildPointsForDonation(amount: number): number {
     return Math.floor(configured);
   }
   return Math.max(1, Math.floor(amount / 100));
-}
-
-export function addDemoFriendToProfile(profile: PlayerProfile, recordTransaction?: GuildTransactionRecorder): boolean {
-  const before = profile.friends.length;
-  let index = before + 1;
-  while (profile.friends.some((friend) => friend.id === `friend_${index}`)) {
-    index += 1;
-  }
-  const head = Head[index % Math.max(1, Head.length)];
-  const area = GuildArea[index % Math.max(1, GuildArea.length)];
-  const friendId = `friend_${index}`;
-  if (profile.friends.some((friend) => friend.id === friendId)) {
-    return false;
-  }
-  profile.friends.push({
-    id: friendId,
-    name: languageNameFromSeed(index),
-    headId: head?.id ?? '0',
-    areaId: area?.id ?? '0',
-    createdAt: Date.now()
-  });
-  recordTransaction?.(profile, `friend_add:${profile.playerId}:${friendId}:${Date.now()}`, 'friend_add', 'task', before, 1);
-  profile.updatedAt = Date.now();
-  return true;
 }
 
 export function removeFriendFromProfile(
@@ -152,42 +127,6 @@ export function joinGuildForProfile(
   }
   profile.updatedAt = Date.now();
   return changed;
-}
-
-export function addDemoGuildApplicationForProfile(
-  profile: PlayerProfile,
-  recordTransaction: GuildTransactionRecorder
-): boolean {
-  if (!profile.guildMembership) {
-    joinGuildForProfile(profile);
-  }
-  const membership = profile.guildMembership!;
-  membership.permissions = guildPermissionFlags(membership.roleId);
-  if (!membership.permissions.approveMember) {
-    throw new Error('协会权限不足');
-  }
-  membership.pendingApplications ??= [];
-  membership.members = ensureGuildMembers(profile, membership.areaId, membership.members);
-  let index = membership.pendingApplications.length + membership.members.length + 1;
-  while (
-    membership.pendingApplications.some((member) => member.playerId === `guild_applicant_${index}`) ||
-    membership.members.some((member) => member.playerId === `guild_applicant_${index}`)
-  ) {
-    index += 1;
-  }
-  const application: GuildMemberState = {
-    playerId: `guild_applicant_${index}`,
-    name: languageNameFromSeed(20_000 + index),
-    roleId: '3',
-    areaId: membership.areaId,
-    points: 0,
-    status: 'pending',
-    requestedAt: Date.now()
-  };
-  membership.pendingApplications.push(application);
-  recordTransaction(profile, `guild_application:${profile.playerId}:${application.playerId}:${application.requestedAt}`, 'guild_member_apply', 'task', 0, 1);
-  profile.updatedAt = Date.now();
-  return true;
 }
 
 export function approveGuildMemberForProfile(

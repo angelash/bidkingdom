@@ -12,8 +12,8 @@ describe('BidKing Dlc runtime helpers', () => {
       platformSku: '4464600',
       typeCode: 2,
       mailTemplateId: '110',
-      serviceMode: 'local_simulated_platform_unlock',
-      serviceModeLabel: '本地模拟平台解锁',
+      serviceMode: 'external_platform_entitlement',
+      serviceModeLabel: '外部平台权益',
       price: 0
     }));
     expect(runtime.rewardRows).toEqual([[5, 7101, 2], [1, 2, 200], [1, 1, 2000000]]);

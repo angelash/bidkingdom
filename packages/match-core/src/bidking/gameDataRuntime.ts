@@ -263,7 +263,9 @@ function battleItemEventSkillLogs(state: MatchRuntimeState, round: RuntimeRound)
       const targetItemIds = eventTargetItemIds(payload?.entry);
       const hitSlots = targetItemIds.length > 0
         ? slotsForTargetItemIds(round, targetItemIds)
-        : round.container.warehouseSlots.slice(0, Math.max(1, Math.min(targetCount, round.container.warehouseSlots.length)));
+        : targetCount > 0
+          ? round.container.warehouseSlots.slice(0, Math.max(1, Math.min(targetCount, round.container.warehouseSlots.length)))
+          : [];
       const hitBoxList = eventHitBoxList(payload?.entry)
         ?? hitSlots.map((slot, slotIndex) => boxInfoForSlot(slot, round, slotIndex));
       const hitStats = skillLogHitStatsForSlots(hitSlots);
@@ -492,8 +494,6 @@ function qualityFromItem(item: RevealedItem): number {
       return 3;
     case 'common':
       return 2;
-    case 'fake':
-      return 0;
     case 'junk':
     default:
       return 1;

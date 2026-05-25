@@ -25,8 +25,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100101",
     "item_desc": "battle_item_desc_100101",
     "skill_group": 2,
-    "packaged_name": "验伪灯100101",
-    "packaged_desc": "验伪灯：原局内拍卖辅助道具，品质 2，类型 2。"
+    "packaged_name": "观局灯100101",
+    "packaged_desc": "观局灯：原局内拍卖辅助道具，品质 2，类型 2。"
   },
   {
     "id": 100102,
@@ -77,8 +77,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100105",
     "item_desc": "battle_item_desc_100105",
     "skill_group": 3,
-    "packaged_name": "传闻札100105",
-    "packaged_desc": "传闻札：原局内拍卖辅助道具，品质 2，类型 3。"
+    "packaged_name": "观局札100105",
+    "packaged_desc": "观局札：原局内拍卖辅助道具，品质 2，类型 3。"
   },
   {
     "id": 100106,
@@ -90,8 +90,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100106",
     "item_desc": "battle_item_desc_100106",
     "skill_group": 3,
-    "packaged_name": "修缮券100106",
-    "packaged_desc": "修缮券：原局内拍卖辅助道具，品质 3，类型 3。"
+    "packaged_name": "稳盘券100106",
+    "packaged_desc": "稳盘券：原局内拍卖辅助道具，品质 3，类型 3。"
   },
   {
     "id": 100107,
@@ -129,8 +129,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100110",
     "item_desc": "battle_item_desc_100110",
     "skill_group": 4,
-    "packaged_name": "验伪灯100110",
-    "packaged_desc": "验伪灯：原局内拍卖辅助道具，品质 2，类型 4。"
+    "packaged_name": "观局灯100110",
+    "packaged_desc": "观局灯：原局内拍卖辅助道具，品质 2，类型 4。"
   },
   {
     "id": 100111,
@@ -181,8 +181,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100114",
     "item_desc": "battle_item_desc_100114",
     "skill_group": 4,
-    "packaged_name": "传闻札100114",
-    "packaged_desc": "传闻札：原局内拍卖辅助道具，品质 5，类型 4。"
+    "packaged_name": "观局札100114",
+    "packaged_desc": "观局札：原局内拍卖辅助道具，品质 5，类型 4。"
   },
   {
     "id": 100115,
@@ -194,8 +194,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100115",
     "item_desc": "battle_item_desc_100115",
     "skill_group": 5,
-    "packaged_name": "修缮券100115",
-    "packaged_desc": "修缮券：原局内拍卖辅助道具，品质 4，类型 5。"
+    "packaged_name": "稳盘券100115",
+    "packaged_desc": "稳盘券：原局内拍卖辅助道具，品质 4，类型 5。"
   },
   {
     "id": 100116,
@@ -233,8 +233,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100118",
     "item_desc": "battle_item_desc_100118",
     "skill_group": 5,
-    "packaged_name": "验伪灯100118",
-    "packaged_desc": "验伪灯：原局内拍卖辅助道具，品质 3，类型 5。"
+    "packaged_name": "观局灯100118",
+    "packaged_desc": "观局灯：原局内拍卖辅助道具，品质 3，类型 5。"
   },
   {
     "id": 100119,
@@ -285,8 +285,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100122",
     "item_desc": "battle_item_desc_100122",
     "skill_group": 6,
-    "packaged_name": "传闻札100122",
-    "packaged_desc": "传闻札：原局内拍卖辅助道具，品质 1，类型 6。"
+    "packaged_name": "观局札100122",
+    "packaged_desc": "观局札：原局内拍卖辅助道具，品质 1，类型 6。"
   },
   {
     "id": 100123,
@@ -298,8 +298,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100123",
     "item_desc": "battle_item_desc_100123",
     "skill_group": 6,
-    "packaged_name": "修缮券100123",
-    "packaged_desc": "修缮券：原局内拍卖辅助道具，品质 2，类型 6。"
+    "packaged_name": "稳盘券100123",
+    "packaged_desc": "稳盘券：原局内拍卖辅助道具，品质 2，类型 6。"
   },
   {
     "id": 100124,
@@ -337,8 +337,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100126",
     "item_desc": "battle_item_desc_100126",
     "skill_group": 6,
-    "packaged_name": "验伪灯100126",
-    "packaged_desc": "验伪灯：原局内拍卖辅助道具，品质 6，类型 6。"
+    "packaged_name": "观局灯100126",
+    "packaged_desc": "观局灯：原局内拍卖辅助道具，品质 6，类型 6。"
   },
   {
     "id": 100127,
@@ -389,8 +389,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100130",
     "item_desc": "battle_item_desc_100130",
     "skill_group": 1,
-    "packaged_name": "传闻札100130",
-    "packaged_desc": "传闻札：原局内拍卖辅助道具，品质 4，类型 1。"
+    "packaged_name": "观局札100130",
+    "packaged_desc": "观局札：原局内拍卖辅助道具，品质 4，类型 1。"
   },
   {
     "id": 100131,
@@ -402,8 +402,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100131",
     "item_desc": "battle_item_desc_100131",
     "skill_group": 1,
-    "packaged_name": "修缮券100131",
-    "packaged_desc": "修缮券：原局内拍卖辅助道具，品质 5，类型 1。"
+    "packaged_name": "稳盘券100131",
+    "packaged_desc": "稳盘券：原局内拍卖辅助道具，品质 5，类型 1。"
   },
   {
     "id": 100132,
@@ -441,8 +441,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100134",
     "item_desc": "battle_item_desc_100134",
     "skill_group": 7,
-    "packaged_name": "验伪灯100134",
-    "packaged_desc": "验伪灯：原局内拍卖辅助道具，品质 6，类型 7。"
+    "packaged_name": "观局灯100134",
+    "packaged_desc": "观局灯：原局内拍卖辅助道具，品质 6，类型 7。"
   },
   {
     "id": 100135,
@@ -493,8 +493,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100138",
     "item_desc": "battle_item_desc_100138",
     "skill_group": 7,
-    "packaged_name": "传闻札100138",
-    "packaged_desc": "传闻札：原局内拍卖辅助道具，品质 4，类型 7。"
+    "packaged_name": "观局札100138",
+    "packaged_desc": "观局札：原局内拍卖辅助道具，品质 4，类型 7。"
   },
   {
     "id": 100139,
@@ -506,8 +506,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100139",
     "item_desc": "battle_item_desc_100139",
     "skill_group": 7,
-    "packaged_name": "修缮券100139",
-    "packaged_desc": "修缮券：原局内拍卖辅助道具，品质 4，类型 7。"
+    "packaged_name": "稳盘券100139",
+    "packaged_desc": "稳盘券：原局内拍卖辅助道具，品质 4，类型 7。"
   },
   {
     "id": 100140,
@@ -545,8 +545,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100152",
     "item_desc": "battle_item_desc_100152",
     "skill_group": 2,
-    "packaged_name": "验伪灯100152",
-    "packaged_desc": "验伪灯：原局内拍卖辅助道具，品质 3，类型 2。"
+    "packaged_name": "观局灯100152",
+    "packaged_desc": "观局灯：原局内拍卖辅助道具，品质 3，类型 2。"
   },
   {
     "id": 100153,
@@ -597,8 +597,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100156",
     "item_desc": "battle_item_desc_100156",
     "skill_group": 2,
-    "packaged_name": "传闻札100156",
-    "packaged_desc": "传闻札：原局内拍卖辅助道具，品质 3，类型 2。"
+    "packaged_name": "观局札100156",
+    "packaged_desc": "观局札：原局内拍卖辅助道具，品质 3，类型 2。"
   },
   {
     "id": 100157,
@@ -610,8 +610,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100157",
     "item_desc": "battle_item_desc_100157",
     "skill_group": 2,
-    "packaged_name": "修缮券100157",
-    "packaged_desc": "修缮券：原局内拍卖辅助道具，品质 3，类型 2。"
+    "packaged_name": "稳盘券100157",
+    "packaged_desc": "稳盘券：原局内拍卖辅助道具，品质 3，类型 2。"
   },
   {
     "id": 100158,
@@ -649,8 +649,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100160",
     "item_desc": "battle_item_desc_100160",
     "skill_group": 2,
-    "packaged_name": "验伪灯100160",
-    "packaged_desc": "验伪灯：原局内拍卖辅助道具，品质 3，类型 2。"
+    "packaged_name": "观局灯100160",
+    "packaged_desc": "观局灯：原局内拍卖辅助道具，品质 3，类型 2。"
   },
   {
     "id": 100174,
@@ -701,8 +701,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100163",
     "item_desc": "battle_item_desc_100163",
     "skill_group": 6,
-    "packaged_name": "传闻札100163",
-    "packaged_desc": "传闻札：原局内拍卖辅助道具，品质 4，类型 6。"
+    "packaged_name": "观局札100163",
+    "packaged_desc": "观局札：原局内拍卖辅助道具，品质 4，类型 6。"
   },
   {
     "id": 100164,
@@ -714,8 +714,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100164",
     "item_desc": "battle_item_desc_100164",
     "skill_group": 1,
-    "packaged_name": "修缮券100164",
-    "packaged_desc": "修缮券：原局内拍卖辅助道具，品质 5，类型 1。"
+    "packaged_name": "稳盘券100164",
+    "packaged_desc": "稳盘券：原局内拍卖辅助道具，品质 5，类型 1。"
   },
   {
     "id": 100165,
@@ -753,8 +753,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100167",
     "item_desc": "battle_item_desc_100167",
     "skill_group": 6,
-    "packaged_name": "验伪灯100167",
-    "packaged_desc": "验伪灯：原局内拍卖辅助道具，品质 3，类型 6。"
+    "packaged_name": "观局灯100167",
+    "packaged_desc": "观局灯：原局内拍卖辅助道具，品质 3，类型 6。"
   },
   {
     "id": 100168,
@@ -805,8 +805,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100171",
     "item_desc": "battle_item_desc_100171",
     "skill_group": 8,
-    "packaged_name": "传闻札100171",
-    "packaged_desc": "传闻札：原局内拍卖辅助道具，品质 4，类型 8。"
+    "packaged_name": "观局札100171",
+    "packaged_desc": "观局札：原局内拍卖辅助道具，品质 4，类型 8。"
   },
   {
     "id": 100172,
@@ -818,8 +818,8 @@ export const BattleItem: BidKingBattleItemRow[] = [
     "item_name": "battle_item_name_100172",
     "item_desc": "battle_item_desc_100172",
     "skill_group": 8,
-    "packaged_name": "修缮券100172",
-    "packaged_desc": "修缮券：原局内拍卖辅助道具，品质 4，类型 8。"
+    "packaged_name": "稳盘券100172",
+    "packaged_desc": "稳盘券：原局内拍卖辅助道具，品质 4，类型 8。"
   },
   {
     "id": 100173,

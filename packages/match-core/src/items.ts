@@ -20,8 +20,8 @@ import { bidKingSkillEffectRuntimeProfile } from './bidking/skillEffectRuntime';
 import { pushEvent, requirePlayer, requireRound } from './match';
 import type { MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } from './types';
 
-export type BattleItemRevealKind = 'value' | 'risk' | 'category' | 'quality' | 'quantity' | 'footprint' | 'identity' | 'system';
-export type BattleItemTargetMode = 'skill_target' | 'highest_value' | 'risk_first' | 'largest_slots' | 'system_effect';
+export type BattleItemRevealKind = 'value' | 'category' | 'quality' | 'quantity' | 'footprint' | 'identity' | 'system';
+export type BattleItemTargetMode = 'skill_target' | 'highest_value' | 'largest_slots' | 'system_effect';
 export type BattleItemEffectImplementationStatus = 'implemented' | 'simplified';
 
 export interface BattleItemEffectPlan {
@@ -249,7 +249,7 @@ export function battleItemEffectPlanForItem(
     targetPlayerRequired: false,
     targetBoxRequired: Boolean(skill && bidKingSkillRequiresTargetBox(skill)),
     valueHint: revealKind === 'value',
-    riskHint: revealKind === 'risk',
+    riskHint: false,
     categoryHint: revealKind === 'category',
     qualityHint: revealKind === 'quality',
     quantityHint: revealKind === 'quantity' || revealKind === 'footprint',
@@ -272,8 +272,6 @@ function buildBattleItemClue(
   const round = requireRound(state);
   const targetItems = targets.map((slot) => slot.item);
   const prefix = `battle_item_${item.id}_${playerId}_${round.index}_${now}`;
-  const itemName = bidKingBattleItemDisplayName(item);
-  const skillName = skillContext.skill ? bidKingSkillDisplayName(skillContext.skill) : undefined;
   const targetItemIds = targetItems.map((target) => target.id);
   const sourceText = battleItemClueTextForPlan(item, skillContext, effectPlan, targets);
   if (effectPlan.revealKind === 'value') {
@@ -301,6 +299,18 @@ function buildBattleItemClue(
     };
   }
   const target = targetItems[0] ?? round.container.hiddenItems[0]!;
+  if (targetItems.length === 0) {
+    return {
+      id: prefix,
+      kind: 'category',
+      text: sourceText,
+      accuracy: Math.min(0.95, 0.62 + item.item_quality * 0.05),
+      targetItemIds: [],
+      riskHint: 'safe',
+      source: 'skill',
+      isTruthful: true
+    };
+  }
   if (effectPlan.revealKind === 'identity') {
     return {
       id: prefix,
@@ -309,22 +319,19 @@ function buildBattleItemClue(
       accuracy: Math.min(0.97, 0.7 + item.item_quality * 0.045),
       targetItemId: target.id,
       targetItemIds: targetItemIds.length > 0 ? targetItemIds : [target.id],
-      riskHint: target.isFake ? 'fake' : target.repairCost > 0 ? 'repair' : 'safe',
+      riskHint: 'safe',
       source: 'skill',
       isTruthful: true
     };
   }
-  const riskHint = target.isFake ? 'fake' : target.repairCost > 0 ? 'repair' : 'safe';
   return {
     id: prefix,
-    kind: effectPlan.revealKind === 'risk' ? 'risk' : 'category',
-    text: effectPlan.revealKind === 'risk'
-      ? `${itemName}·${skillName ?? '验伪'}：命中格位风险为${riskHint === 'fake' ? '赝品风险' : riskHint === 'repair' ? '修复风险' : '安全'}，品类 ${target.category}。`
-      : sourceText,
+    kind: 'category',
+    text: sourceText,
     accuracy: Math.min(0.95, 0.62 + item.item_quality * 0.05),
     targetItemId: target.id,
     targetItemIds: targetItemIds.length > 0 ? targetItemIds : [target.id],
-    riskHint,
+    riskHint: 'safe',
     source: 'skill',
     isTruthful: true
   };
@@ -353,12 +360,6 @@ function battleItemTargets(
   }
   if (effectPlan.targetMode === 'highest_value') {
     return slots.sort((left, right) => right.item.value - left.item.value).slice(0, count === 999 ? slots.length : count);
-  }
-  if (effectPlan.targetMode === 'risk_first') {
-    const risky = slots
-      .filter((slot) => slot.item.isFake || slot.item.repairCost > 0)
-      .sort((left, right) => Number(right.item.isFake) - Number(left.item.isFake) || right.item.repairCost - left.item.repairCost);
-    return (risky.length > 0 ? risky : slots.sort((left, right) => right.item.value - left.item.value)).slice(0, count === 999 ? slots.length : count);
   }
   return slots.sort((left, right) => (right.w * right.h) - (left.w * left.h)).slice(0, count === 999 ? slots.length : count);
 }
@@ -418,7 +419,7 @@ function battleItemEffectName(item: BidKingBattleItemRow, skillContext: BattleIt
     return '估值掌眼';
   }
   if (item.battle_item_type === 3) {
-    return '风险验伪';
+    return '格位观察';
   }
   return '格位侦察';
 }
@@ -451,9 +452,6 @@ function battleItemRevealKind(item: BidKingBattleItemRow, effectCategory: number
   if (item.battle_item_type === 2) {
     return 'value';
   }
-  if (item.battle_item_type === 3) {
-    return 'risk';
-  }
   return 'category';
 }
 
@@ -470,9 +468,6 @@ function battleItemTargetMode(
   }
   if (revealKind === 'value' || item.battle_item_type === 2) {
     return 'highest_value';
-  }
-  if (revealKind === 'risk' || item.battle_item_type === 3) {
-    return 'risk_first';
   }
   return 'largest_slots';
 }
@@ -517,9 +512,6 @@ function battleItemEffectDescription(
 function battleItemRevealLabel(revealKind: BattleItemRevealKind): string {
   if (revealKind === 'value') {
     return '估值';
-  }
-  if (revealKind === 'risk') {
-    return '风险';
   }
   if (revealKind === 'quality') {
     return '品质';

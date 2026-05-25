@@ -91,17 +91,10 @@ export function MainHallRoute({
       onEquipBattleItems={profileActions.equipBattleItems}
       onClaimActivityReward={profileActions.claimActivityReward}
       onClaimGiftPackage={profileActions.claimGiftPackage}
-      onCreateDemoPayOrder={profileActions.createDemoPayOrder}
-      onCompleteDemoPayOrder={profileActions.completeDemoPayOrder}
-      onCancelDemoPayOrder={profileActions.cancelDemoPayOrder}
-      onCompletePurchaseListOrder={profileActions.completePurchaseListOrder}
-      onUnlockDemoDlc={profileActions.unlockDemoDlc}
-      onAddDemoFriend={profileActions.addDemoFriend}
       onRemoveFriend={profileActions.removeFriend}
       onSetFriendRemark={profileActions.setFriendRemark}
       onJoinGuild={profileActions.joinGuild}
       onSetGuildRole={profileActions.setGuildRole}
-      onAddDemoGuildApplication={profileActions.addDemoGuildApplication}
       onApproveGuildMember={profileActions.approveGuildMember}
       onKickGuildMember={profileActions.kickGuildMember}
       onUpdateGuildNotice={profileActions.updateGuildNotice}

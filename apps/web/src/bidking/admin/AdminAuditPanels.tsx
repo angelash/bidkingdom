@@ -96,15 +96,15 @@ export function AdminConfigParityPanel({ snapshot }: { snapshot: AdminConfigPari
   const visibleRows = snapshot.rows.slice(0, 8);
   const equivalentCount = snapshot.rows.filter((row) => row.equivalentStatus === 'Equivalent').length;
   const visualSubstituteCount = snapshot.rows.filter((row) => row.equivalentStatus === 'Visual Substitute').length;
-  const serviceSimulatedCount = snapshot.rows.filter((row) => row.equivalentStatus === 'Service Simulated').length;
+  const externalServiceCount = snapshot.rows.filter((row) => row.equivalentStatus === 'External Service Boundary').length;
   const manualReviewCount = snapshot.rows.filter((row) => row.equivalentStatus === 'Manual Review Required').length;
   const visualSubstituteTables = snapshot.rows
     .filter((row) => row.equivalentStatus === 'Visual Substitute')
     .map((row) => row.table)
     .sort((left, right) => left.localeCompare(right))
     .join(' / ');
-  const serviceSimulatedTables = snapshot.rows
-    .filter((row) => row.equivalentStatus === 'Service Simulated')
+  const externalServiceTables = snapshot.rows
+    .filter((row) => row.equivalentStatus === 'External Service Boundary')
     .map((row) => row.table)
     .sort((left, right) => left.localeCompare(right))
     .join(' / ');
@@ -119,10 +119,10 @@ export function AdminConfigParityPanel({ snapshot }: { snapshot: AdminConfigPari
         <span>{snapshot.tableCount} 表 · {snapshot.totalRows.toLocaleString()} 行</span>
       </div>
       <p>
-        {equivalentCount} Equivalent · {visualSubstituteCount} Visual Substitute · {serviceSimulatedCount} Service Simulated · Manual Review {manualReviewCount}
+        {equivalentCount} Equivalent · {visualSubstituteCount} Visual Substitute · {externalServiceCount} External Service · Manual Review {manualReviewCount}
       </p>
       <p className="muted">Visual Substitute: {visualSubstituteTables || 'none'}</p>
-      <p className="muted">Service Simulated: {serviceSimulatedTables || 'none'}</p>
+      <p className="muted">External Service: {externalServiceTables || 'none'}</p>
       {snapshot.failures.length > 0 && (
         <div className="admin-error">
           {snapshot.failures.slice(0, 3).map((failure) => <p key={failure}>{failure}</p>)}
@@ -212,7 +212,7 @@ export function AdminReviewSummaryPending(): ReactElement {
 export function AdminReviewChecklistPanel({ snapshot }: { snapshot: AdminConfigParitySnapshot }): ReactElement {
   const equivalentTables = snapshot.rows.filter((row) => row.equivalentStatus === 'Equivalent').length;
   const visualSubstituteTables = snapshot.rows.filter((row) => row.equivalentStatus === 'Visual Substitute').length;
-  const serviceSimulatedTables = snapshot.rows.filter((row) => row.equivalentStatus === 'Service Simulated').length;
+  const externalServiceTables = snapshot.rows.filter((row) => row.equivalentStatus === 'External Service Boundary').length;
   const manualReviewTables = snapshot.rows.filter((row) => row.equivalentStatus === 'Manual Review Required').length;
   const uiWndCount = snapshot.rows.find((row) => row.table === 'UIWnd')?.actualRows ?? 0;
   const checklist = [
@@ -223,13 +223,13 @@ export function AdminReviewChecklistPanel({ snapshot }: { snapshot: AdminConfigP
     },
     {
       label: '配置分类',
-      detail: `${equivalentTables} Equivalent · ${visualSubstituteTables} Visual · ${serviceSimulatedTables} Service · ${manualReviewTables} manual`,
+      detail: `${equivalentTables} Equivalent · ${visualSubstituteTables} Visual · ${externalServiceTables} External · ${manualReviewTables} manual`,
       status: manualReviewTables === 0 ? 'PASS' : 'BLOCKED'
     },
     {
       label: '替代边界',
-      detail: `${visualSubstituteTables + serviceSimulatedTables} boundary records · clean-room`,
-      status: visualSubstituteTables + serviceSimulatedTables === 8 ? 'PASS' : 'ATTENTION'
+      detail: `${visualSubstituteTables + externalServiceTables} boundary records · clean-room`,
+      status: visualSubstituteTables + externalServiceTables === 8 ? 'PASS' : 'ATTENTION'
     },
     {
       label: '验证命令',

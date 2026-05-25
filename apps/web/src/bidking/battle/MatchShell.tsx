@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { AlertTriangle, Archive, BadgeDollarSign, BookOpen, Gavel, Sparkles } from 'lucide-react';
+import { Archive, BadgeDollarSign, BookOpen, Gavel } from 'lucide-react';
 import {
   Emoji as bidKingEmojis,
   bidKingBattleItemDisplayName,
@@ -19,8 +19,7 @@ import {
   ProgressPanel,
   RareRevealBanner,
   RoundFeedbackPanel,
-  SettlementPanel,
-  TutorialPanel
+  SettlementPanel
 } from '../settlement/SettlementPanels';
 import {
   AuctioneerRevealOverlay,
@@ -46,22 +45,16 @@ export interface EquippedBattleItemView extends BattleItemActionState {
 interface MatchShellProps {
   canBid: boolean;
   canUseBattleItem: boolean;
-  canUseSkill: boolean;
   currentRound: NonNullable<PlayerSnapshot['public']['currentRound']>;
   equippedBattleItems: EquippedBattleItemView[];
   phaseRemaining: number;
   profile: PlayerProfile;
-  recommendedBid?: { safePrice: number; reason: string };
-  riskWarning: boolean;
   selectedSkillTargetId?: string;
   selfPlayer?: PublicPlayer;
   showAuctioneerReveal: boolean;
   showMapIntro: boolean;
   skillTargets: PublicPlayer[];
   snapshot: PlayerSnapshot;
-  tutorialDismissed: boolean;
-  onDismissTutorial: () => void;
-  onFillRecommendedBid: () => void;
   onInspectWarehouseSlot: (slot: WarehouseSlotView) => void;
   onOpenLiveIntel: () => void;
   onPassAuction: () => void;
@@ -69,43 +62,35 @@ interface MatchShellProps {
   onSendEmote: (emote: string) => void;
   onSubmitBid: () => void;
   onUseBattleItem: (itemId: number, targetPlayerId?: string) => void;
-  onUseSkill: () => void;
 }
 
 export function MatchShell({
   canBid,
   canUseBattleItem,
-  canUseSkill,
   currentRound,
   equippedBattleItems,
   phaseRemaining,
   profile,
-  recommendedBid,
-  riskWarning,
   selectedSkillTargetId,
   selfPlayer,
   showAuctioneerReveal,
   showMapIntro,
   skillTargets,
   snapshot,
-  tutorialDismissed,
-  onDismissTutorial,
-  onFillRecommendedBid,
   onInspectWarehouseSlot,
   onOpenLiveIntel,
   onPassAuction,
   onSelectSkillTarget,
   onSendEmote,
   onSubmitBid,
-  onUseBattleItem,
-  onUseSkill
+  onUseBattleItem
 }: MatchShellProps): JSX.Element {
   const emojiActions = bidKingEmojis.map((emoji) => ({
     emoji,
     presentation: bidKingEmojiPresentation(emoji),
     ...emojiButtonState(emoji, profile, selfPlayer)
   }));
-  const canSelectTarget = canUseSkill || equippedBattleItems.some((entry) => (
+  const canSelectTarget = equippedBattleItems.some((entry) => (
     entry.effectPlan?.targetPlayerRequired && entry.inventory > 0 && canUseBattleItem
   ));
 
@@ -116,6 +101,7 @@ export function MatchShell({
     >
       {showMapIntro && <MapIntroOverlay round={currentRound} />}
       {showAuctioneerReveal && <AuctioneerRevealOverlay round={currentRound} />}
+
       <aside className="player-rail">
         <PlayerGrid players={snapshot.public.players} selfPlayerId={selfPlayer?.id} compact roundIndex={currentRound.index} />
         <ProgressPanel snapshot={snapshot} />
@@ -135,14 +121,7 @@ export function MatchShell({
           )}
         </div>
         <CloseRuleLadder currentRound={currentRound.index} />
-        {!tutorialDismissed && (
-          <TutorialPanel
-            snapshot={snapshot}
-            recommendedBid={recommendedBid}
-            onDismiss={onDismissTutorial}
-          />
-        )}
-        <MarketIntelPanel snapshot={snapshot} recommendedBid={recommendedBid} />
+        <MarketIntelPanel snapshot={snapshot} />
         <SkillFeedPanel snapshot={snapshot} />
         <BidPanel players={snapshot.public.players} snapshot={snapshot} />
         <RoundFeedbackPanel players={snapshot.public.players} snapshot={snapshot} />
@@ -161,7 +140,9 @@ export function MatchShell({
         <div className={`warehouse-header risk-${currentRound.container.risk}`}>
           <span>{currentRound.container.source}</span>
           <strong>{currentRound.container.name}</strong>
-          <em>{currentRound.container.estimateMin.toLocaleString()} - {currentRound.container.estimateMax.toLocaleString()}</em>
+          {!currentRound.container.estimateHidden && (
+            <em>{currentRound.container.estimateMin.toLocaleString()} - {currentRound.container.estimateMax.toLocaleString()}</em>
+          )}
         </div>
         <LootRevealSummary round={currentRound} />
         <RareRevealBanner round={currentRound} />
@@ -174,9 +155,6 @@ export function MatchShell({
             <BadgeDollarSign size={18} />
             {selfPlayer?.cash.toLocaleString() ?? '-'}
           </div>
-          <button onClick={onFillRecommendedBid} disabled={!canBid || !recommendedBid}>
-            推荐价
-          </button>
           <button className="primary" onClick={onSubmitBid} disabled={!canBid}>
             <Gavel size={18} />
             出价
@@ -187,16 +165,12 @@ export function MatchShell({
             value={selectedSkillTargetId ?? ''}
             onChange={(event) => onSelectSkillTarget(event.target.value)}
             disabled={!canSelectTarget || skillTargets.length === 0}
-            title="掌眼/试宝令目标"
+            title="试宝令目标"
           >
             {skillTargets.map((player) => (
               <option value={player.id} key={player.id}>{player.name}</option>
             ))}
           </select>
-          <button onClick={onUseSkill} disabled={!canUseSkill}>
-            <Sparkles size={18} />
-            掌眼{snapshot.private ? `(${snapshot.private.skillUsesRemaining})` : ''}
-          </button>
           {equippedBattleItems.length > 0 && (
             <div className="battle-item-action-row">
               {equippedBattleItems.map((entry) => (
@@ -239,12 +213,6 @@ export function MatchShell({
               </button>
             ))}
           </div>
-          {riskWarning && (
-            <div className="risk-warning">
-              <AlertTriangle size={16} />
-              已超过安全价 {recommendedBid?.safePrice.toLocaleString()}
-            </div>
-          )}
         </section>
       )}
     </section>

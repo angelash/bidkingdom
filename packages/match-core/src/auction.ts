@@ -2,7 +2,7 @@ import type { BidRecord, RoundBidDecision, RoundBidFeedback, RoundSettlement } f
 import { getBidKingCloseThreshold } from '@bitkingdom/bidking-compat';
 import { reviewClues } from './clues';
 import { recordRoundHistory, setRoundPhase, pushEvent, requirePlayer, requireRound } from './match';
-import { calculateSetBonus, sumItemValue, sumRepairCost } from './scoring';
+import { calculateSetBonus, sumItemValue } from './scoring';
 import type { MatchRuntimeState, RuntimePlayer } from './types';
 
 export function submitBid(
@@ -41,11 +41,7 @@ export function submitBid(
     }
   }
 
-  const isOpenRound = round.auctionMode === 'open' || round.auctionMode === 'deposit_open';
-
-  if (round.auctionMode === 'deposit_open') {
-    ensureDeposit(state, player, now);
-  }
+  const isOpenRound = round.auctionMode === 'open';
 
   if (isOpenRound) {
     player.passed = false;
@@ -127,47 +123,27 @@ export function settleCurrentRound(state: MatchRuntimeState, now = Date.now()): 
   }
 
   const winner = winningBid ? requirePlayer(state, winningBid.playerId) : undefined;
-  const payment = winningBid ? calculatePayment(round.auctionMode, sortedBids, state.config.rules.minIncrement) : 0;
-  const depositValue = round.container.depositValue ?? state.config.rules.depositValue;
-  const winnerDepositCost = winner && round.depositPaidByPlayerId[winner.id] ? depositValue : 0;
+  const payment = winningBid ? calculatePayment(sortedBids) : 0;
   const trueValue = sumItemValue(round.container.hiddenItems);
-  const repairDiscount = winner?.roleId === 'restorer' ? 0.2 : 0;
-  const repairCost = winner ? sumRepairCost(round.container.hiddenItems, repairDiscount) : 0;
   const ownedWithWonItems = winner ? [...winner.holdings, ...round.container.hiddenItems] : [];
   const setBonus = winner ? calculateSetBonus(ownedWithWonItems, state.config) - calculateSetBonus(winner.holdings, state.config) : 0;
-  const rawProfit = winner ? trueValue + setBonus - payment - repairCost - winnerDepositCost : 0;
-  const refund = winner ? calculateInsuranceRefund(winner, rawProfit, state) : 0;
+  const profit = winner ? trueValue + setBonus - payment : 0;
 
-  const depositRefunds = refundDepositsForNonWinners(state, winner?.id, now);
   const participantRows = state.players.map((player) => {
-    const depositPaid = round.depositPaidByPlayerId[player.id] ? depositValue : 0;
-    const depositRefund = depositRefunds[player.id] ?? 0;
     const isWinner = player.id === winner?.id;
-    const profit = isWinner ? rawProfit + refund : depositRefund - depositPaid;
     return {
       player,
-      depositPaid,
-      depositRefund,
       isWinner,
-      insuranceRefund: isWinner ? refund : 0,
-      profit
+      profit: isWinner ? profit : 0
     };
   });
-  const profit = rawProfit + refund;
 
   if (winner) {
     transact(state, winner, -payment, 'auction_payment', now);
-    if (repairCost > 0) {
-      transact(state, winner, -repairCost, 'repair_cost_paid', now);
-    }
-    if (refund > 0) {
-      transact(state, winner, refund, 'insurance_refund', now);
-    }
     winner.holdings.push(...round.container.hiddenItems);
   }
   const clueReview = reviewClues(
     [
-      ...(round.auctioneerClue ? [round.auctioneerClue] : []),
       ...round.container.publicClues,
       ...(winner ? round.container.privateCluesByPlayerId[winner.id] ?? [] : [])
     ],
@@ -180,24 +156,17 @@ export function settleCurrentRound(state: MatchRuntimeState, now = Date.now()): 
     isFinal: true,
     winnerId: winner?.id,
     payment,
-    depositCost: winnerDepositCost,
-    insuranceRefund: refund,
     trueValue,
-    repairCost,
     setBonus,
     profit,
     title: buildSettlementTitle(profit, payment, trueValue),
     participants: participantRows.map((row) => ({
       playerId: row.player.id,
       payment: row.isWinner ? payment : 0,
-      depositPaid: row.depositPaid,
-      depositRefund: row.depositRefund,
-      insuranceRefund: row.insuranceRefund,
       trueValue: row.isWinner ? trueValue : 0,
-      repairCost: row.isWinner ? repairCost : 0,
       setBonus: row.isWinner ? setBonus : 0,
       profit: row.profit,
-      title: buildParticipantTitle(row.isWinner, row.profit, row.depositPaid, row.depositRefund)
+      title: buildParticipantTitle(row.isWinner, row.profit)
     })),
     clueReview,
     bidFeedback
@@ -240,14 +209,10 @@ export function finishRound(state: MatchRuntimeState, now = Date.now()): MatchRu
   return state;
 }
 
-function calculatePayment(mode: string, sortedBids: BidRecord[], minIncrement: number): number {
+function calculatePayment(sortedBids: BidRecord[]): number {
   const winningBid = sortedBids[0];
   if (!winningBid) {
     return 0;
-  }
-  if (mode === 'second_price') {
-    const secondBid = sortedBids[1];
-    return Math.min(winningBid.amount, (secondBid?.amount ?? 0) + minIncrement);
   }
   return winningBid.amount;
 }
@@ -305,7 +270,7 @@ function buildBidFeedback(
 ): RoundBidFeedback {
   const leader = sortedBids[0];
   const publicRanking = buildRanking(sortedBids);
-  const isOpen = mode === 'open' || mode === 'deposit_open';
+  const isOpen = mode === 'open';
   if (!leader) {
     return {
       round: roundIndex + 1,
@@ -417,7 +382,7 @@ function buildFeedbackMessage(
   const threshold = thresholdMargin > 0
     ? `最高价超过第二名 ${thresholdRatio}%，即高出 ${thresholdMargin}%`
     : '最高价高于第二名';
-  if (mode === 'open' || mode === 'deposit_open') {
+  if (mode === 'open') {
     const secondText = secondAmount > 0 ? `第二名 ${secondAmount.toLocaleString()}，` : '暂无第二名有效出价，';
     return coreDecision?.shouldClose
       ? `第${roundIndex + 1}轮最高价 ${leaderAmount.toLocaleString()}，${secondText}领先 ${margin}，超过成交线：${threshold}。`
@@ -437,21 +402,14 @@ function buildInterimSettlement(
     roundId,
     isFinal: false,
     payment: bidFeedback.publicPrice ?? 0,
-    depositCost: 0,
-    insuranceRefund: 0,
     trueValue: 0,
-    repairCost: 0,
     setBonus: 0,
     profit: 0,
     title: `第${bidFeedback.round}轮出价反馈`,
     participants: players.map((player) => ({
       playerId: player.id,
       payment: 0,
-      depositPaid: 0,
-      depositRefund: 0,
-      insuranceRefund: 0,
       trueValue: 0,
-      repairCost: 0,
       setBonus: 0,
       profit: 0,
       title: bidFeedback.leaderPlayerId === player.id ? '本轮暂时领先' : '继续观察'
@@ -461,59 +419,9 @@ function buildInterimSettlement(
   };
 }
 
-function calculateInsuranceRefund(
-  winner: RuntimePlayer,
-  rawProfit: number,
-  state: MatchRuntimeState
-): number {
-  if (!winner.insuranceActive || rawProfit >= -state.config.rules.insuranceLossThreshold) {
-    return 0;
-  }
-  return Math.round((Math.abs(rawProfit) - state.config.rules.insuranceLossThreshold) * state.config.rules.insuranceRefundRate);
-}
-
 function availableCashForBid(state: MatchRuntimeState, player: RuntimePlayer): number {
-  const round = requireRound(state);
-  if (round.auctionMode !== 'deposit_open' || round.depositPaidByPlayerId[player.id]) {
-    return player.cash;
-  }
-  const deposit = round.container.depositValue ?? state.config.rules.depositValue;
-  return Math.max(0, player.cash - deposit);
-}
-
-function ensureDeposit(state: MatchRuntimeState, player: RuntimePlayer, now: number): void {
-  const round = requireRound(state);
-  if (round.depositPaidByPlayerId[player.id]) {
-    return;
-  }
-  const deposit = round.container.depositValue ?? state.config.rules.depositValue;
-  if (player.cash < deposit) {
-    throw new Error('Not enough cash to pay deposit');
-  }
-  transact(state, player, -deposit, 'auction_deposit_paid', now);
-  round.depositPaidByPlayerId[player.id] = true;
-}
-
-function refundDepositsForNonWinners(
-  state: MatchRuntimeState,
-  winnerId: string | undefined,
-  now: number
-): Record<string, number> {
-  const round = requireRound(state);
-  const refunds: Record<string, number> = {};
-  if (round.auctionMode !== 'deposit_open') {
-    return refunds;
-  }
-  for (const [playerId, paid] of Object.entries(round.depositPaidByPlayerId)) {
-    if (!paid || playerId === winnerId) {
-      continue;
-    }
-    const player = requirePlayer(state, playerId);
-    const refund = state.config.rules.depositRefund;
-    transact(state, player, refund, 'auction_deposit_refund', now);
-    refunds[playerId] = refund;
-  }
-  return refunds;
+  void state;
+  return player.cash;
 }
 
 function transact(
@@ -569,15 +477,7 @@ function buildSettlementTitle(profit: number, payment: number, trueValue: number
   return '判断失准';
 }
 
-function buildParticipantTitle(
-  isWinner: boolean,
-  profit: number,
-  depositPaid: number,
-  depositRefund: number
-): string {
-  if (!isWinner && depositPaid > depositRefund) {
-    return '试探成本';
-  }
+function buildParticipantTitle(isWinner: boolean, profit: number): string {
   if (!isWinner) {
     return '保守观望';
   }

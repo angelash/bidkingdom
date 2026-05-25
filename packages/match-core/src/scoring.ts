@@ -6,11 +6,6 @@ export function sumItemValue(items: readonly RevealedItem[]): number {
   return items.reduce((sum, item) => sum + item.value, 0);
 }
 
-export function sumRepairCost(items: readonly RevealedItem[], repairDiscountRate: number): number {
-  const raw = items.reduce((sum, item) => sum + item.repairCost, 0);
-  return Math.round(raw * (1 - repairDiscountRate));
-}
-
 export function calculateSetBonus(items: readonly RevealedItem[], config: GameConfig): number {
   const ownedIds = new Set(items.map((item) => item.id));
   let bonus = 0;

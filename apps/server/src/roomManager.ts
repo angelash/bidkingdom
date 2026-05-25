@@ -15,8 +15,7 @@ import {
   pushEvent,
   startNextRound,
   submitBid,
-  useBattleItem,
-  useSkill
+  useBattleItem
 } from '@bitkingdom/match-core';
 import type { MatchRuntimeState } from '@bitkingdom/match-core';
 import type {
@@ -293,19 +292,8 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       }
     });
 
-    socket.on('useSkill', (payload) => {
-      const context = getPlayingContext(socket.id);
-      if (!context) {
-        return;
-      }
-      try {
-        useSkill(context.room.match!, context.playerId, payload.targetPlayerId);
-        services.profiles.completeTask(context.playerId, 'daily_use_skill');
-        broadcasts.emitProfileSnapshot(socket, context.playerId);
-        broadcasts.broadcastMatch(context.room);
-      } catch (error) {
-        emitError(socket, error);
-      }
+    socket.on('useSkill', () => {
+      emitError(socket, new Error('BidKing hero skills are automatic'));
     });
 
     socket.on('useBattleItem', (payload) => {

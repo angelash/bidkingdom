@@ -149,7 +149,7 @@ def validate_item(prompt: dict[str, Any], config: dict[str, Any]) -> list[str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Validate generated BidKing item art.")
     parser.add_argument("--config", default="tools/bidking-item-art.config.json")
-    parser.add_argument("--sample", action="store_true", help="Validate configured sample items")
+    parser.add_argument("--validation-set", action="store_true", help="Validate configured review items")
     parser.add_argument("--all", action="store_true", help="Validate all manifest items")
     parser.add_argument("--item-id", type=int, action="append", default=[], help="Validate a specific item id; repeatable")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
@@ -163,7 +163,7 @@ def main() -> None:
     elif args.item_id:
         item_ids = args.item_id
     else:
-        item_ids = [int(item["itemId"]) for item in config["sampleItems"]]
+        item_ids = [int(item["itemId"]) for item in config["validationItems"]]
 
     results = []
     failed = 0

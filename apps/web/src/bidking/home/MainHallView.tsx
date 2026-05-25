@@ -94,17 +94,10 @@ export function MainHallView({
   onEquipBattleItems,
   onClaimActivityReward,
   onClaimGiftPackage,
-  onCreateDemoPayOrder,
-  onCompleteDemoPayOrder,
-  onCancelDemoPayOrder,
-  onCompletePurchaseListOrder,
-  onUnlockDemoDlc,
-  onAddDemoFriend,
   onRemoveFriend,
   onSetFriendRemark,
   onJoinGuild,
   onSetGuildRole,
-  onAddDemoGuildApplication,
   onApproveGuildMember,
   onKickGuildMember,
   onUpdateGuildNotice,
@@ -160,17 +153,10 @@ export function MainHallView({
   onEquipBattleItems: (itemIds: number[]) => void;
   onClaimActivityReward: (activityId: string) => void;
   onClaimGiftPackage: (packageId: string) => void;
-  onCreateDemoPayOrder: (payId: string) => void;
-  onCompleteDemoPayOrder: (payId: string) => void;
-  onCancelDemoPayOrder: (orderId: string) => void;
-  onCompletePurchaseListOrder: (purchaseId: string) => void;
-  onUnlockDemoDlc: (dlcId: string) => void;
-  onAddDemoFriend: () => void;
   onRemoveFriend: (friendId: string) => void;
   onSetFriendRemark: (friendId: string, remark: string) => void;
   onJoinGuild: (areaId?: string) => void;
   onSetGuildRole: (roleId: string) => void;
-  onAddDemoGuildApplication: () => void;
   onApproveGuildMember: (applicantId: string) => void;
   onKickGuildMember: (memberId: string) => void;
   onUpdateGuildNotice: (notice: string) => void;
@@ -367,7 +353,7 @@ export function MainHallView({
           </div>
 
           <button className="bk-pass-banner" type="button" onClick={() => openHub('pass')}>
-            <img src={containerArtForKey('container_sample_home')} alt="" loading="lazy" />
+            <img src={containerArtForKey('container_palace')} alt="" loading="lazy" />
             <span>珍宝令</span>
             <strong>令</strong>
           </button>
@@ -496,7 +482,6 @@ export function MainHallView({
           {activeHub === 'friend' && (
             <FriendPanelView
               profile={profile}
-              onAddDemoFriend={onAddDemoFriend}
               onRemoveFriend={onRemoveFriend}
               onSetFriendRemark={onSetFriendRemark}
               onSelectHead={onSelectHead}
@@ -516,7 +501,6 @@ export function MainHallView({
               serverUrl={serverUrl}
               onJoinGuild={onJoinGuild}
               onSetGuildRole={onSetGuildRole}
-              onAddDemoGuildApplication={onAddDemoGuildApplication}
               onApproveGuildMember={onApproveGuildMember}
               onKickGuildMember={onKickGuildMember}
               onUpdateGuildNotice={onUpdateGuildNotice}
@@ -530,11 +514,6 @@ export function MainHallView({
             <RechargePanelView
               profile={profile}
               onClaimGiftPackage={onClaimGiftPackage}
-              onCreateDemoPayOrder={onCreateDemoPayOrder}
-              onCompleteDemoPayOrder={onCompleteDemoPayOrder}
-              onCancelDemoPayOrder={onCancelDemoPayOrder}
-              onCompletePurchaseListOrder={onCompletePurchaseListOrder}
-              onUnlockDemoDlc={onUnlockDemoDlc}
             />
           )}
           {activeHub === 'pass' && (

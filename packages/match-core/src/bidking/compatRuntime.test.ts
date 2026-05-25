@@ -48,6 +48,7 @@ import { useSkill } from '../skills';
 import { battleItemCooldownRemaining, battleItemEffectPlanForItem, skillForBattleItem, skillGroupForBattleItem, useBattleItem } from '../items';
 import type { BattleItemEffectPlan } from '../items';
 import { bidKingHeroIdForRoleId } from './heroRuntime';
+import { BID_KING_BIDDER_ROLE_BINDINGS } from './bidderCatalog';
 import { buildBidKingGameDataSnapshot } from './gameDataRuntime';
 import {
   bidKingKnowledgeByItemIdFromSkillFeed,
@@ -164,16 +165,20 @@ describe('BidKing compatible core runtime', () => {
     });
     startNextRound(match, 1000);
     expect(match.currentRound?.container.templateId).toMatch(/^bidmap_/);
-    expect(match.currentRound?.openingCandidates).toHaveLength(8);
     expect(match.currentRound?.container.hiddenItems.length).toBeGreaterThanOrEqual(16);
     expect(match.currentRound?.warehouseSlots.length).toBe(match.currentRound?.container.hiddenItems.length);
-    expect(match.currentRound?.auctioneerChoices).toHaveLength(4);
+    expect(match.currentRound?.container.publicClues).toEqual([]);
     expect(match.currentRound?.container.minimumBid).toBeGreaterThan(0);
     expect([50000, 60000]).toContain(match.currentRound?.container.auctionDurationMs);
     expect(match.players[0]?.privateClues.some((clue) => clue.source === 'skill')).toBe(true);
     expect(match.currentRound?.skillFeed.some((entry) => entry.source === 'map')).toBe(true);
     expect(match.currentRound?.skillFeed.some((entry) => entry.playerId === 'p1' && entry.source === 'hero')).toBe(true);
-    const publicFeed = buildSnapshot(match, 'p1').public.currentRound?.skillFeed ?? [];
+    const publicRound = buildSnapshot(match, 'p1').public.currentRound;
+    expect(publicRound?.container.estimateHidden).toBe(true);
+    expect(publicRound?.container.estimateMin).toBe(0);
+    expect(publicRound?.container.estimateMax).toBe(0);
+    expect(publicRound?.publicClues).toEqual([]);
+    const publicFeed = publicRound?.skillFeed ?? [];
     expect(publicFeed.some((entry) => entry.source === 'map')).toBe(true);
     expect(publicFeed.some((entry) => entry.playerId === 'p2')).toBe(false);
   });
@@ -190,6 +195,7 @@ describe('BidKing compatible core runtime', () => {
     const roundStarted = match.events.find((event) => event.type === 'round_started');
     expect(roundStarted?.sourceProtocols?.map((protocol) => protocol.name)).toEqual(['S2C_33_game_start_notify']);
 
+    setRoundPhase(match, 'auction', 60000, 1050);
     submitBid(match, 'p1', 120_000, 1100);
     const bidEvent = match.events.find((event) => event.type === 'bid_submitted');
     expect(bidEvent?.sourceProtocols?.map((protocol) => protocol.name)).toEqual([
@@ -209,6 +215,7 @@ describe('BidKing compatible core runtime', () => {
       coreAuctionMode: 'open'
     });
     startNextRound(match, 1000);
+    setRoundPhase(match, 'auction', 60000, 1050);
     submitBid(match, 'p1', 120_000, 1100);
     submitBid(match, 'p2', 90_000, 1200);
 
@@ -463,8 +470,7 @@ describe('BidKing compatible core runtime', () => {
     const candidateCount = match.currentRound!.container.warehouseSlots
       .filter((slot) => bidKingItemRowForSlot(slot)?.item_type_id === ratioSkill.skilltargetvalue[0])
       .length;
-    const effectiveCandidateCount = candidateCount > 0 ? candidateCount : match.currentRound!.container.warehouseSlots.length;
-    const expectedTargetCount = bidKingSourceTargetCountForCandidateCount(ratioSkill, effectiveCandidateCount);
+    const expectedTargetCount = bidKingSourceTargetCountForCandidateCount(ratioSkill, candidateCount);
     const feed = match.currentRound?.skillFeed.find((entry) => entry.source === 'hero' && entry.playerId === 'p1');
 
     expect(ratioSkill.skill_count_type).toBe(2);
@@ -513,6 +519,44 @@ describe('BidKing compatible core runtime', () => {
     expect(delayedFeed?.round).toBe(triggerRoundIndex + 1);
     expect(match.players[0]?.privateClues.some((clue) => clue.id.includes(`_auto_p1_${triggerRoundIndex + 1}_${delayedHero.id}_${delayedSkill.id}`))).toBe(true);
     expect(delayedEvent).toBeDefined();
+  });
+
+  it('matches every bidder catalog hero to its source cast_type trigger rounds', () => {
+    for (const binding of BID_KING_BIDDER_ROLE_BINDINGS) {
+      const hero = Hero.find((candidate) => candidate.id === binding.sourceHeroId)!;
+      const match = createMatch({
+        id: `compat-bidder-cast-type-${hero.id}`,
+        players: players.map((player) => player.id === 'p1' ? { ...player, heroCid: hero.id } : player),
+        seed: 93000 + hero.id,
+        totalRounds: 5,
+        coreMode: true,
+        coreAuctionMode: 'sealed'
+      });
+      match.players.forEach((player) => {
+        player.cash = 1_000_000;
+      });
+      startNextRound(match, 1000);
+
+      for (let roundIndex = 0; roundIndex < 5; roundIndex += 1) {
+        const expectedSkillId = hero.cast_type[roundIndex] ?? 0;
+        const exactFeedId = `${match.currentRound!.id}_hero_skill_p1_${expectedSkillId}`;
+        const mainFeed = match.currentRound?.skillFeed.find((entry) => entry.id === exactFeedId);
+        const p1HeroFeeds = match.currentRound?.skillFeed.filter((entry) => (
+          entry.source === 'hero' && entry.playerId === 'p1'
+        )) ?? [];
+
+        if (expectedSkillId > 0) {
+          expect(mainFeed?.skillCid).toBe(expectedSkillId);
+          expect(mainFeed?.round).toBe(roundIndex + 1);
+        } else {
+          expect(p1HeroFeeds).toEqual([]);
+        }
+
+        if (roundIndex < 4) {
+          advanceCoreAuctionRound(match, 1500 + roundIndex * 1000);
+        }
+      }
+    }
   });
 
   it('preserves source SkillEffect count and identity categories for skills and items', () => {
@@ -2233,6 +2277,41 @@ describe('BidKing compatible core runtime', () => {
     expect(noKnownQuality).toEqual([]);
   });
 
+  it('does not replace empty source skill targets with random warehouse slots', () => {
+    const match = createMatch({
+      id: 'compat-empty-source-target',
+      players,
+      seed: 3343,
+      coreMode: true,
+      coreAuctionMode: 'sealed',
+      coreBidMapId: 2101
+    });
+    startNextRound(match, 1000);
+
+    const slots = match.currentRound?.container.warehouseSlots ?? [];
+    const presentTypes = new Set(slots.map((slot) => bidKingItemRowForSlot(slot)?.item_type_id).filter(Boolean));
+    const absentType = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]
+      .find((typeId) => !presentTypes.has(typeId))
+      ?? 999999;
+    const absentTypeSkill = {
+      ...skillById(100105)!,
+      skilltarget: 1,
+      skilltargetvalue: [absentType],
+      skilltarget2: 0,
+      skilltargetvalue2: [0],
+      skilltarget3: 0,
+      skilltargetvalue3: [0],
+      skill_count: 0,
+      skilleffect_position: [1000]
+    };
+    const noQualityStateSkill = skillById(1002082)!;
+
+    expect(selectBidKingSlotsBySkill(slots, match, absentTypeSkill)).toEqual([]);
+    expect(selectBidKingSlotsBySkill(slots, match, noQualityStateSkill, {
+      knownInfoByItemId: new globalThis.Map<string, BidKingKnownInfoState>()
+    })).toEqual([]);
+  });
+
   it('treats source skilltarget 8 as selected target box instead of target player', () => {
     const match = createMatch({
       id: 'compat-skill-target-eight',
@@ -2578,8 +2657,7 @@ function runDeterministicCoreReplay(seed: number): string {
       revealedItems: round.revealedItems.map((item) => ({
         id: item.id,
         value: item.value,
-        rarity: item.rarity,
-        isFake: item.isFake
+        rarity: item.rarity
       }))
     })),
     transactions: match.transactions

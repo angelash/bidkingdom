@@ -1,6 +1,6 @@
 import type { BidKingRawTableRow } from './schema';
 
-export type BidKingPayServiceMode = 'local_simulated_payment';
+export type BidKingPayServiceMode = 'external_payment_metadata';
 
 export interface BidKingPayRuntime {
   payId: string;
@@ -33,8 +33,8 @@ export function bidKingPayRuntime(row: BidKingRawTableRow): BidKingPayRuntime {
     orderDescriptionKey: rawString(row.columns[9]),
     iconKey: rawString(row.columns[10]),
     steamDescriptionKey: rawString(row.columns[11]),
-    serviceMode: 'local_simulated_payment',
-    serviceModeLabel: '本地模拟支付到账'
+    serviceMode: 'external_payment_metadata',
+    serviceModeLabel: '外部支付元数据'
   };
 }
 

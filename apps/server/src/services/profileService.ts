@@ -78,13 +78,6 @@ import {
   type SendAuctionItemSelectionInput
 } from '../domain/economy/profileSendAuctionRuntime';
 import {
-  cancelDemoPayOrderForProfile,
-  completeDemoPayOrderForProfile,
-  completePurchaseListOrderForProfile,
-  createDemoPayOrderForProfile,
-  unlockDemoDlcForProfile
-} from '../domain/economy/profilePurchaseRuntime';
-import {
   equipBattleItemsForProfile,
   useBattleItemForProfile
 } from '../domain/profile/profileBattleItemRuntime';
@@ -136,8 +129,6 @@ import { consumeInventory, inventoryQuantity } from '../domain/profile/profileIn
 import { consumeTicketForMatchProfile, refreshTicketState } from '../domain/profile/profileTicketRuntime';
 import { createEconomyLedger } from '../domain/economy/economyLedger';
 import {
-  addDemoFriendToProfile,
-  addDemoGuildApplicationForProfile,
   approveGuildMemberForProfile,
   claimAreaResourceForProfile,
   claimGuildResourceForProfile,
@@ -454,45 +445,6 @@ export function createProfileService(store: ServerStore): ProfileService {
   function claimGiftPackage(playerId: string, packageId: string): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
     if (claimGiftPackageForProfile(profile, packageId, applyRewardRows, recordTransaction, hasTransactionSource)) {
-      store.save();
-    }
-    return getSnapshot(playerId);
-  }
-
-  function createDemoPayOrder(playerId: string, payId: string): ProfileSnapshot {
-    const profile = getOrCreateProfile(playerId);
-    createDemoPayOrderForProfile(profile, payId, recordTransaction);
-    store.save();
-    return getSnapshot(playerId);
-  }
-
-  function completeDemoPayOrder(playerId: string, payId: string): ProfileSnapshot {
-    const profile = getOrCreateProfile(playerId);
-    if (completeDemoPayOrderForProfile(profile, payId, applyNumberChange, recordTransaction, hasTransactionSource)) {
-      store.save();
-    }
-    return getSnapshot(playerId);
-  }
-
-  function cancelDemoPayOrder(playerId: string, orderId: string): ProfileSnapshot {
-    const profile = getOrCreateProfile(playerId);
-    if (cancelDemoPayOrderForProfile(profile, orderId, recordTransaction)) {
-      store.save();
-    }
-    return getSnapshot(playerId);
-  }
-
-  function completePurchaseListOrder(playerId: string, purchaseId: string): ProfileSnapshot {
-    const profile = getOrCreateProfile(playerId);
-    if (completePurchaseListOrderForProfile(profile, purchaseId, applyNumberChange, recordTransaction, hasTransactionSource)) {
-      store.save();
-    }
-    return getSnapshot(playerId);
-  }
-
-  function unlockDemoDlc(playerId: string, dlcId: string): ProfileSnapshot {
-    const profile = getOrCreateProfile(playerId);
-    if (unlockDemoDlcForProfile(profile, dlcId, applyRewardRows, recordTransaction, hasTransactionSource)) {
       store.save();
     }
     return getSnapshot(playerId);
@@ -852,14 +804,6 @@ export function createProfileService(store: ServerStore): ProfileService {
     return buildSendAuctionGameListSnapshot(getOrCreateProfile(playerId));
   }
 
-  function addDemoFriend(playerId: string): ProfileSnapshot {
-    const profile = getOrCreateProfile(playerId);
-    if (addDemoFriendToProfile(profile, recordTransaction)) {
-      store.save();
-    }
-    return getSnapshot(playerId);
-  }
-
   function removeFriend(playerId: string, friendId: string): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
     if (removeFriendFromProfile(profile, friendId, recordTransaction)) {
@@ -886,14 +830,6 @@ export function createProfileService(store: ServerStore): ProfileService {
   function setGuildRole(playerId: string, roleId: string): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
     if (setGuildRoleForProfile(profile, roleId, recordTransaction)) {
-      store.save();
-    }
-    return getSnapshot(playerId);
-  }
-
-  function addDemoGuildApplication(playerId: string): ProfileSnapshot {
-    const profile = getOrCreateProfile(playerId);
-    if (addDemoGuildApplicationForProfile(profile, recordTransaction)) {
       store.save();
     }
     return getSnapshot(playerId);
@@ -1152,11 +1088,6 @@ export function createProfileService(store: ServerStore): ProfileService {
     claimRankReward,
     claimActivityReward,
     claimGiftPackage,
-    createDemoPayOrder,
-    completeDemoPayOrder,
-    cancelDemoPayOrder,
-    completePurchaseListOrder,
-    unlockDemoDlc,
     createMarketOrder,
     lanchExchangeItem,
     settleMarketOrder,
@@ -1184,12 +1115,10 @@ export function createProfileService(store: ServerStore): ProfileService {
     recycleSendAuction,
     listSendAuctions,
     listSendAuctionGames,
-    addDemoFriend,
     removeFriend,
     setFriendRemark,
     joinGuild,
     setGuildRole,
-    addDemoGuildApplication,
     approveGuildMember,
     kickGuildMember,
     updateGuildNotice,

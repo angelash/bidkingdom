@@ -55,7 +55,7 @@ describe('BidKing room bot runtime', () => {
         maxBid?: number;
       };
     };
-    expect(['bid', 'pass', 'skill', 'emote']).toContain(payload.actionType);
+    expect(['bid', 'pass', 'battle_item', 'emote']).toContain(payload.actionType);
     expect(payload.reason.length).toBeGreaterThan(0);
     expect(payload.audit).toEqual(expect.objectContaining({
       phase: 'auction',
