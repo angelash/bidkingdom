@@ -15,7 +15,7 @@ import {
   type BidKingSoundCue
 } from '../system/bidKingSystemRuntime';
 import { FullScreenPanel } from '../ui/FullScreenPanel';
-import { bidderBio, roleSkillDetails } from './roleSkillDetails';
+import { bidderBio, roleSkillDetailForRole } from './roleSkillDetails';
 
 type RoleDefinition = (typeof gameConfig.roles)[number];
 type BidderTab = 'detail' | 'skin' | 'voice';
@@ -47,7 +47,7 @@ export function BidderPanelView({
   const sourceHeroId = bidKingHeroIdForRoleId(focusedRole.id, sourceRoles);
   const heroState = bidKingHeroStateFromProfile(profile, sourceHeroId);
   const selectable = heroState.state !== 'locked';
-  const skill = roleSkillDetails[focusedRole.skillId];
+  const skill = roleSkillDetailForRole(focusedRole, sourceRoles);
   const skinRows = bidKingHeroSkins.filter((skin) => skin.skinhero === sourceHeroId);
   const skinRuntimes = skinRows.map((skin) => bidKingHeroSkinRuntime(skin));
   const selectedSkinId = profile.selectedHeroSkins?.[String(sourceHeroId)];
@@ -90,7 +90,7 @@ export function BidderPanelView({
           <section className="bidder-copy">
             <span>{focusedRole.animal}</span>
             <h3>{focusedRole.name}</h3>
-            <p>{bidderBio(focusedRole)}</p>
+            <p>{bidderBio(focusedRole, sourceRoles)}</p>
             <button type="button" onClick={() => setTab('detail')}>
               <Crown size={18} />
               名士掌眼
@@ -102,8 +102,8 @@ export function BidderPanelView({
               <strong>{skill.skillName}</strong>
               <p>{skill.active}</p>
               <hr />
-              <span>掌眼效果</span>
-              <p>{focusedRole.passive}</p>
+              <span>掌眼细则</span>
+              <p>{skill.positioning}</p>
             </article>
           )}
           {tab === 'skin' && (

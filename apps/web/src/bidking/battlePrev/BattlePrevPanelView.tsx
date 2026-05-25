@@ -17,7 +17,8 @@ import {
   bidKingHeroIdForRoleId,
   bidKingHeroStateFromProfile,
   bidKingInitialCashForBidMap,
-  bidKingIsDefaultUnknownBidMap
+  bidKingIsDefaultUnknownBidMap,
+  bidKingSourceRoles
 } from '@bitkingdom/match-core';
 import {
   BattleItem as bidKingBattleItems,
@@ -35,7 +36,7 @@ import {
 import { gameConfig } from '@bitkingdom/config';
 import type { PlayerProfile } from '@bitkingdom/shared';
 import { containerArtForKey, roleAvatarForRoleId, rolePortraitForRoleId } from '../../artAssets';
-import { roleSkillDetails } from '../bidder/roleSkillDetails';
+import { roleSkillDetailForRole } from '../bidder/roleSkillDetails';
 import type { GameExceptionInput } from '../system/gameExceptionRuntime';
 
 export type BattlePrevTab = 'map' | 'hero' | 'items' | 'settings';
@@ -94,14 +95,19 @@ export function BattlePrevPanelView({
   const selectedAccess = bidKingBidMapAccess(profile, selectedBidMap.id);
   const selectedInitialCash = bidKingInitialCashForBidMap(selectedBidMap.id, gameConfig.rules.initialCash);
   const selectedIsDefault = bidKingIsDefaultUnknownBidMap(selectedBidMap.id);
+  const sourceRoles = bidKingSourceRoles(gameConfig.roles);
   const [sceneEntered, setSceneEntered] = useState(false);
   const [activePopover, setActivePopover] = useState<ScenePopover>();
   const [configuredRoleId, setConfiguredRoleId] = useState<string>();
   const [configuredItemIds, setConfiguredItemIds] = useState<number[]>([]);
-  const fallbackRole = gameConfig.roles.find((role) => role.id === selectedRoleId) ?? selectedRole;
+  const fallbackRole = sourceRoles.find((role) => role.id === selectedRoleId)
+    ?? sourceRoles.find((role) => role.id === selectedRole.id)
+    ?? sourceRoles[0]
+    ?? selectedRole;
   const configuredRole = configuredRoleId
-    ? gameConfig.roles.find((role) => role.id === configuredRoleId)
-    : undefined;
+    ? sourceRoles.find((role) => role.id === configuredRoleId)
+    : fallbackRole;
+  const configuredRoleSkill = configuredRole ? roleSkillDetailForRole(configuredRole, sourceRoles) : undefined;
   const configuredItemRows = configuredItemIds
     .map((itemId) => bidKingBattleItems.find((item) => item.id === itemId))
     .filter((item): item is BidKingBattleItemRow => Boolean(item));
@@ -159,7 +165,7 @@ export function BattlePrevPanelView({
   }
 
   function selectRoleForScene(role: RoleDefinition): void {
-    const state = bidKingHeroStateFromProfile(profile, bidKingHeroIdForRoleId(role.id, gameConfig.roles)).state;
+    const state = bidKingHeroStateFromProfile(profile, bidKingHeroIdForRoleId(role.id, sourceRoles)).state;
     if (state === 'locked') {
       reportLockedRole(role);
       return;
@@ -242,7 +248,7 @@ export function BattlePrevPanelView({
                 <section className="battle-scene-role-intro">
                   <span>{configuredRole.animal}</span>
                   <h1>{configuredRole.name}</h1>
-                  <p>{roleSkillDetails[configuredRole.skillId].positioning}。{configuredRole.passive}</p>
+                  <p>{configuredRoleSkill?.positioning}。{configuredRoleSkill?.active}</p>
                   <div className="battle-scene-role-thumbs" aria-hidden="true">
                     <img src={rolePortraitForRoleId(configuredRole.id)} alt="" loading="lazy" />
                     <img src={roleAvatarForRoleId(configuredRole.id)} alt="" loading="lazy" />
@@ -275,7 +281,7 @@ export function BattlePrevPanelView({
                     {configuredRole ? (
                       <>
                         <strong>{configuredRole.name}</strong>
-                        <span>{roleSkillDetails[configuredRole.skillId].short}</span>
+                        <span>{configuredRoleSkill?.short}</span>
                       </>
                     ) : (
                       <span />
@@ -310,6 +316,7 @@ export function BattlePrevPanelView({
                 <RoleSelectPopover
                   configuredRoleId={configuredRoleId}
                   profile={profile}
+                  roles={sourceRoles}
                   onReportLocked={reportLockedRole}
                   onSelect={selectRoleForScene}
                 />
@@ -407,18 +414,21 @@ export function BattlePrevPanelView({
 function RoleSelectPopover({
   configuredRoleId,
   profile,
+  roles,
   onReportLocked,
   onSelect
 }: {
   configuredRoleId?: string;
   profile: PlayerProfile;
+  roles: RoleDefinition[];
   onReportLocked: (role: RoleDefinition) => void;
   onSelect: (role: RoleDefinition) => void;
 }): JSX.Element {
   return (
     <section className="battle-scene-popover role-popover" aria-label="配置技能">
-      {gameConfig.roles.map((role) => {
-        const state = bidKingHeroStateFromProfile(profile, bidKingHeroIdForRoleId(role.id, gameConfig.roles)).state;
+      {roles.map((role) => {
+        const detail = roleSkillDetailForRole(role, roles);
+        const state = bidKingHeroStateFromProfile(profile, bidKingHeroIdForRoleId(role.id, roles)).state;
         const locked = state === 'locked';
         const selected = configuredRoleId === role.id;
         return (
@@ -431,7 +441,7 @@ function RoleSelectPopover({
             <img src={roleAvatarForRoleId(role.id)} alt="" loading="lazy" />
             <span>
               <strong>{role.name}</strong>
-              <em>{roleSkillDetails[role.skillId].active}</em>
+              <em>{detail.active}</em>
             </span>
             {selected && <Check size={22} />}
             {locked && <Lock size={20} />}

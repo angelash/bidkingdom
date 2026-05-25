@@ -7,7 +7,7 @@ import type { CoreAuctionMode, PlayerProfile, RoomSnapshot } from '@bitkingdom/s
 import { roleAvatarForRoleId, rolePortraitForRoleId } from '../../artAssets';
 import { auctionModeName, PlayerGrid } from '../battle/BattlePanels';
 import type { BidKingBattleMapGroup } from '../battlePrev/BattlePrevPanelView';
-import { roleSkillDetails } from '../bidder/roleSkillDetails';
+import { roleSkillDetailForRole } from '../bidder/roleSkillDetails';
 import { taskBoardDefinitions } from '../task/taskDefinitions';
 
 type RoleDefinition = (typeof gameConfig.roles)[number];
@@ -45,13 +45,13 @@ export function RoomLobbyView({
   onSelectRole: (roleId: string) => void;
   onStartMatch: () => void;
 }): JSX.Element {
-  const selectedRole = gameConfig.roles.find((role) => role.id === selectedRoleId) ?? gameConfig.roles[0]!;
+  const sourceRoles = bidKingSourceRoles(gameConfig.roles);
+  const selectedRole = sourceRoles.find((role) => role.id === selectedRoleId) ?? sourceRoles[0] ?? gameConfig.roles[0]!;
   const lobbyBidMapChoices = mapGroups.flatMap((group) => group.children);
   const lobbyBidMap = lobbyBidMapChoices.find((map) => map.id === (room.selectedBidMapId ?? selectedBidMapId))
     ?? lobbyBidMapChoices[0];
   const roomPlayerCount = room.maxPlayers ?? lobbyBidMap?.bidder_number ?? 4;
   const nextBidMap = lobbyBidMapChoices[(Math.max(0, lobbyBidMapChoices.findIndex((map) => map.id === lobbyBidMap?.id)) + 1) % Math.max(1, lobbyBidMapChoices.length)];
-  const sourceRoles = bidKingSourceRoles(gameConfig.roles);
   return (
     <section className="room-ready-hall">
       <aside className="hall-mode-rail">
@@ -132,7 +132,7 @@ function HallRoleCard({
   role: RoleDefinition;
   onInspect?: () => void;
 }): JSX.Element {
-  const skill = roleSkillDetails[role.skillId];
+  const skill = roleSkillDetailForRole(role);
   const portrait = rolePortraitForRoleId(role.id);
   return (
     <section className="hall-role-card" style={{ '--role-color': role.color } as React.CSSProperties}>
