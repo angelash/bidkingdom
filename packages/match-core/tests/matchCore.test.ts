@@ -122,6 +122,43 @@ describe('match core', () => {
     }
   });
 
+  it('keeps BidKing opening warehouse knowledge sparse until skills reveal it', () => {
+    const match = makeCoreMatch();
+    const round = match.currentRound!;
+    const snapshotRound = buildSnapshot(match, 'p1').public.currentRound!;
+
+    expect(round.warehouseSlots.every((slot) =>
+      slot.visibleShape === false &&
+      slot.visibleRarity === undefined &&
+      slot.visibleCategory === undefined &&
+      slot.visibleValueRange === undefined &&
+      slot.itemName === undefined &&
+      slot.iconKey === undefined
+    )).toBe(true);
+
+    const unmarkedSlots = snapshotRound.warehouseSlots.filter((slot) => !slot.markedBySkill);
+    expect(unmarkedSlots.length).toBeGreaterThan(0);
+    expect(unmarkedSlots.every((slot) =>
+      slot.visibleShape === false &&
+      slot.visibleRarity === undefined &&
+      slot.visibleCategory === undefined &&
+      slot.visibleValueRange === undefined &&
+      slot.itemName === undefined &&
+      slot.iconKey === undefined
+    )).toBe(true);
+
+    expect(round.auctioneerClue?.targetItemId).toBeUndefined();
+    expect(round.auctioneerClue?.targetItemIds).toBeUndefined();
+    expect(round.auctioneerChoices?.every((clue) =>
+      clue.targetItemId === undefined &&
+      clue.targetItemIds === undefined &&
+      clue.valueHint === undefined
+    )).toBe(true);
+    expect(match.players.flatMap((player) => player.privateClues).every((clue) =>
+      clue.source === 'skill' && !clue.id.includes('private_value') && !clue.id.includes('private_best')
+    )).toBe(true);
+  });
+
   it('charges and refunds deposits in deposit open auction', () => {
     const match = makeMatch();
     match.currentRound!.auctionMode = 'deposit_open';

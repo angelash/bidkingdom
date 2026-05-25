@@ -630,7 +630,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     return buildExchangeLanchItemListSnapshot(profile);
   }
 
-  function listExchangeInfo(): ExchangeInfoSnapshot {
+  function listExchangeInfo(playerId?: string): ExchangeInfoSnapshot {
     let expired = 0;
     for (const profile of Object.values(store.state.profiles)) {
       expired += expireProfileMarketOrders(profile);
@@ -638,10 +638,10 @@ export function createProfileService(store: ServerStore): ProfileService {
     if (expired > 0) {
       store.save();
     }
-    return buildExchangeInfoSnapshot(Object.values(store.state.profiles));
+    return buildExchangeInfoSnapshot(Object.values(store.state.profiles), Date.now(), playerId);
   }
 
-  function listExchangeItemTradeInfo(itemCid: number): ExchangeItemTradeInfoListSnapshot {
+  function listExchangeItemTradeInfo(itemCid: number, playerId?: string): ExchangeItemTradeInfoListSnapshot {
     let expired = 0;
     for (const profile of Object.values(store.state.profiles)) {
       expired += expireProfileMarketOrders(profile);
@@ -649,7 +649,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     if (expired > 0) {
       store.save();
     }
-    return buildExchangeItemTradeInfoListSnapshot(Object.values(store.state.profiles), itemCid);
+    return buildExchangeItemTradeInfoListSnapshot(Object.values(store.state.profiles), itemCid, Date.now(), playerId);
   }
 
   function buyExchangeItem(

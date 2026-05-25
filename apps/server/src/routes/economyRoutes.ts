@@ -150,17 +150,19 @@ export function registerEconomyRoutes(app: FastifyInstance, profiles: ProfileSer
     return profiles.listExchangeLanchItems(request.query.playerId);
   });
 
-  app.get('/api/exchange/info', async () => profiles.listExchangeInfo());
+  app.get<{
+    Querystring: { playerId?: string };
+  }>('/api/exchange/info', async (request) => profiles.listExchangeInfo(request.query.playerId));
 
   app.get<{
-    Querystring: { itemCid?: string };
+    Querystring: { itemCid?: string; playerId?: string };
   }>('/api/exchange/item-trade-info', async (request, reply) => {
     const itemCid = Number(request.query.itemCid);
     if (!Number.isFinite(itemCid) || itemCid <= 0) {
       reply.code(400);
       return { error: 'itemCid is required' };
     }
-    return profiles.listExchangeItemTradeInfo(itemCid);
+    return profiles.listExchangeItemTradeInfo(itemCid, request.query.playerId);
   });
 
   app.post<{

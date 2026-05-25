@@ -579,9 +579,15 @@ describe('server routes', () => {
       });
       const exchangeInfoPayload = JSON.parse(exchangeInfo.payload) as ExchangeInfoSnapshot;
       expect(exchangeInfo.statusCode).toBe(200);
-      expect(exchangeInfoPayload.allItemPriceInfo).toEqual([
-        { itemCid: 100102, price: 2400 }
-      ]);
+      expect(exchangeInfoPayload.allItemPriceInfo).toEqual([]);
+      const selfScopedExchangeInfo = await app.inject({
+        method: 'GET',
+        url: `/api/exchange/info?playerId=${playerId}`,
+        headers: auth.headers
+      });
+      const selfScopedExchangeInfoPayload = JSON.parse(selfScopedExchangeInfo.payload) as ExchangeInfoSnapshot;
+      expect(selfScopedExchangeInfo.statusCode).toBe(200);
+      expect(selfScopedExchangeInfoPayload.allItemPriceInfo).toEqual([]);
 
       const exchangeItemTradeInfo = await app.inject({
         method: 'GET',
@@ -590,9 +596,15 @@ describe('server routes', () => {
       });
       const exchangeItemTradeInfoPayload = JSON.parse(exchangeItemTradeInfo.payload) as ExchangeItemTradeInfoListSnapshot;
       expect(exchangeItemTradeInfo.statusCode).toBe(200);
-      expect(exchangeItemTradeInfoPayload.tradeInfoList).toEqual([
-        { price: 2400, peopleCount: 1 }
-      ]);
+      expect(exchangeItemTradeInfoPayload.tradeInfoList).toEqual([]);
+      const selfScopedExchangeItemTradeInfo = await app.inject({
+        method: 'GET',
+        url: `/api/exchange/item-trade-info?itemCid=100102&playerId=${playerId}`,
+        headers: auth.headers
+      });
+      const selfScopedExchangeItemTradeInfoPayload = JSON.parse(selfScopedExchangeItemTradeInfo.payload) as ExchangeItemTradeInfoListSnapshot;
+      expect(selfScopedExchangeItemTradeInfo.statusCode).toBe(200);
+      expect(selfScopedExchangeItemTradeInfoPayload.tradeInfoList).toEqual([]);
 
       store.state.profiles[playerId]!.marketOrders.find((order) => order.id === exchangeLanchPayload.sourceExchangeLanchItem.orderId)!.expiresAt = Date.now() - 1;
       const exchangeReLanch = await app.inject({
@@ -635,6 +647,27 @@ describe('server routes', () => {
       expect(exchangeBuyLanchPayload.sourceExchangeLanchItem).toEqual(expect.objectContaining({ errorCode: 0 }));
 
       const exchangeBuyerAuth = await createGuestAuth(app, 'p_route_exchange_buyer', '路由交易买家');
+      store.state.profiles[exchangeBuyerAuth.profileId]!.level = 25;
+      const buyerScopedExchangeInfo = await app.inject({
+        method: 'GET',
+        url: '/api/exchange/info',
+        headers: exchangeBuyerAuth.headers
+      });
+      const buyerScopedExchangeInfoPayload = JSON.parse(buyerScopedExchangeInfo.payload) as ExchangeInfoSnapshot;
+      expect(buyerScopedExchangeInfo.statusCode).toBe(200);
+      expect(buyerScopedExchangeInfoPayload.allItemPriceInfo).toEqual([
+        { itemCid: 100102, price: 1800 }
+      ]);
+      const buyerScopedExchangeItemTradeInfo = await app.inject({
+        method: 'GET',
+        url: '/api/exchange/item-trade-info?itemCid=100102',
+        headers: exchangeBuyerAuth.headers
+      });
+      const buyerScopedExchangeItemTradeInfoPayload = JSON.parse(buyerScopedExchangeItemTradeInfo.payload) as ExchangeItemTradeInfoListSnapshot;
+      expect(buyerScopedExchangeItemTradeInfo.statusCode).toBe(200);
+      expect(buyerScopedExchangeItemTradeInfoPayload.tradeInfoList).toEqual([
+        { price: 1800, peopleCount: 1 }
+      ]);
       const exchangeBuy = await app.inject({
         method: 'POST',
         url: '/api/exchange/buy-item',

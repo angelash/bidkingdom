@@ -86,8 +86,8 @@ export interface ProfileService {
   cancelExchangeLanchItem(playerId: string, itemUid: number): ProfileSnapshot & { sourceExchangeUnlanchItem: ExchangeUnlanchItemResponse };
   listMarketOrders(orderType?: 'trade' | 'auction'): MarketOrdersSnapshot;
   listExchangeLanchItems(playerId: string): ExchangeLunchItemListSnapshot;
-  listExchangeInfo(): ExchangeInfoSnapshot;
-  listExchangeItemTradeInfo(itemCid: number): ExchangeItemTradeInfoListSnapshot;
+  listExchangeInfo(playerId?: string): ExchangeInfoSnapshot;
+  listExchangeItemTradeInfo(itemCid: number, playerId?: string): ExchangeItemTradeInfoListSnapshot;
   buyExchangeItem(playerId: string, itemCid: number, itemCount: number, estimatePrice: number): ProfileSnapshot & { sourceExchangeBuyItem: ExchangeBuyItemResponse };
   listExchangeTradeInfo(playerId: string): ExchangeTradeInfoListSnapshot;
   collectExchangeItem(playerId: string, itemCid: number): ProfileSnapshot & { sourceExchangeCollectItem: ExchangeCollectItemResponse };

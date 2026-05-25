@@ -142,6 +142,13 @@ function marketOrderSettlementNetPrice(
   return Math.max(0, totalPrice - fee);
 }
 
+function assertExchangeBuyLevel(profile: PlayerProfile): void {
+  const requiredLevel = constantNumber('bid_lv', 25);
+  if (Math.max(1, Math.floor(profile.level ?? 1)) < requiredLevel) {
+    throw new Error('CODE_105');
+  }
+}
+
 export function createMarketOrderForProfile(
   profile: PlayerProfile,
   refId: string,
@@ -283,10 +290,11 @@ export function settleMarketOrderForProfile(
     if (buyerProfile.coins < totalPrice) {
       throw new Error('买家铜钱不足');
     }
-    if (lockedStockBoxes.length > 0) {
+    const stockItemCidsToReceive = marketOrderStockItemCidsToReceive(order, order.quantity);
+    if (stockItemCidsToReceive.length > 0) {
       assertCanAddStockItemsToWarehouse(
         buyerProfile,
-        lockedStockBoxes.map((box) => box.item.cid),
+        stockItemCidsToReceive,
         now,
         '仓库空间不足，无法购买交易品'
       );
@@ -536,10 +544,14 @@ export function buildExchangeLanchItemListSnapshot(
 
 export function buildExchangeInfoSnapshot(
   profiles: Iterable<PlayerProfile>,
-  now = Date.now()
+  now = Date.now(),
+  excludeSellerPlayerId?: string
 ): ExchangeInfoSnapshot {
   const minPriceByItemCid = new Map<number, number>();
   for (const candidate of exchangeLiveOrderCandidates(profiles, undefined, now)) {
+    if (excludeSellerPlayerId && candidate.sellerProfile.playerId === excludeSellerPlayerId) {
+      continue;
+    }
     const currentMin = minPriceByItemCid.get(candidate.itemCid);
     if (currentMin === undefined || candidate.unitPrice < currentMin) {
       minPriceByItemCid.set(candidate.itemCid, candidate.unitPrice);
@@ -557,11 +569,15 @@ export function buildExchangeInfoSnapshot(
 export function buildExchangeItemTradeInfoListSnapshot(
   profiles: Iterable<PlayerProfile>,
   itemCid: number,
-  now = Date.now()
+  now = Date.now(),
+  excludeSellerPlayerId?: string
 ): ExchangeItemTradeInfoListSnapshot {
   const safeItemCid = Math.max(1, Math.floor(itemCid));
   const countByPrice = new Map<number, number>();
   for (const candidate of exchangeLiveOrderCandidates(profiles, safeItemCid, now)) {
+    if (excludeSellerPlayerId && candidate.sellerProfile.playerId === excludeSellerPlayerId) {
+      continue;
+    }
     countByPrice.set(candidate.unitPrice, (countByPrice.get(candidate.unitPrice) ?? 0) + candidate.availableCount);
   }
   return {
@@ -584,6 +600,7 @@ export function buyExchangeItemForProfiles(
   now = Date.now()
 ): ExchangeBuyItemResponse {
   ensureProfileShape(buyerProfile);
+  assertExchangeBuyLevel(buyerProfile);
   const profileList = [...profiles];
   const safeItemCid = Math.max(1, Math.floor(itemCid));
   const safeItemCount = Math.max(1, Math.floor(itemCount));
@@ -595,11 +612,7 @@ export function buyExchangeItemForProfiles(
   if (buyerProfile.coins < plan.totalPrice) {
     throw new Error('买家铜钱不足');
   }
-  const stockItemCidsToReceive = plan.fills.flatMap((fill) =>
-    (fill.order.lockedStockBoxes ?? [])
-      .slice(0, fill.count)
-      .map((box) => box.item.cid)
-  );
+  const stockItemCidsToReceive = plan.fills.flatMap((fill) => marketOrderStockItemCidsToReceive(fill.order, fill.count));
   assertCanAddStockItemsToWarehouse(
     buyerProfile,
     stockItemCidsToReceive,
@@ -1014,10 +1027,11 @@ export function settleExpiredAuctionHouseOrderForProfile(
     return false;
   }
   const lockedStockBoxes = order.lockedStockBoxes ?? [];
-  if (lockedStockBoxes.length > 0) {
+  const stockItemCidsToReceive = marketOrderStockItemCidsToReceive(order, order.quantity);
+  if (stockItemCidsToReceive.length > 0) {
     assertCanAddStockItemsToWarehouse(
       bidderProfile,
-      lockedStockBoxes.map((box) => box.item.cid),
+      stockItemCidsToReceive,
       now,
       '仓库空间不足，无法购买拍卖品'
     );
@@ -1144,6 +1158,28 @@ function buildExchangeBuyFillPlan(
     remainingCount,
     totalPrice
   };
+}
+
+function marketOrderStockItemCidsToReceive(
+  order: PlayerProfile['marketOrders'][number],
+  count: number
+): number[] {
+  const safeCount = Math.max(0, Math.floor(count));
+  if (safeCount <= 0) {
+    return [];
+  }
+  const lockedStockBoxes = order.lockedStockBoxes ?? [];
+  const stockItemCids = lockedStockBoxes
+    .slice(0, safeCount)
+    .map((box) => box.item.cid);
+  const looseQuantity = safeCount - stockItemCids.length;
+  if (looseQuantity > 0 && isStockBackedInventoryRef(order.refId)) {
+    const itemCid = marketOrderItemCid(order);
+    if (itemCid > 0) {
+      stockItemCids.push(...Array.from({ length: looseQuantity }, () => itemCid));
+    }
+  }
+  return stockItemCids;
 }
 
 function compareExchangeLiveOrderCandidatesForBuy(
@@ -1393,9 +1429,10 @@ function returnMarketOrderInventory(
   }
   if (lockedStockBoxes.length > 0) {
     const boxesToReturn = lockedStockBoxes.slice(0, returnQuantity);
+    const stockItemCidsToReturn = marketOrderStockItemCidsToReceive(order, returnQuantity);
     assertCanAddStockItemsToWarehouse(
       profile,
-      boxesToReturn.map((box) => box.item.cid),
+      stockItemCidsToReturn,
       now,
       '仓库空间不足，无法返还上架藏品'
     );
@@ -1408,6 +1445,13 @@ function returnMarketOrderInventory(
     order.lockedStockBoxes = unlockedStockBoxes(boxesToReturn);
     return;
   }
+  const stockItemCidsToReturn = marketOrderStockItemCidsToReceive(order, returnQuantity);
+  assertCanAddStockItemsToWarehouse(
+    profile,
+    stockItemCidsToReturn,
+    now,
+    '仓库空间不足，无法返还上架藏品'
+  );
   addInventory(profile, order.orderType, order.refId, returnQuantity, sourceId);
 }
 

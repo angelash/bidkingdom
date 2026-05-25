@@ -186,11 +186,13 @@ export function startNextRound(state: MatchRuntimeState, now = Date.now()): Matc
     bids: [],
     currentBid: 0,
     isFinalAuction: state.coreMode ? state.roundIndex >= 4 || state.roundIndex === state.totalRounds - 1 : true,
-    warehouseSlots: buildWarehouseSlotViews(
-      container.warehouseSlots,
-      state.coreMode ? Math.min(state.roundIndex, 4) : state.roundIndex,
-      state.coreMode ? 5 : state.totalRounds
-    ),
+    warehouseSlots: state.coreMode && container.templateId.startsWith('bidmap_')
+      ? buildHiddenWarehouseSlotViews(container.warehouseSlots)
+      : buildWarehouseSlotViews(
+        container.warehouseSlots,
+        state.coreMode ? Math.min(state.roundIndex, 4) : state.roundIndex,
+        state.coreMode ? 5 : state.totalRounds
+      ),
     revealedItems: [],
     skillFeed: [],
     phaseEndsAt: now + startingDurationMs,
@@ -625,25 +627,20 @@ function ensureCoreAuctioneerChoices(state: MatchRuntimeState): Clue[] {
   if (!core) {
     throw new Error('Core warehouse must exist before drawing auctioneer clue');
   }
-  const sortedByValue = [...core.warehouseSlots].sort((left, right) => right.item.value - left.item.value);
   const shuffledSlots = shuffleByRng(core.warehouseSlots, state);
   const occupiedGrids = core.warehouseSlots.reduce((sum, slot) => sum + slot.w * slot.h, 0);
   const valuableCount = core.hiddenItems.filter((item) => ['fine', 'rare', 'legendary'].includes(item.rarity)).length;
   const categoryCounts = countBy(core.hiddenItems.map((item) => item.category));
   const dominantCategory = [...categoryCounts.entries()].sort((left, right) => right[1] - left[1])[0];
   const baseId = `${core.id}_auctioneer_card`;
-  const revealItemIds = (slots: WarehouseSlot[]) => [...new Set(slots.map((slot) => slot.item.id))];
   const selectedSample = shuffledSlots.slice(0, Math.min(4, shuffledSlots.length));
-  const largeSample = [...core.warehouseSlots].sort((left, right) => (right.w * right.h) - (left.w * left.h)).slice(0, 3);
-  const topSample = sortedByValue.slice(0, Math.min(3, sortedByValue.length));
 
   const choices: Clue[] = [
     {
       id: `${baseId}_sample`,
       kind: 'category',
-      text: `候选情报：随机抽验 ${selectedSample.length} 件藏品，点亮对应格子的轮廓、品质和品类。`,
+      text: `候选情报：随机抽验 ${selectedSample.length} 件藏品，只给出抽样口风，不公开具体格位。`,
       accuracy: 1,
-      targetItemIds: revealItemIds(selectedSample),
       source: 'public',
       isTruthful: true,
       riskHint: 'unknown'
@@ -651,9 +648,8 @@ function ensureCoreAuctioneerChoices(state: MatchRuntimeState): Clue[] {
     {
       id: `${baseId}_quality`,
       kind: 'category',
-      text: `候选情报：本仓高品质候选共有 ${valuableCount} 件，标记部分高价值候选格。`,
+      text: `候选情报：本仓高品质候选约 ${valuableCount} 件，具体位置仍需靠掌眼技能确认。`,
       accuracy: 1,
-      targetItemIds: revealItemIds(topSample),
       source: 'public',
       isTruthful: true,
       riskHint: 'unknown'
@@ -662,12 +658,9 @@ function ensureCoreAuctioneerChoices(state: MatchRuntimeState): Clue[] {
       id: `${baseId}_category`,
       kind: 'category',
       text: dominantCategory
-        ? `候选情报：${dominantCategory[0]}类藏品数量最多，共 ${dominantCategory[1]} 件，标记样本格。`
-        : '候选情报：本仓品类分布分散，标记若干样本格。',
+        ? `候选情报：${dominantCategory[0]}类藏品数量可能最多，约 ${dominantCategory[1]} 件。`
+        : '候选情报：本仓品类分布分散，暂未锁定具体格位。',
       accuracy: 1,
-      targetItemIds: dominantCategory
-        ? revealItemIds(core.warehouseSlots.filter((slot) => slot.item.category === dominantCategory[0]).slice(0, 4))
-        : revealItemIds(selectedSample),
       source: 'public',
       isTruthful: true,
       riskHint: 'unknown'
@@ -675,9 +668,8 @@ function ensureCoreAuctioneerChoices(state: MatchRuntimeState): Clue[] {
     {
       id: `${baseId}_space`,
       kind: 'category',
-      text: `候选情报：所有藏品合计占用 ${occupiedGrids} 格，大件样本会在右侧标出。`,
+      text: `候选情报：所有藏品合计占用约 ${occupiedGrids} 格，大件位置尚未公开。`,
       accuracy: 1,
-      targetItemIds: revealItemIds(largeSample),
       source: 'public',
       isTruthful: true,
       riskHint: 'unknown'
@@ -758,15 +750,28 @@ function createRandomContainerInstance(state: MatchRuntimeState, now: number): C
 
 function createProgressiveContainerInstance(state: MatchRuntimeState): ContainerInstance {
   const core = applyBidKingRoundRule(state.coreWarehouse!, state.roundIndex, state);
+  const isBidKingCore = core.templateId.startsWith('bidmap_');
   return {
     ...core,
-    publicClues: buildProgressivePublicClues(core, state.roundIndex, state.totalRounds),
-    privateCluesByPlayerId: buildProgressivePrivateClues(core, state),
+    publicClues: isBidKingCore
+      ? buildBidKingCorePublicClues(core)
+      : buildProgressivePublicClues(core, state.roundIndex, state.totalRounds),
+    privateCluesByPlayerId: isBidKingCore
+      ? buildEmptyPrivateClues(state)
+      : buildProgressivePrivateClues(core, state),
     auctionModeOverride: state.coreAuctionMode,
     depositValue: undefined,
     auctionDurationMs: core.auctionDurationMs,
     minimumBid: core.minimumBid
   };
+}
+
+function buildBidKingCorePublicClues(core: ContainerInstance): Clue[] {
+  return core.publicClues.slice(0, 1);
+}
+
+function buildEmptyPrivateClues(state: MatchRuntimeState): Record<string, Clue[]> {
+  return Object.fromEntries(state.players.map((player) => [player.id, []]));
 }
 
 function createScriptedContainerInstance(
@@ -1089,6 +1094,17 @@ function buildWarehouseSlotViews(
       iconKey: visibleValueRange ? slot.item.iconKey : undefined
     };
   });
+}
+
+function buildHiddenWarehouseSlotViews(slots: WarehouseSlot[]): WarehouseSlotView[] {
+  return slots.map((slot) => ({
+    slotId: slot.slotId,
+    x: slot.x,
+    y: slot.y,
+    w: slot.w,
+    h: slot.h,
+    visibleShape: false
+  }));
 }
 
 function pickAuctionMode(state: MatchRuntimeState, templateId: string): AuctionMode {

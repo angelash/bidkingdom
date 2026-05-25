@@ -884,6 +884,8 @@ describe('profile service', () => {
       })
     ]);
     expect(profiles.listMarketOrders('auction').sourceAuctionHouseItemInfo?.itemInfoList[0]?.lanchItemUid).toBe(auctionOrder.sourceAuctionHouseLanchItemUid);
+    expect(() => profiles.bidAuctionHousePrice('p_market_actions', auctionOrder.sourceAuctionHouseLanchItemUid!, 2_000)).toThrow('不能竞拍自己的拍卖品');
+    expect(profiles.listAuctionHouseBidLogs('p_market_actions').bidLogList).toEqual([]);
 
     const bidder = profiles.getOrCreateProfile('p_market_bidder', '竞拍人甲');
     const bidderBefore = bidder.coins;
@@ -1175,6 +1177,7 @@ describe('profile service', () => {
     const sellerA = profiles.getOrCreateProfile('p_exchange_seller_a', '交易卖家甲');
     const sellerB = profiles.getOrCreateProfile('p_exchange_seller_b', '交易卖家乙');
     const buyer = profiles.getOrCreateProfile('p_exchange_buyer', '交易买家');
+    buyer.level = 25;
     buyer.coins = 30_000;
     grantInventory(sellerA, '100102', 1);
     grantInventory(sellerB, '100102', 2);
@@ -1192,8 +1195,14 @@ describe('profile service', () => {
     expect(profiles.listExchangeInfo().allItemPriceInfo).toEqual([
       { itemCid: 100102, price: 1000 }
     ]);
+    expect(profiles.listExchangeInfo('p_exchange_seller_a').allItemPriceInfo).toEqual([
+      { itemCid: 100102, price: 1500 }
+    ]);
     expect(profiles.listExchangeItemTradeInfo(100102).tradeInfoList).toEqual([
       { price: 1000, peopleCount: 1 },
+      { price: 1500, peopleCount: 2 }
+    ]);
+    expect(profiles.listExchangeItemTradeInfo(100102, 'p_exchange_seller_a').tradeInfoList).toEqual([
       { price: 1500, peopleCount: 2 }
     ]);
 
@@ -1253,10 +1262,34 @@ describe('profile service', () => {
     expect(inventoryQuantity(unlanchB.profile, '100102')).toBe(1);
   });
 
+  it('rejects source exchange buys below the original trade level gate', () => {
+    const profiles = createProfileService(createMemoryStore());
+    const seller = profiles.getOrCreateProfile('p_exchange_level_seller', '等级交易卖家');
+    const buyer = profiles.getOrCreateProfile('p_exchange_level_buyer', '等级不足买家');
+    buyer.level = 24;
+    buyer.coins = 10_000;
+    grantInventory(seller, '100102', 1);
+
+    const lanch = profiles.lanchExchangeItem('p_exchange_level_seller', 100102, 1, 1000);
+    const order = lanch.profile.marketOrders[0]!;
+
+    expect(() => profiles.buyExchangeItem('p_exchange_level_buyer', 100102, 1, 1000)).toThrow('CODE_105');
+
+    const buyerSnapshot = profiles.getSnapshot('p_exchange_level_buyer');
+    const sellerSnapshot = profiles.getSnapshot('p_exchange_level_seller');
+    expect(buyerSnapshot.profile.coins).toBe(10_000);
+    expect(inventoryQuantity(buyerSnapshot.profile, '100102')).toBe(0);
+    expect(sellerSnapshot.profile.marketOrders.find((candidate) => candidate.id === order.id)).toEqual(expect.objectContaining({
+      status: 'listed',
+      sourceExchangeTradeCount: 0
+    }));
+  });
+
   it('checks source exchange buyer warehouse capacity before mutating purchase state', () => {
     const profiles = createProfileService(createMemoryStore());
     const seller = profiles.getOrCreateProfile('p_exchange_full_seller', '满仓交易卖家');
     const buyer = profiles.getOrCreateProfile('p_exchange_full_buyer', '满仓交易买家');
+    buyer.level = 25;
     buyer.coins = 10_000;
     grantInventory(seller, '100102', 1);
 
@@ -1265,36 +1298,7 @@ describe('profile service', () => {
     const sellerCoinsAfterListing = lanch.profile.coins;
     const lockedBoxIds = order.lockedStockBoxes?.map((box) => box.boxId) ?? [];
 
-    resetStockInventory(buyer);
-    const item = Item.find((candidate) => candidate.id === 100102)!;
-    const now = Date.now();
-    buyer.stockContainers = [{
-      stockId: 5001,
-      cid: 5001,
-      kind: 'warehouse',
-      name: '主仓库',
-      width: 1,
-      height: 1,
-      boxes: [{
-        boxId: 1,
-        position: 0,
-        item: {
-          uid: 'buyer_full:100102:1',
-          sourceUid: 1,
-          cid: 100102,
-          count: 1,
-          boxPositionData: [{ x: 0, y: 0 }],
-          rotate: false,
-          canTrade: true,
-          no: 1,
-          isLock: false,
-          quality: item.item_quality,
-          createdAt: now
-        }
-      }],
-      updatedAt: now
-    }];
-    buyer.stockState = { nextBoxId: 2, nextItemNo: 2 };
+    fillSingleSlotWarehouse(buyer, 100102);
     const buyerCoinsBefore = buyer.coins;
 
     expect(() => profiles.buyExchangeItem('p_exchange_full_buyer', 100102, 1, 1000)).toThrow('仓库空间不足');
@@ -1311,6 +1315,52 @@ describe('profile service', () => {
       sourceExchangeTradeCount: 0
     }));
     expect(sellerOrder.lockedStockBoxes?.map((box) => box.boxId)).toEqual(lockedBoxIds);
+    expect(profiles.listExchangeItemTradeInfo(100102).tradeInfoList).toEqual([
+      { price: 1000, peopleCount: 1 }
+    ]);
+  });
+
+  it('preflights legacy source exchange orders without locked stock boxes before spending coins', () => {
+    const profiles = createProfileService(createMemoryStore());
+    const seller = profiles.getOrCreateProfile('p_exchange_legacy_seller', '旧交易卖家');
+    const buyer = profiles.getOrCreateProfile('p_exchange_legacy_buyer', '旧交易买家');
+    buyer.level = 25;
+    buyer.coins = 10_000;
+    const now = Date.now();
+    seller.marketOrders.unshift({
+      id: 'legacy_exchange_order_no_locked_stock',
+      orderType: 'trade',
+      refId: '100102',
+      quantity: 1,
+      price: 1000,
+      totalPrice: 1000,
+      sourceExchangeLunchItemUid: 91_001,
+      sourceExchangeTradeCount: 0,
+      sourceExchangeTotalPrice: 1000,
+      sourceExchangeTrades: [],
+      itemCid: 100102,
+      status: 'listed',
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: now + 3_600_000,
+      publicAt: now
+    });
+    fillSingleSlotWarehouse(buyer, 100102);
+    const buyerCoinsBefore = buyer.coins;
+
+    expect(() => profiles.buyExchangeItem('p_exchange_legacy_buyer', 100102, 1, 1000)).toThrow('仓库空间不足');
+
+    const buyerSnapshot = profiles.getSnapshot('p_exchange_legacy_buyer');
+    const sellerSnapshot = profiles.getSnapshot('p_exchange_legacy_seller');
+    const order = sellerSnapshot.profile.marketOrders[0]!;
+    expect(buyerSnapshot.profile.coins).toBe(buyerCoinsBefore);
+    expect(inventoryQuantity(buyerSnapshot.profile, '100102')).toBe(0);
+    expect(buyerSnapshot.profile.stockContainers?.find((container) => container.kind === 'warehouse')?.boxes).toHaveLength(1);
+    expect(order).toEqual(expect.objectContaining({
+      status: 'listed',
+      sourceExchangeTradeCount: 0
+    }));
+    expect(order.lockedStockBoxes).toBeUndefined();
     expect(profiles.listExchangeItemTradeInfo(100102).tradeInfoList).toEqual([
       { price: 1000, peopleCount: 1 }
     ]);
@@ -2220,6 +2270,39 @@ function resetStockInventory(profile: PlayerProfile): void {
   profile.stockContainers = [];
   profile.stockState = { nextBoxId: 1, nextItemNo: 1 };
   profile.settings.bidkingStockContainersV1 = true;
+}
+
+function fillSingleSlotWarehouse(profile: PlayerProfile, itemCid: number): void {
+  resetStockInventory(profile);
+  const item = Item.find((candidate) => candidate.id === itemCid)!;
+  const now = Date.now();
+  profile.stockContainers = [{
+    stockId: 5001,
+    cid: 5001,
+    kind: 'warehouse',
+    name: '主仓库',
+    width: 1,
+    height: 1,
+    boxes: [{
+      boxId: 1,
+      position: 0,
+      item: {
+        uid: `buyer_full:${itemCid}:1`,
+        sourceUid: 1,
+        cid: itemCid,
+        count: 1,
+        boxPositionData: [{ x: 0, y: 0 }],
+        rotate: false,
+        canTrade: true,
+        no: 1,
+        isLock: false,
+        quality: item.item_quality,
+        createdAt: now
+      }
+    }],
+    updatedAt: now
+  }];
+  profile.stockState = { nextBoxId: 2, nextItemNo: 2 };
 }
 
 function selectWarehouseStockBoxes(profile: PlayerProfile, itemCid: number, quantity: number): Array<{ stockId: number; boxId: number }> {
