@@ -547,15 +547,10 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
         throw new Error(`${player.name}未满足入场条件：${access.reasons.join('、')}`);
       }
     }
-    const blockedPlayer = humanPlayers.find((player) => services.profiles.getSnapshot(player.id).profile.tickets.current <= 0);
-    if (blockedPlayer) {
-      throw new Error(`${blockedPlayer.name}竞拍票不足`);
-    }
     clearRoomTimers(room);
     clearEmojiCooldowns(room);
     for (const player of humanPlayers) {
       services.profiles.consumeBidMapEntryCost(player.id, room.selectedBidMapId, `match_start:${room.id}:${player.id}:bidmap:${room.selectedBidMapId ?? 'default'}`);
-      services.profiles.consumeTicketForMatch(player.id, `match_start:${room.id}:${player.id}`);
       broadcasts.emitRoomPlayerProfile(room, player.id);
     }
     const match = createMatch({

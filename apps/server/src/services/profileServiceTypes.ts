@@ -53,7 +53,6 @@ export interface ProfileService {
   clearCabinetItem(playerId: string, itemId: string): ProfileSnapshot;
   selectHeroSkin(playerId: string, skinId: number): ProfileSnapshot;
   refreshTickets(playerId: string): ProfileSnapshot;
-  consumeTicketForMatch(playerId: string, sourceId: string): ProfileSnapshot;
   consumeBidMapEntryCost(playerId: string, bidMapId: number | undefined, sourceId: string): ProfileSnapshot;
   completeTask(playerId: string, taskId: string): ProfileSnapshot;
   claimMissionReward(playerId: string, taskId: string): ProfileSnapshot;

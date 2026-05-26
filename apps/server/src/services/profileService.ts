@@ -126,7 +126,7 @@ import {
 } from '../domain/profile/profileInventorySaleRuntime';
 import { addCustomMailToProfile } from '../domain/profile/profileMailRuntime';
 import { consumeInventory, inventoryQuantity } from '../domain/profile/profileInventory';
-import { consumeTicketForMatchProfile, refreshTicketState } from '../domain/profile/profileTicketRuntime';
+import { refreshTicketState } from '../domain/profile/profileTicketRuntime';
 import { createEconomyLedger } from '../domain/economy/economyLedger';
 import {
   approveGuildMemberForProfile,
@@ -249,14 +249,6 @@ export function createProfileService(store: ServerStore): ProfileService {
     const profile = getOrCreateProfile(playerId);
     refreshTicketState(profile);
     store.save();
-    return getSnapshot(playerId);
-  }
-
-  function consumeTicketForMatch(playerId: string, sourceId: string): ProfileSnapshot {
-    const profile = getOrCreateProfile(playerId);
-    if (consumeTicketForMatchProfile(profile, sourceId, hasTransactionSource, recordTransaction)) {
-      store.save();
-    }
     return getSnapshot(playerId);
   }
 
@@ -1067,7 +1059,6 @@ export function createProfileService(store: ServerStore): ProfileService {
     clearCabinetItem,
     selectHeroSkin,
     refreshTickets,
-    consumeTicketForMatch,
     consumeBidMapEntryCost,
     completeTask,
     claimMissionReward,
