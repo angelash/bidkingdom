@@ -1,4 +1,4 @@
-# 20260526 BidKing 策划归档 08 AI 与 Bot
+# 20260526 BidKingdom 策划归档 08 AI 与 Bot
 
 ## RankAi 规模
 
