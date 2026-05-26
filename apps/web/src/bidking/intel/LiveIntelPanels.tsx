@@ -70,7 +70,8 @@ export function LiveIntelModal({
     { value: 'common', label: rarityName('common') },
     { value: 'fine', label: rarityName('fine') },
     { value: 'rare', label: rarityName('rare') },
-    { value: 'legendary', label: rarityName('legendary') }
+    { value: 'legendary', label: rarityName('legendary') },
+    { value: 'mythic', label: rarityName('mythic') }
   ];
 
   return (
@@ -167,8 +168,11 @@ export function MarketIntelPanel({ snapshot }: MarketIntelPanelProps): JSX.Eleme
     return <></>;
   }
   const showEstimate = !round.container.estimateHidden;
-  const publicClues = round.publicClues.slice(-4);
-  const privateClues = (snapshot.private?.privateClues ?? []).slice(-3);
+  const publicClues = round.publicClues.slice(-2);
+  const privateClues = (snapshot.private?.privateClues ?? []).slice(-1);
+  const skillEntries = (round.skillFeed ?? [])
+    .filter((entry) => entry.round === round.index + 1)
+    .slice(-3);
   return (
     <section className="market-intel-panel">
       <div className="intel-header">
@@ -188,6 +192,18 @@ export function MarketIntelPanel({ snapshot }: MarketIntelPanelProps): JSX.Eleme
             <span>{clue.text}</span>
           </p>
         ))}
+        {skillEntries.map((entry) => (
+          <p className="skill" key={entry.id}>
+            <em>{skillSourceName(entry.source)}</em>
+            <span><strong>{entry.skillName}</strong>{entry.text}</span>
+          </p>
+        ))}
+        {publicClues.length + privateClues.length + skillEntries.length === 0 && (
+          <p>
+            <em>情报</em>
+            <span>等待本轮情报披露。</span>
+          </p>
+        )}
       </div>
     </section>
   );
@@ -242,6 +258,17 @@ function clueSourceName(source: string): string {
   return names[source] ?? source;
 }
 
+function skillSourceName(source: string): string {
+  const names: Record<string, string> = {
+    map: '场地',
+    hero: '名士',
+    item: '试宝令',
+    manual: '过程',
+    auto: '自动'
+  };
+  return names[source] ?? '掌眼';
+}
+
 function rarityFromCompatItem(item: BidKingItemRow): Rarity {
   if (item.item_quality <= 1) {
     return 'junk';
@@ -255,16 +282,20 @@ function rarityFromCompatItem(item: BidKingItemRow): Rarity {
   if (item.item_quality === 4) {
     return 'rare';
   }
-  return 'legendary';
+  if (item.item_quality === 5) {
+    return 'legendary';
+  }
+  return 'mythic';
 }
 
 function rarityName(rarity: Rarity): string {
   const names: Record<Rarity, string> = {
-    junk: '杂项',
-    common: '普通',
+    junk: '普通',
+    common: '良品',
     fine: '精品',
     rare: '稀有',
-    legendary: '传说'
+    legendary: '传说',
+    mythic: '典藏'
   };
   return names[rarity];
 }

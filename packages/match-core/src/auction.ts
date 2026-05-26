@@ -1,4 +1,4 @@
-import type { BidRecord, RoundBidDecision, RoundBidFeedback, RoundSettlement } from '@bitkingdom/shared';
+import type { BidRecord, RevealedItem, RoundBidDecision, RoundBidFeedback, RoundSettlement } from '@bitkingdom/shared';
 import { getBidKingCloseThreshold } from '@bitkingdom/bidking-compat';
 import { reviewClues } from './clues';
 import { recordRoundHistory, setRoundPhase, pushEvent, requirePlayer, requireRound } from './match';
@@ -188,7 +188,7 @@ export function revealNextItem(state: MatchRuntimeState, now = Date.now()): Matc
     setRoundPhase(state, 'settlement', 6000, now);
     return state;
   }
-  const nextItem = round.container.hiddenItems[round.revealedItems.length];
+  const nextItem = nextFinalRevealItem(round);
   if (!nextItem) {
     setRoundPhase(state, 'settlement', 8000, now);
     return state;
@@ -197,6 +197,31 @@ export function revealNextItem(state: MatchRuntimeState, now = Date.now()): Matc
   state.updatedAt = now;
   pushEvent(state, 'item_revealed', undefined, { roundId: round.id, item: nextItem }, now);
   return state;
+}
+
+const FINAL_REVEAL_RARITY_ORDER: Record<RevealedItem['rarity'], number> = {
+  junk: 1,
+  common: 2,
+  fine: 3,
+  rare: 4,
+  legendary: 5,
+  mythic: 6
+};
+
+function nextFinalRevealItem(round: ReturnType<typeof requireRound>): RevealedItem | undefined {
+  const revealedIds = new Set(round.revealedItems.map((item) => item.id));
+  const slotByItemId = new Map(round.container.warehouseSlots.map((slot) => [slot.item.id, slot]));
+  return [...round.container.hiddenItems]
+    .sort((left, right) => {
+      const leftSlot = slotByItemId.get(left.id);
+      const rightSlot = slotByItemId.get(right.id);
+      return FINAL_REVEAL_RARITY_ORDER[left.rarity] - FINAL_REVEAL_RARITY_ORDER[right.rarity]
+        || (leftSlot?.y ?? 99) - (rightSlot?.y ?? 99)
+        || (leftSlot?.x ?? 99) - (rightSlot?.x ?? 99)
+        || left.value - right.value
+        || left.id.localeCompare(right.id);
+    })
+    .find((item) => !revealedIds.has(item.id));
 }
 
 export function finishRound(state: MatchRuntimeState, now = Date.now()): MatchRuntimeState {

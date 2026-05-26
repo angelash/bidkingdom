@@ -101,14 +101,15 @@ describe('match core', () => {
     expect(firstSnapshotRound.container.estimateMax).toBe(0);
     expect(firstSnapshotRound.publicClues).toEqual([]);
     expect(firstSnapshotRound.auctioneerClue).toBeUndefined();
-    expect(firstSnapshotRound.skillFeed?.some((entry) => entry.visibility === 'public')).toBe(true);
+    expect(firstSnapshotRound.skillFeed?.some((entry) => entry.visibility === 'public')).toBe(false);
     expect(firstSnapshotRound.skillFeed?.some((entry) => entry.playerId === 'p1' && entry.visibility === 'private')).toBe(true);
     expect(firstSnapshotRound.warehouseSlots?.some((slot) => slot.markedBySkill)).toBe(true);
 
     setRoundPhase(match, 'auctioneer_reveal', 5000, 2600);
     const auctioneerSnapshotRound = buildSnapshot(match, 'p1').public.currentRound!;
     expect(auctioneerSnapshotRound.auctioneerClue?.source).toBe('public');
-    expect(auctioneerSnapshotRound.auctioneerChoices?.length).toBeGreaterThan(1);
+    expect(auctioneerSnapshotRound.auctioneerChoices).toHaveLength(4);
+    expect(auctioneerSnapshotRound.auctioneerChoices?.filter((choice) => choice.text).length).toBe(1);
     expect(auctioneerSnapshotRound.publicClues.length).toBeGreaterThan(0);
 
     for (let roundIndex = 0; roundIndex < 5; roundIndex += 1) {
@@ -178,6 +179,83 @@ describe('match core', () => {
     expect(match.players.flatMap((player) => player.privateClues).every((clue) =>
       clue.source === 'skill' && !clue.id.includes('private_value') && !clue.id.includes('private_best')
     )).toBe(true);
+  });
+
+  it('pins quality-only warehouse knowledge to the item origin without revealing footprint', () => {
+    const match = makeCoreMatch();
+    const round = match.currentRound!;
+    const targetSlot = round.container.warehouseSlots.find((slot) => slot.w > 1 || slot.h > 1)
+      ?? round.container.warehouseSlots[0]!;
+    round.skillFeed = [{
+      id: `${round.id}_quality_pin_test`,
+      round: round.index + 1,
+      source: 'map',
+      sourceName: '测试拍场',
+      skillName: '品质标记',
+      effectCategory: 7,
+      text: '测试：只显示品质。',
+      visibility: 'public',
+      targetItemIds: [targetSlot.item.id],
+      hitBoxList: [{
+        boxId: targetSlot.y * 10 + targetSlot.x,
+        itemUid: 1,
+        itemCid: 0,
+        itemSlotType: 0,
+        itemType: [],
+        itemQuility: 1,
+        itemPrice: 0,
+        itemBoxIndex: 0
+      }],
+      createdAt: 3000
+    }];
+    setRoundPhase(match, 'auctioneer_reveal', 5000, 3000);
+
+    const qualityRound = buildSnapshot(match, 'p1').public.currentRound!;
+    const qualityView = qualityRound.warehouseSlots?.find((slot) => slot.slotId === targetSlot.slotId);
+    expect(qualityView).toEqual(expect.objectContaining({
+      x: targetSlot.x,
+      y: targetSlot.y,
+      w: 1,
+      h: 1,
+      visibleShape: false,
+      visibleRarity: targetSlot.item.rarity,
+      markedBySkill: true
+    }));
+
+    round.skillFeed.push({
+      id: `${round.id}_shape_pin_test`,
+      round: round.index + 1,
+      source: 'map',
+      sourceName: '测试拍场',
+      skillName: '轮廓标记',
+      effectCategory: 1,
+      text: '测试：显示轮廓。',
+      visibility: 'public',
+      targetItemIds: [targetSlot.item.id],
+      hitBoxList: [{
+        boxId: targetSlot.y * 10 + targetSlot.x,
+        itemUid: 1,
+        itemCid: 0,
+        itemSlotType: targetSlot.w * 10 + targetSlot.h,
+        itemType: [],
+        itemQuility: 0,
+        itemPrice: 0,
+        itemBoxIndex: 0
+      }],
+      createdAt: 3200
+    });
+
+    const shapedRound = buildSnapshot(match, 'p1').public.currentRound!;
+    const shapedView = shapedRound.warehouseSlots?.find((slot) => slot.slotId === targetSlot.slotId);
+    expect(shapedView).toEqual(expect.objectContaining({
+      x: targetSlot.x,
+      y: targetSlot.y,
+      w: targetSlot.w,
+      h: targetSlot.h,
+      visibleShape: true,
+      visibleRarity: targetSlot.item.rarity,
+      markedBySkill: true
+    }));
   });
 
   it('settles core open auction without legacy deposit bookkeeping', () => {
@@ -702,6 +780,74 @@ describe('match core', () => {
 
     expect(match.currentRound!.revealedItems).toHaveLength(1);
     expect(buildSnapshot(match, 'p1').public.currentRound?.revealedItems).toHaveLength(1);
+  });
+
+  it('starts final settlement with footprints only and reveals lower rarity first', () => {
+    const match = makeCoreMatch();
+    const round = match.currentRound!;
+    const highItem = {
+      ...round.container.hiddenItems[0]!,
+      id: 'test_high_item',
+      name: '高品测试件',
+      rarity: 'legendary' as const,
+      value: 100_000,
+      displayValue: 100_000
+    };
+    const lowItem = {
+      ...round.container.hiddenItems[1]!,
+      id: 'test_low_item',
+      name: '低品测试件',
+      rarity: 'junk' as const,
+      value: 1000,
+      displayValue: 1000
+    };
+    round.container.hiddenItems = [highItem, lowItem];
+    round.container.warehouseSlots = [
+      { slotId: 'slot_high', item: highItem, x: 0, y: 0, w: 2, h: 2 },
+      { slotId: 'slot_low', item: lowItem, x: 3, y: 0, w: 1, h: 1 }
+    ];
+    round.warehouseSlots = [
+      { slotId: 'slot_high', x: 0, y: 0, w: 1, h: 1, visibleShape: false },
+      { slotId: 'slot_low', x: 3, y: 0, w: 1, h: 1, visibleShape: false }
+    ];
+    match.roundIndex = 4;
+    match.totalRounds = 5;
+    round.index = 4;
+    round.isFinalAuction = true;
+    setRoundPhase(match, 'auction', 30000, 3000);
+
+    submitBid(match, 'p1', 40000, 3100);
+    settleCurrentRound(match, 4000);
+
+    const silhouetteRound = buildSnapshot(match, 'p1').public.currentRound!;
+    expect(silhouetteRound.warehouseSlots).toEqual([
+      expect.objectContaining({
+        slotId: 'slot_high',
+        x: 0,
+        y: 0,
+        w: 2,
+        h: 2,
+        visibleShape: true,
+        visibleRarity: undefined,
+        itemName: undefined,
+        iconKey: undefined
+      }),
+      expect.objectContaining({
+        slotId: 'slot_low',
+        x: 3,
+        y: 0,
+        w: 1,
+        h: 1,
+        visibleShape: true,
+        visibleRarity: undefined,
+        itemName: undefined,
+        iconKey: undefined
+      })
+    ]);
+
+    revealNextItem(match, 4500);
+
+    expect(match.currentRound!.revealedItems[0]?.id).toBe(lowItem.id);
   });
 
   it('builds a final summary with curve, rewards and revealed codex items', () => {

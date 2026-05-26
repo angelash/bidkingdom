@@ -1,8 +1,6 @@
-import type { PlayerProfile, PlayerSnapshot } from '@bitkingdom/shared';
+import type { PlayerSnapshot } from '@bitkingdom/shared';
 import { BattleFinalCeremony } from '../settlement/BattleFinalCeremony';
 import type { LiveIntelActions } from '../intel/useLiveIntelActions';
-import { FinalSummaryPanel } from '../settlement/SettlementPanels';
-import type { ReplayActions } from '../settlement/useReplayActions';
 import { BattleOverlayLayer } from './BattleOverlayLayer';
 import { MatchShell } from './MatchShell';
 import type { BidComposerActions } from './useBidComposerActions';
@@ -12,13 +10,9 @@ interface MatchRouteProps {
   bidComposer: BidComposerActions;
   liveIntel: LiveIntelActions;
   matchState: MatchDerivedState;
-  profile: PlayerProfile;
-  replay: ReplayActions;
   snapshot?: PlayerSnapshot;
   onPassAuction: () => void;
-  onReturnHome: () => void;
   onSelectSkillTarget: (playerId: string) => void;
-  onSendEmote: (emote: string) => void;
   onUseBattleItem: (itemId: number, targetPlayerId?: string) => void;
 }
 
@@ -26,27 +20,22 @@ export function MatchRoute({
   bidComposer,
   liveIntel,
   matchState,
-  profile,
-  replay,
   snapshot,
   onPassAuction,
-  onReturnHome,
   onSelectSkillTarget,
-  onSendEmote,
   onUseBattleItem
 }: MatchRouteProps): JSX.Element {
   const currentRound = matchState.currentRound;
   const showFinalCeremony = Boolean(
     snapshot &&
     currentRound &&
-    snapshot.public.status !== 'ended' &&
     currentRound.settlement?.isFinal &&
-    (currentRound.phase === 'reveal' || currentRound.phase === 'settlement')
+    (snapshot.public.status === 'ended' || currentRound.phase === 'reveal' || currentRound.phase === 'settlement')
   );
 
   return (
     <>
-      {snapshot && currentRound && snapshot.public.status !== 'ended' && (
+      {snapshot && currentRound && (snapshot.public.status !== 'ended' || showFinalCeremony) && (
         showFinalCeremony ? (
           <BattleFinalCeremony
             round={currentRound}
@@ -60,7 +49,6 @@ export function MatchRoute({
             currentRound={currentRound}
             equippedBattleItems={matchState.equippedBattleItems}
             phaseRemaining={matchState.phaseRemaining}
-            profile={profile}
             selectedSkillTargetId={matchState.selectedSkillTargetId}
             selfPlayer={matchState.selfPlayer}
             showAuctioneerReveal={matchState.showAuctioneerReveal}
@@ -71,7 +59,6 @@ export function MatchRoute({
             onOpenLiveIntel={() => liveIntel.openLiveIntel()}
             onPassAuction={onPassAuction}
             onSelectSkillTarget={onSelectSkillTarget}
-            onSendEmote={onSendEmote}
             onSubmitBid={bidComposer.submitBidClick}
             onUseBattleItem={onUseBattleItem}
           />
@@ -105,17 +92,6 @@ export function MatchRoute({
         onUsePreviousBid={bidComposer.usePreviousBidAmount}
       />
 
-      {snapshot?.public.status === 'ended' && (
-        <FinalSummaryPanel
-          snapshot={snapshot}
-          profile={profile}
-          replay={replay.replay}
-          showReplay={replay.showReplay}
-          onLoadReplay={replay.loadReplay}
-          onToggleReplay={replay.toggleReplay}
-          onReturnHome={onReturnHome}
-        />
-      )}
     </>
   );
 }

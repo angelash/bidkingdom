@@ -179,8 +179,13 @@ describe('BidKing compatible core runtime', () => {
     expect(publicRound?.container.estimateMax).toBe(0);
     expect(publicRound?.publicClues).toEqual([]);
     const publicFeed = publicRound?.skillFeed ?? [];
-    expect(publicFeed.some((entry) => entry.source === 'map')).toBe(true);
+    expect(publicFeed.some((entry) => entry.source === 'map')).toBe(false);
     expect(publicFeed.some((entry) => entry.playerId === 'p2')).toBe(false);
+    setRoundPhase(match, 'auctioneer_reveal', 5000, 1300);
+    const revealedRound = buildSnapshot(match, 'p1').public.currentRound;
+    expect(revealedRound?.auctioneerChoices).toHaveLength(4);
+    expect(revealedRound?.auctioneerChoices?.filter((choice) => choice.text).length).toBe(1);
+    expect(revealedRound?.skillFeed?.some((entry) => entry.source === 'map')).toBe(true);
   });
 
   it('tags core match events with source protocol references without exposing sealed bid amounts', () => {
@@ -447,6 +452,16 @@ describe('BidKing compatible core runtime', () => {
     expect(secondTargets.some((itemId) => firstTargets.includes(itemId))).toBe(false);
     expect(match.players[0]?.privateClues.some((clue) => clue.id.includes(`_auto_p1_2_${hero.id}_${secondSkill.id}`))).toBe(true);
     expect(secondEvent).toBeDefined();
+
+    const secondSnapshotRound = buildSnapshot(match, 'p1').public.currentRound!;
+    const publicFeed = secondSnapshotRound.skillFeed ?? [];
+    expect(publicFeed.some((entry) => entry.id === firstFeed?.id)).toBe(true);
+    expect(publicFeed.some((entry) => entry.id === secondFeed?.id)).toBe(true);
+    for (const itemId of [...firstTargets, ...secondTargets]) {
+      const slot = match.currentRound!.container.warehouseSlots.find((candidate) => candidate.item.id === itemId)!;
+      const view = secondSnapshotRound.warehouseSlots?.find((candidate) => candidate.slotId === slot.slotId);
+      expect(view?.markedBySkill).toBe(true);
+    }
   });
 
   it('interprets percentage skill counts as ten-thousand ratios for source hero skills', () => {
@@ -2426,6 +2441,7 @@ describe('BidKing compatible core runtime', () => {
       }
     ];
     round.skillFeed.push(...entries);
+    setRoundPhase(match, 'auctioneer_reveal', 5000, 1300);
 
     const publicRound = buildSnapshot(match, 'p1').public.currentRound!;
     const publicWarehouseSlots = publicRound.warehouseSlots ?? [];

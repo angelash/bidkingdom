@@ -101,7 +101,8 @@ export function revealDelayForItem(item?: RevealedItem): number {
     common: 620,
     fine: 920,
     rare: 1350,
-    legendary: 1900
+    legendary: 1900,
+    mythic: 2200
   };
   return item ? delays[item.rarity] : 700;
 }

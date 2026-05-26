@@ -71,5 +71,8 @@ function rarityFromCompatItem(item: BidKingItemRow): Rarity {
   if (item.item_quality === 4) {
     return 'rare';
   }
-  return 'legendary';
+  if (item.item_quality === 5) {
+    return 'legendary';
+  }
+  return 'mythic';
 }

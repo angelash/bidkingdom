@@ -123,7 +123,7 @@ export function buildBidKingRoundStartSkillFeed(
         sourceName: bidMapName,
         skillName: mapSkillName,
         ...skillFeedEffectMetadata(mapSkill, mapEffect, targetItemIds),
-        text: `${bidMapName}触发${mapSkillName}，本轮公共情报与仓库可见格更新。`,
+        text: buildMapSkillFeedText(bidMapName, mapSkillName, mapSkill, mapEffect, hitSlots),
         iconKey: mapSkill.skill_icon || bidMap.art_key,
         visibility: 'public',
         targetItemIds,
@@ -843,6 +843,59 @@ function skillEffectSummaryLabel(skill: BidKingSkillRow, fallbackEffect: BidKing
   return labels.length > 0 ? [...new Set(labels)].join('和') : fallbackEffect.effect_desc;
 }
 
+function buildMapSkillFeedText(
+  bidMapName: string,
+  skillName: string,
+  skill: BidKingSkillRow,
+  fallbackEffect: BidKingSkillEffectRow,
+  hitSlots: readonly WarehouseSlot[]
+): string {
+  const categories = skillEffectCategories(skill, fallbackEffect);
+  const effectName = skillEffectSummaryLabel(skill, fallbackEffect);
+  const targetCount = hitSlots.length;
+  const prefix = `${bidMapName}·${skillName}`;
+  if (targetCount === 0) {
+    return `${prefix}：未命中符合条件的藏品。`;
+  }
+  const totalCells = hitSlots.reduce((sum, slot) => sum + Math.max(1, slot.w * slot.h), 0);
+  const totalValue = hitSlots.reduce((sum, slot) => sum + slot.item.value, 0);
+  const firstSlot = hitSlots[0]!;
+  if (categories.includes(10)) {
+    return `${prefix}：命中藏品总价值为 ${totalValue.toLocaleString()}。`;
+  }
+  if (categories.includes(8)) {
+    return `${prefix}：命中藏品平均价值为 ${Math.round(totalValue / Math.max(1, targetCount)).toLocaleString()}。`;
+  }
+  if (categories.includes(9)) {
+    return `${prefix}：命中藏品格均价值为 ${Math.round(totalValue / Math.max(1, totalCells)).toLocaleString()}。`;
+  }
+  if (categories.includes(2)) {
+    return `${prefix}：命中藏品总占格为 ${totalCells}。`;
+  }
+  if (categories.includes(3)) {
+    return `${prefix}：命中藏品平均占格为 ${Math.round(totalCells / Math.max(1, targetCount))}。`;
+  }
+  if (categories.includes(4)) {
+    return `${prefix}：命中藏品数量为 ${targetCount}。`;
+  }
+  if (categories.includes(14)) {
+    return `${prefix}：命中格价格为 ${String(Math.max(0, Math.floor(firstSlot.item.value))).length} 位数。`;
+  }
+  if (categories.includes(13)) {
+    return `${prefix}：命中格品类为${firstSlot.item.category}。`;
+  }
+  if (categories.includes(12)) {
+    return `${prefix}：命中格品质为${rarityNameForText(firstSlot.item.rarity)}。`;
+  }
+  if (categories.includes(5)) {
+    return `${prefix}：命中格价值为 ${firstSlot.item.value.toLocaleString()}。`;
+  }
+  if (categories.includes(6)) {
+    return `${prefix}：显示藏品本体，${firstSlot.item.name}，${firstSlot.item.category}，品质${rarityNameForText(firstSlot.item.rarity)}。`;
+  }
+  return `${prefix}：揭示 ${targetCount} 个命中格的${effectName}。`;
+}
+
 function skillEffectCategories(skill: BidKingSkillRow, fallbackEffect: BidKingSkillEffectRow): number[] {
   const categories = [...new Set(skill.skilleffect_position
     .map((effectId) => skillEffectById(effectId)?.Category)
@@ -938,16 +991,20 @@ function rarityFromQuality(row: BidKingItemRow): Rarity {
   if (row.item_quality === 4) {
     return 'rare';
   }
-  return 'legendary';
+  if (row.item_quality === 5) {
+    return 'legendary';
+  }
+  return 'mythic';
 }
 
 function rarityNameForText(rarity: Rarity): string {
   const names: Record<Rarity, string> = {
-    junk: '残品',
-    common: '普通',
+    junk: '普通',
+    common: '良品',
     fine: '精品',
     rare: '稀有',
-    legendary: '传世'
+    legendary: '传世',
+    mythic: '典藏'
   };
   return names[rarity];
 }

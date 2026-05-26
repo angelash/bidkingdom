@@ -174,10 +174,10 @@ export function applyMatchSummaryForProfile(
   if (newCodex.length > 0) {
     matchTaskIds.add('daily_light_codex');
   }
-  if (awardedItems.some((item) => ['rare', 'legendary'].includes(item.rarity))) {
+  if (awardedItems.some((item) => ['rare', 'legendary', 'mythic'].includes(item.rarity))) {
     matchTaskIds.add('ach_rare_collector');
   }
-  if (awardedItems.some((item) => item.rarity === 'legendary')) {
+  if (awardedItems.some((item) => item.rarity === 'legendary' || item.rarity === 'mythic')) {
     matchTaskIds.add('ach_legendary_find');
   }
   if (summary.rankings.some((player) => player.playerId === profile.playerId && player.netWorth > 0)) {

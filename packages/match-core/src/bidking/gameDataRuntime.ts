@@ -500,6 +500,8 @@ function itemCidFromRevealedItem(item: RevealedItem): number {
 
 function qualityFromItem(item: RevealedItem): number {
   switch (item.rarity) {
+    case 'mythic':
+      return 6;
     case 'legendary':
       return 5;
     case 'rare':

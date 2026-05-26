@@ -51,12 +51,14 @@ export function RareRevealBanner({ round }: { round: NonNullable<PlayerSnapshot[
     return <></>;
   }
   const latest = round.revealedItems.at(-1);
-  if (!latest || !['rare', 'legendary'].includes(latest.rarity)) {
+  if (!latest || !['rare', 'legendary', 'mythic'].includes(latest.rarity)) {
     return <></>;
   }
-  const label = latest.rarity === 'legendary'
-    ? '传世出货'
-    : '稀有现世';
+  const label = latest.rarity === 'mythic'
+    ? '典藏现世'
+    : latest.rarity === 'legendary'
+      ? '传世出货'
+      : '稀有现世';
   return (
     <section className={`rare-reveal-banner rarity-${latest.rarity}`}>
       <Sparkles size={18} />
@@ -197,7 +199,7 @@ export function ClueReviewPanel({ settlement }: { settlement: NonNullable<Player
 
 export function ProgressPanel({ snapshot }: { snapshot: PlayerSnapshot }): JSX.Element {
   const round = snapshot.public.currentRound;
-  const rareRevealed = round?.revealedItems.some((item) => ['rare', 'legendary'].includes(item.rarity)) ?? false;
+  const rareRevealed = round?.revealedItems.some((item) => ['rare', 'legendary', 'mythic'].includes(item.rarity)) ?? false;
   const usedBattleItem = (snapshot.private?.battleItemUsesThisRound ?? 0) > 0;
   const hasBid = snapshot.public.players.find((player) => player.id === snapshot.private?.playerId)?.hasSubmittedBid ?? false;
   return (

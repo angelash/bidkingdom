@@ -305,13 +305,9 @@ export function BidKingApp(): JSX.Element {
           bidComposer={bidComposer}
           liveIntel={liveIntel}
           matchState={matchState}
-          profile={profile}
-          replay={replay}
           snapshot={snapshot}
           onPassAuction={() => socket?.emit('passAuction')}
-          onReturnHome={navigation.returnHome}
           onSelectSkillTarget={setSkillTargetId}
-          onSendEmote={(emote) => socket?.emit('sendEmote', { emote })}
           onUseBattleItem={navigation.useBattleItemClick}
         />
       )}

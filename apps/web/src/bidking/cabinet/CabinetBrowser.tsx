@@ -322,7 +322,7 @@ function itemGridSpan(item: Pick<CabinetItem, 'footprint'>): CSSProperties {
 }
 
 function itemFlavorText(item: CabinetItem): string {
-  if (item.rarity === 'legendary') {
+  if (item.rarity === 'legendary' || item.rarity === 'mythic') {
     return '高价值核心藏品，足以改变单轮收益和名士榜名次。';
   }
   return '稳定藏品，适合用来校准整仓真实价值、占格效率和品类线索。';
@@ -338,11 +338,12 @@ function itemPlayTip(item: CabinetItem): string {
 
 function rarityName(rarity: Rarity): string {
   const names: Record<Rarity, string> = {
-    junk: '杂项',
-    common: '普通',
+    junk: '普通',
+    common: '良品',
     fine: '精品',
     rare: '稀有',
-    legendary: '传说'
+    legendary: '传说',
+    mythic: '典藏'
   };
   return names[rarity];
 }

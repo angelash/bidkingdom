@@ -16,7 +16,7 @@ export type PlayerKind = 'human' | 'bot';
 
 export type PlayerStatus = 'connected' | 'disconnected' | 'ready' | 'playing' | 'settled';
 
-export type Rarity = 'junk' | 'common' | 'fine' | 'rare' | 'legendary';
+export type Rarity = 'junk' | 'common' | 'fine' | 'rare' | 'legendary' | 'mythic';
 
 export type ClueKind = 'value' | 'risk' | 'category' | 'set' | 'opponent';
 

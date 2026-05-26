@@ -416,7 +416,8 @@ function rarityValueMultiplier(rarity: Rarity): number {
     common: 0.48,
     fine: 0.82,
     rare: 1.32,
-    legendary: 2.15
+    legendary: 2.15,
+    mythic: 3.4
   };
   return multipliers[rarity];
 }

@@ -11,6 +11,7 @@ import type {
   WarehouseSlotView
 } from '@bitkingdom/shared';
 import { containerArtForKey, itemIconForKey, roleAvatarForRoleId } from '../../artAssets';
+import { bidKingLiveIntelItems } from '../catalog/codexRuntime';
 
 export function CloseRuleLadder({ currentRound }: { currentRound: number }): JSX.Element {
   const rules = [
@@ -145,27 +146,39 @@ export function AuctioneerRevealOverlay({
   const choices = auctioneerChoiceReel(round, selected);
   return (
     <section className="auctioneer-overlay" aria-live="polite">
-      <div className="auctioneer-panel">
-        <div className="map-intro-title">
+      <div className="auctioneer-panel" style={{ '--auctioneer-map-art': `url(${containerArtForKey(round.container.artKey)})` } as React.CSSProperties}>
+        <div className="auctioneer-heading">
           <Info size={18} />
-          <span>竞拍信息</span>
-          <strong>唱牌官正在抽取本轮公开情报</strong>
+          <strong>即将揭示情报</strong>
+          <span>拍卖师将在四张暗牌中随机披露一条</span>
         </div>
         <div className="auctioneer-card-row">
-          {choices.map((choice, index) => (
-            <div
-              className={`auctioneer-card ${selected?.id === choice.id ? 'selected' : ''}`}
-              key={`${choice.id}_${index}`}
-              style={{ '--card-delay': `${index * 120}ms` } as React.CSSProperties}
-            >
-              <span>{clueKindLabel(choice.kind)}</span>
-              <strong>{trimText(choice.text, 32)}</strong>
-            </div>
-          ))}
+          {choices.map((choice, index) => {
+            const revealed = Boolean(selected?.id === choice.id && choice.text);
+            return (
+              <div
+                className={`auctioneer-card ${revealed ? 'selected revealed' : 'hidden'}`}
+                key={`${choice.id}_${index}`}
+                style={{ '--card-delay': `${index * 120}ms` } as React.CSSProperties}
+              >
+                {revealed ? (
+                  <>
+                    <span>{clueKindLabel(choice.kind)}</span>
+                    <strong>{trimText(choice.text, 48)}</strong>
+                  </>
+                ) : (
+                  <>
+                    <span>暗牌</span>
+                    <strong>待揭示</strong>
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div className="auctioneer-clue">
           <small>本轮公开情报</small>
-          <p>{selected?.text ?? '正在整理拍场情报...'}</p>
+          <p>{selected?.text || '正在整理拍场情报...'}</p>
         </div>
       </div>
     </section>
@@ -336,7 +349,7 @@ export function BidPanel({ players, snapshot }: { players: PublicPlayer[]; snaps
 export function SkillFeedPanel({ snapshot }: { snapshot: PlayerSnapshot }): JSX.Element {
   const round = snapshot.public.currentRound;
   const feed = round?.skillFeed ?? [];
-  const visibleFeed = feed.slice(-7);
+  const visibleFeed = feed;
   return (
     <section className="skill-feed-panel">
       <div className="section-title small">
@@ -369,7 +382,7 @@ function SkillFeedRow({
       <span>{skillSourceName(entry.source)}</span>
       <div>
         <strong>{entry.skillName}</strong>
-        <em>{actorName}</em>
+        <em>第 {entry.round} 轮 · {actorName}</em>
       </div>
       <p>{trimText(entry.text, 86)}</p>
     </div>
@@ -385,6 +398,7 @@ export function WarehouseGrid({
 }): JSX.Element {
   const slots = round.warehouseSlots ?? [];
   const revealedById = new Map(round.revealedItems.map((item, index) => [item.id, { item, index }]));
+  const estimate = estimateKnownWarehouseMinimum(round, revealedById);
   if (slots.length === 0) {
     return <></>;
   }
@@ -401,6 +415,10 @@ export function WarehouseGrid({
           const layoutW = revealed || slot.visibleShape ? Math.max(1, slot.w) : 1;
           const layoutH = revealed || slot.visibleShape ? Math.max(1, slot.h) : 1;
           const shapeKey = `${layoutW}x${layoutH}`;
+          const slotLabel = revealed?.item.name
+            ?? slot.itemName
+            ?? slot.visibleCategory
+            ?? (slot.visibleSizeCount ? `${slot.visibleSizeCount}格` : undefined);
           const revealStyle = revealed
             ? {
                 '--reveal-duration': `${revealDurationForRarity(revealed.item.rarity)}ms`,
@@ -413,8 +431,8 @@ export function WarehouseGrid({
               key={slot.slotId}
               onClick={() => onInspectSlot?.(slot)}
               style={{
-                gridColumn: `span ${layoutW}`,
-                gridRow: `span ${layoutH}`,
+                gridColumn: `${Math.max(1, slot.x + 1)} / span ${layoutW}`,
+                gridRow: `${Math.max(1, slot.y + 1)} / span ${layoutH}`,
                 ...revealStyle
               }}
               title="查看掌眼候选"
@@ -423,7 +441,7 @@ export function WarehouseGrid({
               {revealed && <span className="slot-spinner" />}
               <div className="slot-content">
                 {itemIcon ? <img src={itemIcon} alt="" loading="lazy" /> : <span className="slot-shape" />}
-                <strong>{revealed?.item.name ?? slot.itemName ?? slot.visibleCategory ?? (slot.visibleRarity ? rarityName(slot.visibleRarity) : slot.visibleSizeCount ? `${slot.visibleSizeCount}格` : '未知')}</strong>
+                {slotLabel && <strong>{slotLabel}</strong>}
                 {revealed ? (
                   <em>{revealed.item.value.toLocaleString()}</em>
                 ) : slot.visibleValueRange && (
@@ -435,6 +453,11 @@ export function WarehouseGrid({
             </button>
           );
         })}
+      </div>
+      <div className="warehouse-estimate-bar">
+        <span>已知情报最低估算</span>
+        <strong>{estimate.minimum > 0 ? estimate.minimum.toLocaleString() : '-'}</strong>
+        <em>{estimate.pricedSlots}/{estimate.totalSlots} 件纳入 · {estimate.knownSlots} 件有情报</em>
       </div>
     </section>
   );
@@ -485,9 +508,9 @@ function auctioneerChoiceReel(
       ? [selected]
       : [];
   if (!selected || choices.some((choice) => choice.id === selected.id)) {
-    return choices.slice(0, 6);
+    return choices.slice(0, 4);
   }
-  return [...choices.slice(0, 5), selected];
+  return [...choices.slice(0, 3), selected];
 }
 
 function clueKindLabel(kind: string): string {
@@ -630,15 +653,101 @@ function trimText(text: string, maxLength: number): string {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
-function rarityName(rarity: Rarity): string {
-  const names: Record<Rarity, string> = {
-    junk: '杂项',
-    common: '普通',
-    fine: '精品',
-    rare: '稀有',
-    legendary: '传说'
+type BattleRound = NonNullable<PlayerSnapshot['public']['currentRound']>;
+type RevealedRoundItem = BattleRound['revealedItems'][number];
+
+interface WarehouseKnownMinimumEstimate {
+  knownSlots: number;
+  minimum: number;
+  pricedSlots: number;
+  totalSlots: number;
+}
+
+function estimateKnownWarehouseMinimum(
+  round: BattleRound,
+  revealedById: Map<string, { item: RevealedRoundItem; index: number }>
+): WarehouseKnownMinimumEstimate {
+  const slots = round.warehouseSlots ?? [];
+  let knownSlots = 0;
+  let minimum = 0;
+  let pricedSlots = 0;
+
+  for (const slot of slots) {
+    const revealed = slot.itemId ? revealedById.get(slot.itemId) : undefined;
+    const known = Boolean(
+      revealed
+      || slot.visibleValueRange
+      || slot.visibleRarity
+      || slot.visibleCategory
+      || slot.visibleShape
+      || slot.visibleSizeCount
+      || slot.itemName
+    );
+    if (known) {
+      knownSlots += 1;
+    }
+
+    const lowerBound = knownSlotLowerBound(slot, revealed?.item);
+    if (lowerBound !== undefined) {
+      minimum += lowerBound;
+      pricedSlots += 1;
+    }
+  }
+
+  return {
+    knownSlots,
+    minimum,
+    pricedSlots,
+    totalSlots: slots.length
   };
-  return names[rarity];
+}
+
+function knownSlotLowerBound(slot: WarehouseSlotView, revealed?: RevealedRoundItem): number | undefined {
+  if (revealed) {
+    return revealed.value;
+  }
+  if (slot.visibleValueRange) {
+    return slot.visibleValueRange.min;
+  }
+
+  const hasCatalogFilter = Boolean(
+    slot.itemName
+    || slot.iconKey
+    || slot.visibleRarity
+    || slot.visibleCategory
+    || slot.visibleShape
+    || slot.visibleSizeCount
+  );
+  if (!hasCatalogFilter) {
+    return undefined;
+  }
+
+  const possibleItems = bidKingLiveIntelItems.filter((item) => {
+    if (slot.visibleRarity && item.rarity !== slot.visibleRarity) {
+      return false;
+    }
+    if (slot.visibleCategory && item.category !== slot.visibleCategory) {
+      return false;
+    }
+    if (slot.itemName && item.name !== slot.itemName) {
+      return false;
+    }
+    if (slot.iconKey && item.iconKey !== slot.iconKey) {
+      return false;
+    }
+    if (slot.visibleShape && (item.footprint.w !== slot.w || item.footprint.h !== slot.h)) {
+      return false;
+    }
+    if (slot.visibleSizeCount && item.footprint.w * item.footprint.h !== slot.visibleSizeCount) {
+      return false;
+    }
+    return true;
+  });
+
+  if (possibleItems.length === 0) {
+    return undefined;
+  }
+  return Math.min(...possibleItems.map((item) => item.displayValue));
 }
 
 function revealDurationForRarity(rarity: Rarity): number {
@@ -647,7 +756,8 @@ function revealDurationForRarity(rarity: Rarity): number {
     common: 620,
     fine: 920,
     rare: 1350,
-    legendary: 1900
+    legendary: 1900,
+    mythic: 2200
   };
   return durations[rarity];
 }

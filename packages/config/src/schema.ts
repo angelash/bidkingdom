@@ -20,7 +20,7 @@ export const itemSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   category: z.string().min(1),
-  rarity: z.enum(['junk', 'common', 'fine', 'rare', 'legendary']),
+  rarity: z.enum(['junk', 'common', 'fine', 'rare', 'legendary', 'mythic']),
   value: z.number().int().min(0),
   displayValue: z.number().int().min(0),
   setId: z.string().optional(),
