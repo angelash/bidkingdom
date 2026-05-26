@@ -26,10 +26,12 @@ import { useReplayActions } from '../settlement/useReplayActions';
 import { useBidKingSocket } from '../socket/useBidKingSocket';
 import { GameExceptionCenter } from '../system/GameExceptionCenter';
 import { bidKingToastErrorStyle } from '../system/errorCodeStyleRuntime';
+import { useBidKingSoundBridge } from '../system/useBidKingSoundBridge';
 import { useGameExceptionCenter } from '../system/useGameExceptionCenter';
 
 export function BidKingApp(): JSX.Element {
   const exceptions = useGameExceptionCenter();
+  useBidKingSoundBridge();
   const { reportException } = exceptions;
   const phaseExceptionKeyRef = useRef('');
   const {

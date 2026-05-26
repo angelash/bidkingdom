@@ -36,6 +36,7 @@ import {
 import { bidKingBidLossRebateAmount } from './bidking/economyRuleRuntime';
 import { buildBidKingGameDataSnapshot } from './bidking/gameDataRuntime';
 import { bidKingInitialCashForBidMap } from './bidking/initialCashRuntime';
+import { bidKingDefaultAuctionDurationMs } from './bidking/roomRuleRuntime';
 import { bidKingSkillEffectKnowledge, bidKingSkillEffectPublicFields } from './bidking/skillEffectRuntime';
 import { bidKingSourceEffectCategoriesForFeedEntry } from './bidking/skillTargeting';
 import { createRandom, hashSeed } from './random';
@@ -51,6 +52,8 @@ import type {
 
 const CORE_ROUND_INTEL_DURATION_MS = 3200;
 const CORE_WAREHOUSE_ROLL_DURATION_MS = 4400;
+const CORE_WAREHOUSE_SELECTED_DURATION_MS = 1500;
+const CORE_AUCTIONEER_REVEAL_DURATION_MS = 5000;
 
 export function createMatch(params: {
   id: string;
@@ -159,11 +162,19 @@ export function startNextRound(state: MatchRuntimeState, now = Date.now()): Matc
   const container = createContainerInstance(state, now);
   const auctionMode = state.coreAuctionMode ?? 'sealed';
   const isOpeningRound = state.roundIndex === 0;
-  const openingCandidates = isOpeningRound ? buildOpeningCandidates(state, container.publicInfo, now) : undefined;
-  const auctioneerClue = isOpeningRound ? ensureCoreAuctioneerClue(state) : undefined;
-  const auctioneerChoices = isOpeningRound ? ensureCoreAuctioneerChoices(state) : undefined;
+  const openingCandidates = isOpeningRound
+    ? buildBidKingOpeningCandidates(state, container.publicInfo, now)
+    : undefined;
+  const auctioneerClue = isOpeningRound ? ensureCoreAuctioneerClue(state, container) : undefined;
+  const auctioneerChoices = isOpeningRound ? ensureCoreAuctioneerChoices(state, container) : undefined;
   const startingPhase: RuntimeRound['phase'] = isOpeningRound ? 'warehouse_roll' : 'intel';
   const startingDurationMs = isOpeningRound ? CORE_WAREHOUSE_ROLL_DURATION_MS : CORE_ROUND_INTEL_DURATION_MS;
+  const preAuctionDurationMs = isOpeningRound
+    ? CORE_WAREHOUSE_ROLL_DURATION_MS
+      + CORE_WAREHOUSE_SELECTED_DURATION_MS
+      + CORE_AUCTIONEER_REVEAL_DURATION_MS
+      + CORE_ROUND_INTEL_DURATION_MS
+    : CORE_ROUND_INTEL_DURATION_MS;
   const round: RuntimeRound = {
     id: `${state.id}_round_${state.roundIndex + 1}`,
     index: state.roundIndex,
@@ -179,7 +190,8 @@ export function startNextRound(state: MatchRuntimeState, now = Date.now()): Matc
     warehouseSlots: buildHiddenWarehouseSlotViews(container.warehouseSlots),
     revealedItems: [],
     skillFeed: [],
-    phaseEndsAt: now + startingDurationMs
+    phaseEndsAt: now + startingDurationMs,
+    auctionEndsAt: now + preAuctionDurationMs + auctionDurationForRound(container)
   };
 
   for (const player of state.players) {
@@ -209,6 +221,149 @@ function decrementRoundCooldowns(cooldowns: Record<string, number>): Record<stri
   );
 }
 
+function auctionDurationForRound(container: ContainerInstance): number {
+  return Math.max(1000, container.auctionDurationMs ?? bidKingDefaultAuctionDurationMs());
+}
+
+function ensureCoreAuctioneerClue(state: MatchRuntimeState, container: ContainerInstance): Clue {
+  const choices = ensureCoreAuctioneerChoices(state, container);
+  if (!state.coreAuctioneerClue) {
+    state.coreAuctioneerClue = choices.length > 0
+      ? state.rng.pick(choices)
+      : buildFallbackAuctioneerClue(container);
+  }
+  return state.coreAuctioneerClue;
+}
+
+function ensureCoreAuctioneerChoices(state: MatchRuntimeState, container: ContainerInstance): Clue[] {
+  if (!state.coreAuctioneerChoices) {
+    state.coreAuctioneerChoices = shuffleByRng(buildCoreAuctioneerChoices(container), state).slice(0, 6);
+  }
+  return state.coreAuctioneerChoices;
+}
+
+function buildCoreAuctioneerChoices(container: ContainerInstance): Clue[] {
+  const items = container.hiddenItems;
+  const totalValue = sumItemValue(items);
+  const categoryCounts = countBy(items.map((item) => item.category));
+  const rarityCounts = countBy(items.map((item) => item.rarity));
+  const topCategory = [...categoryCounts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0];
+  const topRarity = [...rarityCounts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0];
+  const highestItem = [...items].sort((left, right) => right.value - left.value)[0];
+  const largestItem = [...items].sort((left, right) => (
+    right.footprint.w * right.footprint.h - left.footprint.w * left.footprint.h
+  ))[0];
+  const averageValue = Math.round(totalValue / Math.max(1, items.length));
+  const cluePrefix = `${container.id}_auctioneer`;
+  return [
+    {
+      id: `${cluePrefix}_total_value`,
+      kind: 'value',
+      text: `唱牌官提示：本仓总值大约落在 ${Math.max(1000, Math.round(totalValue * 0.82)).toLocaleString()} ～ ${Math.max(2000, Math.round(totalValue * 1.18)).toLocaleString()}。`,
+      accuracy: 0.78,
+      valueHint: {
+        min: Math.max(1000, Math.round(totalValue * 0.82)),
+        max: Math.max(2000, Math.round(totalValue * 1.18))
+      },
+      source: 'public',
+      isTruthful: true
+    },
+    {
+      id: `${cluePrefix}_average_value`,
+      kind: 'value',
+      text: `唱牌官提示：单件均价约 ${Math.max(1000, Math.round(averageValue * 0.86)).toLocaleString()} ～ ${Math.max(2000, Math.round(averageValue * 1.16)).toLocaleString()}。`,
+      accuracy: 0.74,
+      valueHint: {
+        min: Math.max(1000, Math.round(averageValue * 0.86)),
+        max: Math.max(2000, Math.round(averageValue * 1.16))
+      },
+      source: 'public',
+      isTruthful: true
+    },
+    {
+      id: `${cluePrefix}_category`,
+      kind: 'category',
+      text: `唱牌官提示：本仓以${topCategory?.[0] ?? '混合品类'}为主，约 ${topCategory?.[1] ?? 0} 件。`,
+      accuracy: 0.82,
+      source: 'public',
+      isTruthful: true
+    },
+    {
+      id: `${cluePrefix}_rarity`,
+      kind: 'category',
+      text: `唱牌官提示：常见品相集中在${rarityNameForClue(topRarity?.[0])}，占 ${topRarity?.[1] ?? 0} 件。`,
+      accuracy: 0.8,
+      source: 'public',
+      isTruthful: true
+    },
+    {
+      id: `${cluePrefix}_highest`,
+      kind: 'value',
+      text: `唱牌官提示：压仓货可能接近 ${highestItem ? Math.round(highestItem.value * 0.92).toLocaleString() : '0'} ～ ${highestItem ? Math.round(highestItem.value * 1.12).toLocaleString() : '0'}。`,
+      accuracy: 0.72,
+      targetItemId: highestItem?.id,
+      targetItemIds: highestItem ? [highestItem.id] : undefined,
+      valueHint: highestItem
+        ? {
+            min: Math.max(1000, Math.round(highestItem.value * 0.92)),
+            max: Math.max(2000, Math.round(highestItem.value * 1.12))
+          }
+        : undefined,
+      source: 'public',
+      isTruthful: true
+    },
+    {
+      id: `${cluePrefix}_largest`,
+      kind: 'category',
+      text: `唱牌官提示：最大件约占 ${largestItem ? largestItem.footprint.w * largestItem.footprint.h : 0} 格，品类偏${largestItem?.category ?? '未知'}。`,
+      accuracy: 0.76,
+      targetItemId: largestItem?.id,
+      targetItemIds: largestItem ? [largestItem.id] : undefined,
+      source: 'public',
+      isTruthful: true
+    }
+  ];
+}
+
+function buildFallbackAuctioneerClue(container: ContainerInstance): Clue {
+  return {
+    id: `${container.id}_auctioneer_fallback`,
+    kind: 'category',
+    text: `唱牌官提示：${container.publicInfo.name}仍有可判读信息，先从仓型与公开估值入手。`,
+    accuracy: 0.7,
+    source: 'public',
+    isTruthful: true
+  };
+}
+
+function countBy<T extends string>(values: readonly T[]): Map<T, number> {
+  const counts = new Map<T, number>();
+  for (const value of values) {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function shuffleByRng<T>(items: readonly T[], state: MatchRuntimeState): T[] {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const target = state.rng.int(0, index);
+    [shuffled[index], shuffled[target]] = [shuffled[target]!, shuffled[index]!];
+  }
+  return shuffled;
+}
+
+function rarityNameForClue(rarity?: RevealedItem['rarity']): string {
+  const names: Record<RevealedItem['rarity'], string> = {
+    junk: '残品',
+    common: '普通',
+    fine: '精品',
+    rare: '稀有',
+    legendary: '传世'
+  };
+  return rarity ? names[rarity] : '未知';
+}
+
 export function setRoundPhase(
   state: MatchRuntimeState,
   phase: RuntimeRound['phase'],
@@ -218,6 +373,12 @@ export function setRoundPhase(
   const round = requireRound(state);
   round.phase = phase;
   round.phaseEndsAt = now + durationMs;
+  if (phase === 'intel') {
+    round.auctionEndsAt = round.phaseEndsAt + auctionDurationForRound(round.container);
+  }
+  if (phase === 'auction') {
+    round.auctionEndsAt = round.phaseEndsAt;
+  }
   state.updatedAt = now;
   pushEvent(state, 'phase_changed', undefined, { roundId: round.id, phase });
   return state;
@@ -644,6 +805,7 @@ function shouldRevealRoundBidAmounts(round: RuntimeRound): boolean {
 
 function publicRound(round: RuntimeRound, playerId?: string): PublicMatchState['currentRound'] {
   const exposeBidAmounts = shouldRevealRoundBidAmounts(round);
+  const exposeAuctioneerClue = Boolean(round.auctioneerClue && !['warehouse_roll', 'warehouse_selected'].includes(round.phase));
   return {
     id: round.id,
     index: round.index,
@@ -651,6 +813,11 @@ function publicRound(round: RuntimeRound, playerId?: string): PublicMatchState['
     auctionMode: round.auctionMode,
     isFinalAuction: round.isFinalAuction,
     container: publicContainerInfoForClient(round.container.publicInfo),
+    openingCandidates: round.openingCandidates?.map(publicContainerInfoForClient),
+    auctioneerClue: exposeAuctioneerClue && round.auctioneerClue ? cloneClue(round.auctioneerClue) : undefined,
+    auctioneerChoices: round.phase === 'auctioneer_reveal'
+      ? round.auctioneerChoices?.map(cloneClue)
+      : undefined,
     publicClues: publicCluesForRound(round),
     warehouseSlots: publicWarehouseSlots(round, playerId),
     bids: exposeBidAmounts
@@ -726,7 +893,10 @@ function publicSourceHitBox(entry: SkillFeedEntry, box: BidKingBoxInfoDataSnapsh
 }
 
 function publicCluesForRound(round: RuntimeRound): Clue[] {
-  return round.container.publicClues.map(cloneClue);
+  const auctioneerClues = round.auctioneerClue && !['warehouse_roll', 'warehouse_selected'].includes(round.phase)
+    ? [round.auctioneerClue]
+    : [];
+  return [...round.container.publicClues, ...auctioneerClues].map(cloneClue);
 }
 
 function cloneClue(clue: Clue): Clue {

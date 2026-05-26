@@ -58,6 +58,7 @@ export function useBidComposerActions({
   const submitBidClick = useCallback((): void => {
     setBidDraft('');
     setManualError(undefined);
+    setBidAmountHidden(false);
     setBidComposerOpen(true);
   }, []);
 
@@ -112,8 +113,9 @@ export function useBidComposerActions({
   }, [availableCash, setDraftAmount]);
 
   const setBidDraftToMinimum = useCallback((): void => {
-    setDraftAmount(0);
-  }, [setDraftAmount]);
+    setBidDraft('');
+    setManualError(undefined);
+  }, []);
 
   const setBidDraftToMax = useCallback((): void => {
     setDraftAmount(availableCash);

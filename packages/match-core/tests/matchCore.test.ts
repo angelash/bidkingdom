@@ -91,13 +91,25 @@ describe('match core', () => {
     const warehouseId = match.currentRound!.container.id;
     const hiddenItemCount = match.currentRound!.container.hiddenItems.length;
 
-    expect(match.currentRound!.phase).toBe('intel');
+    expect(match.currentRound!.phase).toBe('warehouse_roll');
     expect(match.currentRound!.container.publicClues).toEqual([]);
+    expect(match.currentRound!.openingCandidates?.length).toBeGreaterThan(1);
+    expect(match.currentRound!.auctioneerClue).toBeTruthy();
     const firstSnapshotRound = buildSnapshot(match, 'p1').public.currentRound!;
     expect(firstSnapshotRound.container.estimateHidden).toBe(true);
     expect(firstSnapshotRound.container.estimateMin).toBe(0);
     expect(firstSnapshotRound.container.estimateMax).toBe(0);
     expect(firstSnapshotRound.publicClues).toEqual([]);
+    expect(firstSnapshotRound.auctioneerClue).toBeUndefined();
+    expect(firstSnapshotRound.skillFeed?.some((entry) => entry.visibility === 'public')).toBe(true);
+    expect(firstSnapshotRound.skillFeed?.some((entry) => entry.playerId === 'p1' && entry.visibility === 'private')).toBe(true);
+    expect(firstSnapshotRound.warehouseSlots?.some((slot) => slot.markedBySkill)).toBe(true);
+
+    setRoundPhase(match, 'auctioneer_reveal', 5000, 2600);
+    const auctioneerSnapshotRound = buildSnapshot(match, 'p1').public.currentRound!;
+    expect(auctioneerSnapshotRound.auctioneerClue?.source).toBe('public');
+    expect(auctioneerSnapshotRound.auctioneerChoices?.length).toBeGreaterThan(1);
+    expect(auctioneerSnapshotRound.publicClues.length).toBeGreaterThan(0);
 
     for (let roundIndex = 0; roundIndex < 5; roundIndex += 1) {
       expect(match.currentRound!.container.id).toBe(warehouseId);
@@ -376,7 +388,7 @@ describe('match core', () => {
     expect(() => passAuction(match, 'p1', 3200)).toThrow(/Already bid this round/);
   });
 
-  it('archives clues, bids and settlement details for admin replay', () => {
+  it('archives opening public clues, skill feed, bids and settlement details for admin replay', () => {
     const match = makeMatch();
     match.roundIndex = 4;
     match.totalRounds = 5;
@@ -390,7 +402,10 @@ describe('match core', () => {
     finishRound(match, 5000);
 
     const history = match.roundHistory[0]!;
-    expect(history.publicClues).toEqual([]);
+    expect(history.publicClues.length).toBeGreaterThan(0);
+    expect(history.publicClues[0]?.source).toBe('public');
+    expect(history.skillFeed?.some((entry) => entry.visibility === 'public')).toBe(true);
+    expect(history.skillFeed?.some((entry) => entry.playerId === 'p1' && entry.visibility === 'private')).toBe(true);
     expect(history.privateCluesByPlayerId.p1?.some((clue) => clue.source === 'skill')).toBe(true);
     expect(history.bids.map((bid) => bid.amount)).toEqual([42000, 44000]);
     expect(history.settlement.participants).toHaveLength(4);

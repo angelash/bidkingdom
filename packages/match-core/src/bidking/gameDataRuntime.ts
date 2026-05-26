@@ -54,7 +54,7 @@ export function buildBidKingGameDataSnapshot(
     heroSkillLog: skillLogs.hero,
     mapSkillLog: skillLogs.map,
     itemSkillLog: skillLogs.item,
-    nextRoundTime: round.phaseEndsAt,
+    nextRoundTime: toUnixSeconds(bidKingRoundBidDeadlineMs(round)),
     selectItemCount: selectedItemCount(userLog),
     roundCanUseItemCount: systemLimits.roundCanUseItemCount,
     gameCarryItemMax: systemLimits.gameCarryItemMax,
@@ -65,8 +65,22 @@ export function buildBidKingGameDataSnapshot(
     sendAuctionUserHead: leader?.headCid ?? 0,
     sendAuctionHeadBox: leader?.headBoxCid ?? 0,
     sendAuctionUserTitle: leader?.titleCid ?? 0,
-    serverTime: now
+    serverTime: toUnixSeconds(now)
   };
+}
+
+function bidKingRoundBidDeadlineMs(round: RuntimeRound): number {
+  if (round.auctionEndsAt) {
+    return round.auctionEndsAt;
+  }
+  const auctionDurationMs = Math.max(1000, round.container.auctionDurationMs ?? 60_000);
+  return round.phase === 'intel'
+    ? round.phaseEndsAt + auctionDurationMs
+    : round.phaseEndsAt;
+}
+
+function toUnixSeconds(timestampMs: number): number {
+  return Math.floor(timestampMs / 1000);
 }
 
 function buildGameUserLog(

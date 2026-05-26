@@ -2503,6 +2503,8 @@ describe('BidKing compatible core runtime', () => {
     expect(gameData?.uid).toBe('compat-game-data:compat-game-data_round_1');
     expect(gameData?.round).toBe(5);
     expect(gameData?.mapId).toBeGreaterThan(0);
+    expect(gameData?.nextRoundTime).toBe(61);
+    expect(gameData?.serverTime).toBe(1);
     expect(gameData?.stockContainer.stockBoxes.length).toBe(match.roundHistory[0]?.revealedItems.length);
     expect(gameData?.userLog).toHaveLength(4);
     expect(p1Log?.heroCid).toBe(Hero[1]!.id);

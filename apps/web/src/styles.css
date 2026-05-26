@@ -8822,6 +8822,83 @@ button.danger {
   }
 }
 
+.battle-feedback-layer {
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  z-index: 38;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.battle-floating-cue {
+  min-width: min(260px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  overflow: hidden;
+  border: 1px solid rgba(226, 184, 93, 0.42);
+  border-radius: 4px;
+  padding: 9px 16px;
+  color: #fff3cf;
+  background:
+    linear-gradient(90deg, rgba(67, 26, 12, 0.12), rgba(67, 26, 12, 0.86), rgba(67, 26, 12, 0.12)),
+    rgba(18, 9, 5, 0.78);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.36), inset 0 0 0 1px rgba(255, 238, 178, 0.08);
+  animation: battleFloatCue 1900ms ease both;
+}
+
+.battle-floating-cue strong,
+.battle-floating-cue span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.battle-floating-cue strong {
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.battle-floating-cue span {
+  color: #d8bd88;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.battle-floating-cue.tone-urgent {
+  border-color: rgba(255, 96, 110, 0.7);
+  color: #ffe1c7;
+  background:
+    linear-gradient(90deg, rgba(86, 18, 16, 0.12), rgba(86, 18, 16, 0.9), rgba(86, 18, 16, 0.12)),
+    rgba(30, 9, 6, 0.82);
+}
+
+.battle-floating-cue.tone-skill {
+  border-color: rgba(116, 185, 155, 0.52);
+}
+
+@keyframes battleFloatCue {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+  14%,
+  78% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-18px) scale(0.98);
+  }
+}
+
 .bid-composer {
   width: min(940px, 100%);
   display: grid;
@@ -9725,7 +9802,18 @@ button.danger {
   gap: 16px;
   overflow: auto;
   padding: 22px;
-  animation: mapResultIn 420ms ease both;
+  animation: battlePanelIn 420ms ease both;
+}
+
+@keyframes battlePanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .battle-end-preview-title {
@@ -11085,6 +11173,31 @@ button.danger {
     grid-template-rows: auto auto;
   }
 
+  .map-intro-panel,
+  .auctioneer-panel {
+    width: calc(100vw - 20px);
+    padding: 14px;
+  }
+
+  .map-intro-title {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .map-intro-title strong {
+    grid-column: 1 / -1;
+  }
+
+  .map-carousel-window {
+    --map-card-width: 176px;
+    --map-card-gap: 10px;
+    --map-final-offset: -1302px;
+    width: calc(100vw - 28px);
+  }
+
+  .auctioneer-card-row {
+    grid-template-columns: 1fr;
+  }
+
   .auction-room .action-bar {
     width: calc(100vw - 20px);
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -11101,14 +11214,4 @@ button.danger {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .map-carousel-window {
-    --map-card-width: 176px;
-    --map-card-gap: 10px;
-    --map-final-offset: -1302px;
-    width: calc(100vw - 28px);
-  }
-
-  .auctioneer-card-row {
-    grid-template-columns: 1fr;
-  }
 }

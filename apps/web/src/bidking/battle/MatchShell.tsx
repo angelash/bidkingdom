@@ -21,6 +21,7 @@ import {
   RoundFeedbackPanel,
   SettlementPanel
 } from '../settlement/SettlementPanels';
+import { BattleFeedbackLayer } from './BattleFeedbackLayer';
 import {
   AuctioneerRevealOverlay,
   BidPanel,
@@ -101,6 +102,13 @@ export function MatchShell({
     >
       {showMapIntro && <MapIntroOverlay round={currentRound} />}
       {showAuctioneerReveal && <AuctioneerRevealOverlay round={currentRound} />}
+
+      <BattleFeedbackLayer
+        currentRound={currentRound}
+        phaseRemaining={phaseRemaining}
+        selfPlayer={selfPlayer}
+        snapshot={snapshot}
+      />
 
       <aside className="player-rail">
         <PlayerGrid players={snapshot.public.players} selfPlayerId={selfPlayer?.id} compact roundIndex={currentRound.index} />

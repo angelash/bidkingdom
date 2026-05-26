@@ -251,7 +251,7 @@ export function BidComposerModal({
         </div>
         <div className="bid-confirm-pane">
           <p>{bidRuleNotice(round)}</p>
-          <strong className={amount ? '' : 'empty'}>{amountHidden ? '••••••' : amount ? Number(amount).toLocaleString() : ''}</strong>
+          <strong className={amount ? '' : 'empty'}>{amount ? (amountHidden ? '••••••' : Number(amount).toLocaleString()) : ''}</strong>
           <small>
             现金 {formatCompactCurrency(availableCash)}
           </small>

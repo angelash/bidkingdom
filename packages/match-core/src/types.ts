@@ -115,6 +115,7 @@ export interface RuntimeRound {
   revealedItems: RevealedItem[];
   settlement?: RoundSettlement;
   phaseEndsAt: number;
+  auctionEndsAt?: number;
   historyRecorded?: boolean;
 }
 

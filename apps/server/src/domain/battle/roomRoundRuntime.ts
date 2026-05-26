@@ -9,7 +9,10 @@ import {
 import { revealDelayForItem } from './roomActionRuntime';
 import { runBotAuctionForRoom } from './roomBotRuntime';
 import {
-  CORE_AUCTION_MS
+  CORE_AUCTION_MS,
+  CORE_AUCTIONEER_REVEAL_MS,
+  CORE_ROUND_INTEL_MS,
+  CORE_WAREHOUSE_SELECTED_MS
 } from './roomRuntimeConfig';
 import {
   scheduleRoomTimer
@@ -43,6 +46,21 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
       return;
     }
     deps.logRoundEvent('core_round_pulse', roundLogContext(room));
+    if (round.phase === 'warehouse_roll') {
+      deps.broadcastMatch(room);
+      schedulePhaseTransition(room, 'warehouse_selected', CORE_WAREHOUSE_SELECTED_MS, 'confirm_warehouse_phase');
+      return;
+    }
+    if (round.phase === 'warehouse_selected') {
+      deps.broadcastMatch(room);
+      schedulePhaseTransition(room, 'auctioneer_reveal', CORE_AUCTIONEER_REVEAL_MS, 'reveal_auctioneer_phase');
+      return;
+    }
+    if (round.phase === 'auctioneer_reveal') {
+      deps.broadcastMatch(room);
+      schedulePhaseTransition(room, 'intel', CORE_ROUND_INTEL_MS, 'start_intel_phase');
+      return;
+    }
     if (round.phase === 'intel') {
       runBotActionsOnceForPhase(room, 'intel');
       deps.broadcastMatch(room);
