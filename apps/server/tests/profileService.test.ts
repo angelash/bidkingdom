@@ -137,12 +137,6 @@ describe('profile service', () => {
     expect(inventoryQuantity(created, '8101')).toBe(5);
     expect(created.inventory.length).toBe(new Set(bidKingStarterInventoryRewards().map((reward) => `${reward.type}:${reward.refId}`)).size);
     expect(created.tickets.current).toBe(20);
-
-    profiles.consumeTicketForMatch('p_test', 'match_start:room_1:p_test');
-    profiles.consumeTicketForMatch('p_test', 'match_start:room_1:p_test');
-
-    const next = profiles.getSnapshot('p_test').profile;
-    expect(next.tickets.current).toBe(19);
   });
 
   it('deducts original BidMap entry costs once when a match starts', () => {
@@ -169,13 +163,16 @@ describe('profile service', () => {
 
     const coinCostProfile = profiles.getOrCreateProfile('p_bidmap_coin_cost', '入场扣费');
     coinCostProfile.coins = 2_010_000;
+    coinCostProfile.tickets.current = 0;
     coinCostProfile.auctionStats!.highestWinningItemTotalValue = 2_000_000;
     profiles.consumeBidMapEntryCost(coinCostProfile.playerId, 2401, 'match_start:entry_coin');
     profiles.consumeBidMapEntryCost(coinCostProfile.playerId, 2401, 'match_start:entry_coin');
     const afterCoinCost = profiles.getSnapshot(coinCostProfile.playerId);
 
     expect(afterCoinCost.profile.coins).toBe(2_000_000);
+    expect(afterCoinCost.profile.tickets.current).toBe(0);
     expect(afterCoinCost.transactions.filter((transaction) => transaction.reason === 'bidmap_entry_cost_coins')).toHaveLength(1);
+    expect(afterCoinCost.transactions.some((transaction) => transaction.resource === 'ticket')).toBe(false);
   });
 
   it('migrates legacy starter coin defaults to original init_items coins', () => {

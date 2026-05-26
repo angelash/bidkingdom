@@ -271,7 +271,6 @@ describe('BidKing commerce restore coverage', () => {
     const randomShop = Shop.find((shop) => shop.random > 0 && shop.randcounts > 0)!;
     const shopRows = ShopItem.filter((item) => item.shopid === randomShop.id);
 
-    profiles.consumeTicketForMatch(profile.playerId, 'match_start:p_commerce_tables:one');
     const ticketSnapshot = profiles.refreshTickets(profile.playerId).profile;
     const shopSnapshot = profiles.refreshShop(profile.playerId, randomShop.id).profile;
     const restock = shopSnapshot.shopRestocks?.find((entry) => entry.shopId === randomShop.id);
