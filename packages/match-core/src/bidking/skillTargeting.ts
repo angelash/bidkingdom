@@ -288,10 +288,13 @@ function filterSlotsByKnowledgeState(
 function weightedTargetValues(
   values: readonly number[],
   state: MatchRuntimeState,
-  fallback: readonly number[]
+  sourceDomain: readonly number[]
 ): number[] {
   if (values.length <= 1 && (values[0] ?? 0) === 0) {
-    return [state.rng.pick([...fallback])];
+    if (sourceDomain.length === 0) {
+      throw new Error('Weighted target source domain is empty');
+    }
+    return [state.rng.pick([...sourceDomain])];
   }
   const countEncoded = values.length >= 3 && values.length % 2 === 1;
   const requestedCount = countEncoded ? Math.max(1, Math.floor(values[0] ?? 1)) : 1;
@@ -305,7 +308,7 @@ function weightedTargetValues(
     }
   }
   if (pairs.length === 0) {
-    return [state.rng.pick([...fallback])];
+    throw new Error(`Weighted target values are invalid: ${JSON.stringify(values)}`);
   }
   const selected: number[] = [];
   const remaining = pairs.map((pair) => ({ ...pair }));

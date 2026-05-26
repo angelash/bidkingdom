@@ -32,6 +32,9 @@ export interface BotActionAudit {
   overpayTolerance: number;
   bidAggression: number;
   publicEstimate?: number;
+  publicEstimateHidden?: boolean;
+  publicEstimateSource?: BotEstimateSource;
+  protocolInferredEstimate?: boolean;
   clueEstimate?: number;
   slotEstimate?: number;
   estimate?: number;
@@ -60,8 +63,10 @@ export interface BotActionAudit {
   decisionStyle?: string;
 }
 
+export type BotEstimateSource = 'public_estimate_range' | 'protocol_inferred_hidden_range';
+
 export interface BotAction {
-  type: 'bid' | 'pass' | 'skill' | 'battle_item' | 'emote';
+  type: 'bid' | 'pass' | 'battle_item' | 'emote';
   amount?: number;
   itemId?: number;
   itemUsageGroupId?: number;
@@ -125,6 +130,9 @@ interface SlotEstimate {
 
 interface BotAuctionAssessment {
   publicEstimate: number;
+  publicEstimateHidden: boolean;
+  publicEstimateSource: BotEstimateSource;
+  protocolInferredEstimate: boolean;
   clueEstimate?: number;
   slotEstimate?: number;
   estimate: number;
@@ -163,7 +171,10 @@ export function chooseBotAction(
   const tuning = botTuningForPlayer(state, player, profile);
   const context = buildBotContext(state, player, round, profile, tuning);
   const result = BOT_ROOT.tick(context);
-  const action = result.action ?? idleEmoteAction(context, 'Behavior tree reached idle fallback');
+  if (!result.action) {
+    throw new Error(`RankAi bot ${player.id} produced no action in ${round.phase}`);
+  }
+  const action = result.action;
 
   return {
     ...action,
@@ -178,23 +189,11 @@ const BOT_ROOT = selector('BidKingBotRoot', [
     condition('RankAiItemHasIntelValue', (context) => shouldUseBattleItem(context, 'intel')),
     action('UseRankAiBattleItemForIntel', (context) => battleItemAction(context, 'Bot uses RankAi item group before bidding'))
   ]),
-  sequence('IntelSkillSequence', [
-    condition('IsIntelPhase', (context) => context.round.phase === 'intel'),
-    condition('CanUseSkill', canUseSkill),
-    condition('SkillHasIntelValue', (context) => shouldUseSkill(context, 'intel')),
-    action('UseSkillForIntel', (context) => skillAction(context, 'Bot uses skill to reduce valuation uncertainty before bidding'))
-  ]),
   sequence('AuctionBattleItemSequence', [
     condition('IsAuctionPhase', (context) => context.round.phase === 'auction'),
     condition('CanUseRankAiBattleItemInAuction', canUseBattleItem),
     condition('RankAiItemCanStillChangeBid', (context) => shouldUseBattleItem(context, 'auction')),
     action('UseRankAiBattleItemBeforeBid', (context) => battleItemAction(context, 'Bot uses RankAi item group before committing a bid'))
-  ]),
-  sequence('AuctionSkillSequence', [
-    condition('IsAuctionPhase', (context) => context.round.phase === 'auction'),
-    condition('CanUseSkillBeforeBid', canUseSkill),
-    condition('SkillCanStillChangeBid', (context) => shouldUseSkill(context, 'auction')),
-    action('UseSkillBeforeBid', (context) => skillAction(context, 'Bot uses skill before committing an auction bid'))
   ]),
   sequence('AuctionBidSequence', [
     condition('IsAuctionPhaseForBid', (context) => context.round.phase === 'auction'),
@@ -287,8 +286,13 @@ function assessAuction(
   round: RuntimeRound,
   tuning: BotTuning
 ): BotAuctionAssessment {
-  const publicEstimate = Math.max(1, (round.container.publicInfo.estimateMin + round.container.publicInfo.estimateMax) / 2);
-  const valueRangeWidth = (round.container.publicInfo.estimateMax - round.container.publicInfo.estimateMin) / publicEstimate;
+  const publicInfo = round.container.publicInfo;
+  const publicEstimate = Math.max(1, (publicInfo.estimateMin + publicInfo.estimateMax) / 2);
+  const publicEstimateHidden = Boolean(publicInfo.estimateHidden);
+  const publicEstimateSource: BotEstimateSource = publicEstimateHidden
+    ? 'protocol_inferred_hidden_range'
+    : 'public_estimate_range';
+  const valueRangeWidth = (publicInfo.estimateMax - publicInfo.estimateMin) / publicEstimate;
   const visibleClues = visibleCluesForBot(round, player);
   const clueEstimate = estimateFromValueClues(visibleClues);
   const slotEstimate = estimateFromVisibleSlots(round.warehouseSlots, publicEstimate);
@@ -299,7 +303,7 @@ function assessAuction(
     privateSkillClueCount: player.privateClues.filter((clue) => clue.source === 'skill').length,
     slotCoverage: slotEstimate.coverage,
     valueRangeWidth,
-    risk: round.container.publicInfo.risk
+    risk: publicInfo.risk
   });
   const estimate = finalVisibleEstimate({
     publicEstimate,
@@ -329,6 +333,9 @@ function assessAuction(
 
   return {
     publicEstimate: Math.round(publicEstimate),
+    publicEstimateHidden,
+    publicEstimateSource,
+    protocolInferredEstimate: publicEstimateHidden,
     clueEstimate,
     slotEstimate: slotEstimate.estimate,
     estimate,
@@ -687,44 +694,6 @@ function buildSkillIntent(
   };
 }
 
-function canUseSkill(context: BotContext): boolean {
-  const { player, round, state } = context;
-  if (state.coreMode) {
-    return false;
-  }
-  if (!['intel', 'auction'].includes(round.phase)) {
-    return false;
-  }
-  if (round.phase === 'auction' && (player.hasSubmittedBid || round.bids.some((bid) => bid.playerId === player.id))) {
-    return false;
-  }
-  return player.skillCooldown === 0 && !player.skillUsedThisRound && player.skillUsesRemaining > 0;
-}
-
-function shouldUseSkill(context: BotContext, timing: 'intel' | 'auction'): boolean {
-  const { state, skillIntent, tuning, round } = context;
-  const threshold = timing === 'intel'
-    ? 0.48 + (round.index <= 1 ? 0.08 : 0)
-    : 0.68;
-  if (skillIntent.score >= threshold) {
-    return true;
-  }
-  const opportunisticChance = timing === 'intel'
-    ? 0.04 + tuning.riskAppetite * 0.04
-    : round.auctionMode === 'open'
-      ? 0.03 + tuning.bluffChance * 0.04
-      : 0.01;
-  return state.rng.next() < opportunisticChance && skillIntent.score > threshold - 0.12;
-}
-
-function skillAction(context: BotContext, reason: string): BotAction {
-  return {
-    type: 'skill',
-    targetPlayerId: context.skillIntent.targetPlayerId,
-    reason: `${reason}: ${context.skillIntent.reason}`
-  };
-}
-
 function canUseBattleItem(context: BotContext): boolean {
   const { player, round, state } = context;
   if (!state.coreMode || !['intel', 'auction'].includes(round.phase)) {
@@ -803,11 +772,14 @@ function rankAiBattleItemRoll(context: BotContext, timing: 'intel' | 'auction'):
 }
 
 function rankAiBattleItemRng(context: BotContext, salt: string) {
+  if (context.tuning.rankAiRowId === undefined) {
+    throw new Error(`Bot ${context.player.id} has no RankAi row for item RNG`);
+  }
   const seed = [
     context.state.id,
     context.round.id,
     context.player.id,
-    context.tuning.rankAiRowId ?? 'fallback',
+    context.tuning.rankAiRowId,
     salt
   ].join(':');
   return createRandom(hashSeed(seed));
@@ -917,22 +889,12 @@ function botTuningForPlayer(
   profile: GameConfig['botProfiles'][number]
 ): BotTuning {
   if (!state.coreMode) {
-    return {
-      riskAppetite: profile.riskAppetite,
-      bluffChance: profile.bluffChance,
-      overpayTolerance: profile.overpayTolerance,
-      bidAggression: profile.riskAppetite,
-      minBidRatio: 740 + profile.riskAppetite * 320,
-      pkRatio: 820 + profile.riskAppetite * 420,
-      bidTimeSeconds: 0,
-      itemUseProbability: Math.round(220 + profile.riskAppetite * 420),
-      itemUsageGroup: []
-    };
+    throw new Error('RankAi tuning requires BidKing core mode');
   }
   const row = rankAiRowForPlayer(state, player);
-  const minBidRatio = weightedRangeValue(row.min_bid_ratio, state, 850, `${player.id}:${row.id}:min_bid_ratio`);
-  const pkRatio = weightedRangeValue(row.bid_pk, state, 1000, `${player.id}:${row.id}:bid_pk`);
-  const bidTimeSeconds = weightedRangeValue(row.bid_time, state, 15, `${player.id}:${row.id}:bid_time`);
+  const minBidRatio = weightedRangeValue(row.min_bid_ratio, state, `${player.id}:${row.id}:min_bid_ratio`);
+  const pkRatio = weightedRangeValue(row.bid_pk, state, `${player.id}:${row.id}:bid_pk`);
+  const bidTimeSeconds = weightedRangeValue(row.bid_time, state, `${player.id}:${row.id}:bid_time`);
   const minIntensity = rankAiRatioIntensity(minBidRatio);
   const pkIntensity = rankAiRatioIntensity(pkRatio);
   const sourceRisk = clamp(0.18 + minIntensity * 0.24 + pkIntensity * 0.52, 0.16, 0.96);
@@ -960,15 +922,16 @@ function botTuningForPlayer(
 
 function rankAiRowForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
   const mappedHeroId = player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, state.config.roles);
-  const hero = Hero.find((candidate) => candidate.id === mappedHeroId) ?? Hero[player.seat % Math.max(1, Hero.length)];
+  const hero = Hero.find((candidate) => candidate.id === mappedHeroId);
+  if (!hero) {
+    throw new Error(`Bot ${player.id} role ${player.roleId} is not mapped to a BidKing Hero`);
+  }
   const roundCount = Math.max(1, state.roundIndex + 1);
-  const heroRows = hero ? RankAi.filter((row) => row.role_id === hero.id) : [];
-  return heroRows.find((row) => row.round_count === roundCount) ??
-    heroRows.find((row) => row.round_count > roundCount) ??
-    heroRows.at(-1) ??
-    RankAi.find((row) => row.round_count === roundCount) ??
-    RankAi[(Math.max(0, state.roundIndex) * state.players.length + player.seat) % RankAi.length] ??
-    RankAi[0]!;
+  const row = RankAi.find((candidate) => candidate.role_id === hero.id && candidate.round_count === roundCount);
+  if (!row) {
+    throw new Error(`Missing RankAi row for Hero ${hero.id} round ${roundCount}`);
+  }
+  return row;
 }
 
 function rankAiRatioIntensity(ratio: number): number {
@@ -1000,19 +963,18 @@ function coreRankAiBidLimit(
 function weightedRangeValue(
   ranges: readonly (readonly number[])[],
   state: MatchRuntimeState,
-  fallback: number,
   salt?: string
 ): number {
   const candidates = ranges
     .filter((range) => range.length >= 2)
     .map((range) => ({
-      min: Math.round(range[0] ?? fallback),
-      max: Math.round(range[1] ?? range[0] ?? fallback),
+      min: Math.round(range[0]!),
+      max: Math.round(range[1]!),
       weight: Math.max(0, range[2] ?? 1)
     }))
     .filter((range) => range.max >= range.min && range.weight > 0);
   if (candidates.length === 0) {
-    return fallback;
+    throw new Error('RankAi weighted range is empty');
   }
   const rng = salt ? createRandom(hashSeed(`${state.id}:${state.roundIndex}:${salt}`)) : state.rng;
   const selected = rng.weighted(candidates.map((candidate) => ({ item: candidate, weight: candidate.weight })));
@@ -1142,6 +1104,9 @@ function buildBotActionAudit(context: BotContext, trace: string[], action: BotAc
     overpayTolerance: tuning.overpayTolerance,
     bidAggression: tuning.bidAggression,
     publicEstimate: assessment.publicEstimate,
+    publicEstimateHidden: assessment.publicEstimateHidden,
+    publicEstimateSource: assessment.publicEstimateSource,
+    protocolInferredEstimate: assessment.protocolInferredEstimate,
     clueEstimate: assessment.clueEstimate,
     slotEstimate: assessment.slotEstimate,
     estimate: assessment.estimate,

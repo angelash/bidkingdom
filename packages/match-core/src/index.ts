@@ -1,7 +1,7 @@
 export { createMatch, startNextRound, buildSnapshot, getPublicMatchState, setRoundPhase, pushEvent } from './match';
 export { submitBid, passAuction, settleCurrentRound, revealNextItem, finishRound } from './auction';
 export { useSkill } from './skills';
-export { battleItemCooldownRemaining, battleItemEffectPlanForItem, skillForBattleItem, skillGroupForBattleItem, useBattleItem } from './items';
+export { battleItemCooldownRemaining, battleItemEffectPlanForItem, skillForBattleItem, useBattleItem } from './items';
 export {
   bidKingBattleItemUseLimitThisRound,
   bidKingBattleItemUsesRemainingThisRound,
@@ -253,7 +253,7 @@ export {
 export type { MatchRuntimeState, CreateMatchPlayer } from './types';
 export type { BotAction, BotActionAudit } from './bots';
 export type { BattleItemEffectPlan, BattleItemSkillContext } from './items';
-export type { AccessCheckResult, AccessEngineOptions, ConditionCheckResult, ConditionContext } from './bidking/condition/conditionEngine';
+export type { AccessCheckResult, ConditionCheckResult, ConditionContext } from './bidking/condition/conditionEngine';
 export type { BidKingConstantValue } from './bidking/constant/constantEngine';
 export type { BidKingRewardPlan, BidKingRewardResource, RankRewardPlan } from './bidking/reward/rewardEngine';
 

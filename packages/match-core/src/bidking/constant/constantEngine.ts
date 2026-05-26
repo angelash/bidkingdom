@@ -6,31 +6,49 @@ export function constantRawValue(id: string): string | undefined {
   return Constant.find((row) => row.Id === id)?.Value;
 }
 
-export function constantNumber(id: string, fallback = 0): number {
+export function constantNumber(id: string): number {
   const raw = constantRawValue(id);
   if (raw === undefined) {
-    return fallback;
+    throw new Error(`Missing BidKing Constant.${id}`);
   }
   const value = Number(raw);
-  return Number.isFinite(value) ? value : fallback;
+  if (!Number.isFinite(value)) {
+    throw new Error(`Invalid numeric BidKing Constant.${id}: ${raw}`);
+  }
+  return value;
 }
 
 export function constantNumberArray(id: string): number[] {
   const parsed = parseConstantJson(id);
   if (!Array.isArray(parsed)) {
-    return [];
+    throw new Error(`Invalid number array BidKing Constant.${id}`);
   }
-  return parsed.map(Number).filter((value) => Number.isFinite(value));
+  return parsed.map((entry, index) => {
+    const value = Number(entry);
+    if (!Number.isFinite(value)) {
+      throw new Error(`Invalid number in BidKing Constant.${id}[${index}]`);
+    }
+    return value;
+  });
 }
 
 export function constantNumberRows(id: string): number[][] {
   const parsed = parseConstantJson(id);
   if (!Array.isArray(parsed)) {
-    return [];
+    throw new Error(`Invalid number row BidKing Constant.${id}`);
   }
-  return parsed
-    .filter((row): row is unknown[] => Array.isArray(row))
-    .map((row) => row.map(Number).filter((value) => Number.isFinite(value)));
+  return parsed.map((row, rowIndex) => {
+    if (!Array.isArray(row)) {
+      throw new Error(`Invalid row in BidKing Constant.${id}[${rowIndex}]`);
+    }
+    return row.map((entry, columnIndex) => {
+      const value = Number(entry);
+      if (!Number.isFinite(value)) {
+        throw new Error(`Invalid number in BidKing Constant.${id}[${rowIndex}][${columnIndex}]`);
+      }
+      return value;
+    });
+  });
 }
 
 export function constantValue(id: string): BidKingConstantValue | undefined {
@@ -53,11 +71,11 @@ export function constantValue(id: string): BidKingConstantValue | undefined {
 function parseConstantJson(id: string): unknown {
   const raw = constantRawValue(id);
   if (!raw) {
-    return undefined;
+    throw new Error(`Missing BidKing Constant.${id}`);
   }
   try {
     return JSON.parse(raw) as unknown;
-  } catch {
-    return undefined;
+  } catch (error) {
+    throw new Error(`Invalid JSON BidKing Constant.${id}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

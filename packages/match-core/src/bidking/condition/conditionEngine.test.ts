@@ -8,17 +8,9 @@ describe('conditionEngine', () => {
     expect(checkBidKingAccess({ completedMatches: 0, level: 1 }, 0).ok).toBe(true);
   });
 
-  it('keeps unsupported access lenient for the current local mode', () => {
-    const result = checkBidKingAccess({ completedMatches: 0, level: 1 }, 'missing_access');
-    expect(result.ok).toBe(true);
-    expect(result.unsupported).toBe(true);
-  });
-
-  it('can block unsupported access in strict parity mode', () => {
-    const result = checkBidKingAccess({ completedMatches: 0, level: 1 }, 'missing_access', { strictUnsupported: true });
-    expect(result.ok).toBe(false);
-    expect(result.unsupported).toBe(true);
-    expect(result.reason).toContain('入口未登记');
+  it('throws when access is missing from the source table', () => {
+    expect(() => checkBidKingAccess({ completedMatches: 0, level: 1 }, 'missing_access'))
+      .toThrow('missing from source table');
   });
 
   it('evaluates the base always-on condition', () => {
@@ -453,8 +445,8 @@ describe('conditionEngine', () => {
     expect(shopResult.currentValue).toBe(1);
   });
 
-  it('can block unsupported condition types in strict parity mode', () => {
-    const result = evaluateBidKingCondition(
+  it('throws when a condition type is not mapped', () => {
+    expect(() => evaluateBidKingCondition(
       {
         id: 399999,
         type: 0,
@@ -469,24 +461,21 @@ describe('conditionEngine', () => {
         desc: 'test',
         packaged_desc: '未知条件'
       },
-      { completedMatches: 0, level: 1 },
-      { strictUnsupported: true }
-    );
-    expect(result.ok).toBe(false);
-    expect(result.unsupported).toBe(true);
+      { completedMatches: 0, level: 1 }
+    )).toThrow('unmapped condition type 999');
   });
 
   it('audits every condition type in the synchronized table', () => {
     const coverage = bidKingConditionTypeCoverage();
     expect(coverage.unexpectedTypes).toEqual([]);
     expect(coverage.tableTypes).toEqual([...new Set(Condition.map((row) => row.condition))].sort((left, right) => left - right));
-    expect(coverage.supportedTypes.length + coverage.explicitUnsupportedTypes.length).toBe(coverage.tableTypes.length);
+    expect(coverage.supportedTypes.length + coverage.unmappedTypes.length).toBe(coverage.tableTypes.length);
   });
 
   it('keeps every table condition type covered by the restored engine', () => {
-    const unsupportedTypes = bidKingConditionTypeCoverage().explicitUnsupportedTypes;
-    expect(unsupportedTypes).toEqual([]);
-    for (const conditionType of unsupportedTypes) {
+    const unmappedTypes = bidKingConditionTypeCoverage().unmappedTypes;
+    expect(unmappedTypes).toEqual([]);
+    for (const conditionType of unmappedTypes) {
       const row = {
         id: 400000 + conditionType,
         type: 0,
@@ -499,12 +488,10 @@ describe('conditionEngine', () => {
         divided: 1,
         maxvalue: 1,
         desc: 'test',
-        packaged_desc: `Unsupported ${conditionType}`
+        packaged_desc: `Unmapped ${conditionType}`
       };
-      const result = evaluateBidKingCondition(row, { completedMatches: 0, level: 1 }, { strictUnsupported: true });
-      expect(result.ok).toBe(false);
-      expect(result.unsupported).toBe(true);
-      expect(result.reason).toContain('Unsupported');
+      expect(() => evaluateBidKingCondition(row, { completedMatches: 0, level: 1 }))
+        .toThrow(`unmapped condition type ${conditionType}`);
     }
   });
 
@@ -534,8 +521,8 @@ describe('conditionEngine', () => {
     const requirementTypes = [...new Set(Access.map((row) => Number(row.columns[3] ?? 0)))].sort();
     expect(requirementTypes).toEqual([0, 1, 2]);
     for (const row of Access) {
-      const result = checkBidKingAccess({ completedMatches: 999, level: 999 }, row.id, { strictUnsupported: true });
-      expect(result.unsupported).not.toBe(true);
+      const result = checkBidKingAccess({ completedMatches: 999, level: 999 }, row.id);
+      expect(result.ok).toBe(true);
     }
   });
 });

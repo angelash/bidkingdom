@@ -1,12 +1,11 @@
 import {
+  Item,
   Skill,
-  SkillGroup,
   bidKingBattleItemDisplayName,
   bidKingSkillDisplayName,
-  skillById,
   skillEffectById
 } from '@bitkingdom/bidking-compat';
-import type { BidKingBattleItemRow, BidKingSkillEffectRow, BidKingSkillGroupRow, BidKingSkillRow } from '@bitkingdom/bidking-compat';
+import type { BidKingBattleItemRow, BidKingSkillEffectRow, BidKingSkillRow } from '@bitkingdom/bidking-compat';
 import type { Clue, SkillFeedEntry } from '@bitkingdom/shared';
 import {
   bidKingKnowledgeByItemIdFromSkillFeed,
@@ -22,7 +21,7 @@ import type { MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } fr
 
 export type BattleItemRevealKind = 'value' | 'category' | 'quality' | 'quantity' | 'footprint' | 'identity' | 'system';
 export type BattleItemTargetMode = 'skill_target' | 'highest_value' | 'largest_slots' | 'system_effect';
-export type BattleItemEffectImplementationStatus = 'implemented' | 'simplified';
+export type BattleItemEffectImplementationStatus = 'implemented' | 'protocol_inferred';
 
 export interface BattleItemEffectPlan {
   itemId: number;
@@ -159,7 +158,7 @@ function prepareBattleItemUse(
     throw new Error(`Battle item is on cooldown for ${cooldownRemaining} round(s)`);
   }
 
-  const skillContext = battleItemSkillContext(state, item);
+  const skillContext = battleItemSkillContext(item);
   const effectPlan = battleItemEffectPlanForItem(item, skillContext);
   const targetPlayer = targetPlayerId ? state.players.find((candidate) => candidate.id === targetPlayerId) : undefined;
   if (effectPlan.targetPlayerRequired && !targetPlayer) {
@@ -197,28 +196,19 @@ export interface BattleItemSkillContext {
   effect?: BidKingSkillEffectRow;
 }
 
-export function skillGroupForBattleItem(item: BidKingBattleItemRow): BidKingSkillGroupRow | undefined {
-  const direct = SkillGroup.find((row) => row.groupid === item.skill_group || row.groupid === item.skill_group + 100);
-  if (direct) {
-    return direct;
-  }
-  const fallbackGroupIds = SkillGroup.map((row) => row.groupid).sort((left, right) => left - right);
-  if (fallbackGroupIds.length === 0) {
-    return undefined;
-  }
-  const fallbackGroupId = fallbackGroupIds[Math.max(0, item.battle_item_type - 1) % fallbackGroupIds.length]!;
-  return SkillGroup.find((row) => row.groupid === fallbackGroupId);
-}
-
 export function battleItemEffectPlanForItem(
   item: BidKingBattleItemRow,
-  skillContext: BattleItemSkillContext = battleItemSkillContext(undefined, item)
+  skillContext: BattleItemSkillContext = battleItemSkillContext(item)
 ): BattleItemEffectPlan {
   const skill = skillContext.skill;
   const effect = skillContext.effect;
-  const requestedTargetCount = skill
-    ? bidKingSourceTargetCount(skill)
-    : 1 + Math.floor(item.item_quality / 3);
+  if (!skill) {
+    throw new Error(`BattleItem ${item.id} is missing source Item.skills Skill`);
+  }
+  if (!effect) {
+    throw new Error(`BattleItem ${item.id} Skill ${skill.id} is missing SkillEffect`);
+  }
+  const requestedTargetCount = bidKingSourceTargetCount(skill);
   const targetCount = requestedTargetCount;
   const effectCategory = effect?.Category;
   const revealKind = battleItemRevealKind(item, effectCategory);
@@ -254,7 +244,7 @@ export function battleItemEffectPlanForItem(
     qualityHint: revealKind === 'quality',
     quantityHint: revealKind === 'quantity' || revealKind === 'footprint',
     identityHint: revealKind === 'identity',
-    implementationStatus: battleItemEffectImplementationStatus(revealKind, effectCategory),
+    implementationStatus: battleItemEffectImplementationStatus(effectCategory),
     description: battleItemEffectDescription(item, skill, effect, revealKind, targetCount, requestedTargetCount)
   };
   return plan;
@@ -344,7 +334,6 @@ function battleItemTargets(
   effectPlan: BattleItemEffectPlan
 ): WarehouseSlot[] {
   const round = requireRound(state);
-  const count = effectPlan.requestedTargetCount;
   const skill = skillContext.skill;
   if (effectPlan.revealKind === 'system') {
     return [];
@@ -354,58 +343,29 @@ function battleItemTargets(
       knownInfoByItemId: bidKingKnowledgeByItemIdFromSkillFeed(round.container.warehouseSlots, round.skillFeed, playerId)
     });
   }
-  let slots = [...round.container.warehouseSlots];
-  if (slots.length === 0) {
-    slots = [...round.container.warehouseSlots];
-  }
-  if (effectPlan.targetMode === 'highest_value') {
-    return slots.sort((left, right) => right.item.value - left.item.value).slice(0, count === 999 ? slots.length : count);
-  }
-  return slots.sort((left, right) => (right.w * right.h) - (left.w * left.h)).slice(0, count === 999 ? slots.length : count);
+  throw new Error(`Battle item effect plan ${effectPlan.itemId} has no source Skill`);
 }
 
-function battleItemSkillContext(state: MatchRuntimeState | undefined, item: BidKingBattleItemRow): BattleItemSkillContext {
+function battleItemSkillContext(item: BidKingBattleItemRow): BattleItemSkillContext {
   const directSkill = skillForBattleItem(item);
   if (directSkill) {
     const effectId = directSkill.skilleffect_position[0];
+    const effect = effectId ? skillEffectById(effectId) : undefined;
+    if (!effect) {
+      throw new Error(`BattleItem ${item.id} Skill ${directSkill.id} references missing SkillEffect ${effectId ?? 'none'}`);
+    }
     return {
       skill: directSkill,
-      effect: effectId ? skillEffectById(effectId) : undefined
+      effect
     };
   }
-  const group = skillGroupForBattleItem(item);
-  const candidates = group?.skill_group
-    .map(([skillId, weight]) => ({ item: skillById(skillId), weight }))
-    .filter((candidate): candidate is { item: BidKingSkillRow; weight: number } => Boolean(candidate.item));
-  const weighted = candidates?.filter((candidate) => candidate.weight > 0) ?? [];
-  const skill = resolveBattleItemSkill(state, item, candidates, weighted);
-  const effectId = skill?.skilleffect_position[0];
-  return {
-    skill,
-    effect: effectId ? skillEffectById(effectId) : undefined
-  };
+  throw new Error(`BattleItem ${item.id} is missing source Item.skills Skill`);
 }
 
 export function skillForBattleItem(item: BidKingBattleItemRow): BidKingSkillRow | undefined {
-  return Skill.find((candidate) => candidate.skill_name === `itemName_${item.id}`);
-}
-
-function resolveBattleItemSkill(
-  state: MatchRuntimeState | undefined,
-  item: BidKingBattleItemRow,
-  candidates: { item: BidKingSkillRow; weight: number }[] | undefined,
-  weighted: { item: BidKingSkillRow; weight: number }[]
-): BidKingSkillRow {
-  if (state && weighted.length > 0) {
-    return state.rng.weighted(weighted);
-  }
-  if (state && candidates && candidates.length > 0) {
-    return state.rng.weighted(candidates.map((candidate) => ({ ...candidate, weight: 1 })));
-  }
-  return weighted[0]?.item
-    ?? candidates?.[0]?.item
-    ?? Skill.find((candidate) => Number(candidate.skill_group) === item.skill_group || Number(candidate.skill_group) === item.skill_group + 100)
-    ?? Skill[0]!;
+  const sourceItem = Item.find((candidate) => candidate.id === item.id);
+  const skillId = sourceItem?.skills.find((candidate) => candidate > 0);
+  return skillId ? Skill.find((candidate) => candidate.id === skillId) : undefined;
 }
 
 function battleItemEffectName(item: BidKingBattleItemRow, skillContext: BattleItemSkillContext): string {
@@ -415,22 +375,16 @@ function battleItemEffectName(item: BidKingBattleItemRow, skillContext: BattleIt
       ? `${skillName} · ${skillContext.effect.effect_desc}`
       : skillName;
   }
-  if (item.battle_item_type === 2) {
-    return '估值掌眼';
-  }
-  if (item.battle_item_type === 3) {
-    return '格位观察';
-  }
-  return '格位侦察';
+  throw new Error(`BattleItem ${item.id} has no source Item.skills Skill`);
 }
 
 function battleItemRevealKind(item: BidKingBattleItemRow, effectCategory: number | undefined): BattleItemRevealKind {
   if (effectCategory !== undefined) {
     const effectProfile = bidKingSkillEffectRuntimeProfile(effectCategory);
-    if (effectProfile.runtimeKind === 'system' || effectProfile.runtimeKind === 'unsupported') {
+    if (effectProfile.runtimeKind === 'system') {
       return 'system';
     }
-    if ([5, 8, 9, 10, 14].includes(effectCategory)) {
+    if ([5, 8, 9, 10, 14, 15].includes(effectCategory)) {
       return 'value';
     }
     if ([2, 3, 4, 11].includes(effectCategory)) {
@@ -472,17 +426,15 @@ function battleItemTargetMode(
   return 'largest_slots';
 }
 
-function battleItemEffectImplementationStatus(
-  revealKind: BattleItemRevealKind,
-  effectCategory: number | undefined
-): BattleItemEffectImplementationStatus {
+function battleItemEffectImplementationStatus(effectCategory: number | undefined): BattleItemEffectImplementationStatus {
   if (effectCategory === undefined) {
-    return revealKind === 'category' || revealKind === 'system' ? 'simplified' : 'implemented';
+    throw new Error('Battle item effect plan is missing source SkillEffect Category');
   }
   const effectProfile = bidKingSkillEffectRuntimeProfile(effectCategory);
-  return effectProfile.runtimeKind === 'system' || effectProfile.runtimeKind === 'unsupported'
-    ? 'simplified'
-    : 'implemented';
+  if (effectProfile.runtimeKind === 'system') {
+    return 'protocol_inferred';
+  }
+  return 'implemented';
 }
 
 function battleItemEffectDescription(
@@ -494,8 +446,14 @@ function battleItemEffectDescription(
   requestedTargetCount: number
 ): string {
   const itemName = bidKingBattleItemDisplayName(item);
-  const skillName = skill ? bidKingSkillDisplayName(skill) : '默认试宝情报';
-  const effectName = effect?.effect_desc ?? '按试宝令类型生成情报';
+  if (!skill) {
+    throw new Error(`BattleItem ${item.id} is missing source Item.skills Skill`);
+  }
+  if (!effect) {
+    throw new Error(`BattleItem ${item.id} Skill ${skill.id} is missing SkillEffect`);
+  }
+  const skillName = bidKingSkillDisplayName(skill);
+  const effectName = effect.effect_desc;
   const duration = skill && skill.skill_round > 0 ? `，持续 ${skill.skill_round} 回合` : '';
   const cooldown = skill && skill.skill_CD > 0 ? `，冷却 ${skill.skill_CD} 回合` : '';
   if (revealKind === 'system') {
@@ -594,6 +552,12 @@ function battleItemClueTextForPlan(
     const digits = target ? String(Math.max(0, Math.floor(target.value))).length : 0;
     return `${itemName}·${skillName}：命中格价格为 ${digits} 位数。`;
   }
+  if (category === 15) {
+    const digitInfo = target ? battleItemPriceDigitInfo(target.value, effectPlan) : undefined;
+    return digitInfo
+      ? `${itemName}·${skillName}：命中格价格第 ${digitInfo.position} 位为 ${digitInfo.digit}。`
+      : `${itemName}·${skillName}：没有命中价格位数信息。`;
+  }
   if (!target) {
     return `${itemName}·${skillName}：没有命中藏品。`;
   }
@@ -630,6 +594,10 @@ function battleItemValueHint(
     const digits = Math.max(1, String(Math.max(0, Math.floor(target.value))).length);
     return { min: digits === 1 ? 0 : 10 ** (digits - 1), max: 10 ** digits - 1 };
   }
+  if (effectPlan.effectCategory === 15) {
+    const digitInfo = battleItemPriceDigitInfo(target.value, effectPlan);
+    return { min: digitInfo.min, max: digitInfo.max };
+  }
   if (effectPlan.effectCategory === 8) {
     const value = Math.round(totalValue / Math.max(1, targetItems.length));
     return { min: value, max: value };
@@ -642,6 +610,23 @@ function battleItemValueHint(
     return { min: totalValue, max: totalValue };
   }
   return { min: totalValue, max: totalValue };
+}
+
+function battleItemPriceDigitInfo(
+  value: number,
+  effectPlan: Pick<BattleItemEffectPlan, 'effectId'>
+): { position: number; digit: number; min: number; max: number } {
+  const effect = effectPlan.effectId ? skillEffectById(effectPlan.effectId) : undefined;
+  const position = Math.max(1, Math.min(9, Math.floor(Number(effect?.Param?.[0] ?? 1))));
+  const scale = 10 ** (position - 1);
+  const safeValue = Math.max(0, Math.floor(value));
+  const digit = Math.floor(safeValue / scale) % 10;
+  return {
+    position,
+    digit,
+    min: digit * scale,
+    max: digit * scale + scale - 1
+  };
 }
 
 function formatBattleItemNumber(value: number): string {

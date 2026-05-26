@@ -13,13 +13,11 @@ import { taskBoardDefinitions } from '../task/taskDefinitions';
 type RoleDefinition = (typeof gameConfig.roles)[number];
 
 export function RoomLobbyView({
-  coreAuctionMode,
   displayBidMapName,
   isHost,
   mapGroups,
   profile,
   room,
-  selectedBidMapId,
   selectedRoleId,
   selfPlayerId,
   onReady,
@@ -29,13 +27,11 @@ export function RoomLobbyView({
   onSelectRole,
   onStartMatch
 }: {
-  coreAuctionMode: CoreAuctionMode;
   displayBidMapName: (bidMap: BidKingBidMapRow) => string;
   isHost: boolean;
   mapGroups: BidKingBattleMapGroup[];
   profile: PlayerProfile;
   room: RoomSnapshot;
-  selectedBidMapId?: number;
   selectedRoleId: string;
   selfPlayerId?: string;
   onReady: () => void;
@@ -46,12 +42,21 @@ export function RoomLobbyView({
   onStartMatch: () => void;
 }): JSX.Element {
   const sourceRoles = bidKingSourceRoles(gameConfig.roles);
-  const selectedRole = sourceRoles.find((role) => role.id === selectedRoleId) ?? sourceRoles[0] ?? gameConfig.roles[0]!;
+  const selectedRole = sourceRoles.find((role) => role.id === selectedRoleId);
+  if (!selectedRole) {
+    throw new Error(`Selected role ${selectedRoleId} is not backed by BidKing Hero`);
+  }
   const lobbyBidMapChoices = mapGroups.flatMap((group) => group.children);
-  const lobbyBidMap = lobbyBidMapChoices.find((map) => map.id === (room.selectedBidMapId ?? selectedBidMapId))
-    ?? lobbyBidMapChoices[0];
-  const roomPlayerCount = room.maxPlayers ?? lobbyBidMap?.bidder_number ?? 4;
-  const nextBidMap = lobbyBidMapChoices[(Math.max(0, lobbyBidMapChoices.findIndex((map) => map.id === lobbyBidMap?.id)) + 1) % Math.max(1, lobbyBidMapChoices.length)];
+  const lobbyBidMap = lobbyBidMapChoices.find((map) => map.id === room.selectedBidMapId);
+  if (!lobbyBidMap) {
+    throw new Error(`Room BidMap ${room.selectedBidMapId} is missing from battle map groups`);
+  }
+  const roomPlayerCount = room.maxPlayers;
+  const currentBidMapIndex = lobbyBidMapChoices.findIndex((map) => map.id === lobbyBidMap.id);
+  const nextBidMap = lobbyBidMapChoices[(currentBidMapIndex + 1) % lobbyBidMapChoices.length];
+  if (!nextBidMap) {
+    throw new Error('Room has no BidMap switch target');
+  }
   return (
     <section className="room-ready-hall">
       <aside className="hall-mode-rail">
@@ -72,11 +77,11 @@ export function RoomLobbyView({
           </div>
           <div className="hall-resource-strip">
             <span>席位 <strong>{room.players.length}/{roomPlayerCount}</strong></span>
-            <span>局规 <strong>{auctionModeName(room.coreAuctionMode ?? coreAuctionMode)}</strong></span>
+            <span>局规 <strong>{auctionModeName(room.coreAuctionMode)}</strong></span>
             <span>起始 <strong>{formatCompactCurrency(room.initialCash)}</strong></span>
             <span>房主 <strong>{isHost ? '你' : '队友'}</strong></span>
-            <button disabled={!isHost || !nextBidMap} onClick={() => nextBidMap && onSelectBidMap(nextBidMap.id)} type="button">
-              场地 <strong>{lobbyBidMap ? displayBidMapName(lobbyBidMap) : '-'}</strong>
+            <button disabled={!isHost} onClick={() => onSelectBidMap(nextBidMap.id)} type="button">
+              场地 <strong>{displayBidMapName(lobbyBidMap)}</strong>
             </button>
           </div>
           <button className="hall-return-home" onClick={onReturnHome} type="button">
@@ -86,7 +91,7 @@ export function RoomLobbyView({
         </header>
         <PlayerGrid players={room.players} selfPlayerId={selfPlayerId} />
         <section className="room-rule-dock">
-          <ModeSelector mode={room.coreAuctionMode ?? coreAuctionMode} onSelect={onSelectCoreAuctionMode} disabled={!isHost} />
+          <ModeSelector mode={room.coreAuctionMode} onSelect={onSelectCoreAuctionMode} disabled={!isHost} />
           <div className="hall-dock-actions">
             <button onClick={onReady} type="button">
               <Shield size={18} />

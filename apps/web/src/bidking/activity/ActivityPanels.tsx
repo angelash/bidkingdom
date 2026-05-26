@@ -8,7 +8,6 @@ import {
   PurchaseList as bidKingPurchaseList,
   RankReward as bidKingRankRewards,
   Sim as bidKingSims,
-  activityClaimState,
   bidKingDlcRuntime,
   bidKingPayRuntime,
   bidKingRawTableDisplayDesc,
@@ -195,7 +194,6 @@ export function PassPanelView({
 }: PassPanelViewProps): JSX.Element {
   const [simSnapshot, setSimSnapshot] = useState<SimSnapshotView>();
   const [activitySnapshot, setActivitySnapshot] = useState<ActivityProgressSnapshotView>();
-  const now = Date.now();
 
   useEffect(() => {
     let cancelled = false;
@@ -228,7 +226,7 @@ export function PassPanelView({
     };
   }, [profile.playerId, profile.updatedAt, serverUrl]);
 
-  const activityRows = activitySnapshot?.activities ?? fallbackActivityProgress(profile, now);
+  const activityRows = activitySnapshot?.activities ?? [];
 
   return (
     <div className="config-table-panel config-grid-panel">
@@ -333,57 +331,6 @@ function activityWindowLabel(activity: Pick<ActivityProgressEntryView, 'duration
   }
   const hours = Math.ceil(activity.remainingMs / 3600_000);
   return ` · 剩余 ${hours} 小时`;
-}
-
-function fallbackActivityProgress(profile: PlayerProfile, now: number): ActivityProgressEntryView[] {
-  return bidKingActivities.map((activity) => {
-    const claimed = profile.claimedActivityRewards.includes(activity.id);
-    const state = activityClaimState(activity, {
-      claimed,
-      profileCreatedAt: profile.createdAt,
-      now
-    });
-    const rewardRows = parseBidKingRewardRows(rawColumn(activity, 12));
-    const panelName = rawColumn(activity, 9);
-    const social = panelName === 'ActivityPanel_Social';
-    const rank = panelName === 'ActivityPanel_Rank';
-    const progress = state.claimable || state.claimed
-      ? 1
-      : rank
-        ? profile.rankPoints
-        : social
-          ? (profile.friends.length > 0 ? 1 : 0) + (profile.guildMembership ? 1 : 0)
-          : 0;
-    const target = rank ? Math.max(100, Math.ceil((profile.rankPoints + 1) / 100) * 100) : social ? 2 : 1;
-    return {
-      activityId: activity.id,
-      name: bidKingRawTableDisplayName(activity),
-      description: bidKingRawTableDisplayDesc(activity),
-      type: Number(rawColumn(activity, 2)) || 0,
-      sort: Number(rawColumn(activity, 3)) || 0,
-      path: Number(rawColumn(activity, 7)) || 0,
-      banner: rawColumn(activity, 8),
-      panelName,
-      pageIcon: rawColumn(activity, 13),
-      rewardRows,
-      hasReward: rewardRows.length > 0,
-      claimed,
-      active: state.active,
-      expired: !state.active,
-      claimable: state.claimable,
-      redPoint: state.redPoint,
-      reason: state.reason,
-      progress: Math.min(progress, target),
-      target,
-      completed: progress >= target,
-      progressLabel: rank ? `名士积分 ${profile.rankPoints}` : social ? `同游 ${profile.friends.length} · 鉴宝会 ${profile.guildMembership ? '已入会' : '未入会'}` : state.reason,
-      actionTarget: state.claimable ? 'claim' : rank ? 'rank' : social ? profile.guildMembership ? 'friend' : 'club' : 'pass',
-      startedAt: state.window.startedAt,
-      durationSeconds: state.window.durationSeconds,
-      expiresAt: state.window.expiresAt,
-      remainingMs: state.window.remainingMs
-    };
-  });
 }
 
 function activityDisplayName(activity: Pick<ActivityProgressEntryView, 'activityId' | 'name'>): string {

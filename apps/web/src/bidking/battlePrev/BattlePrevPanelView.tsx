@@ -93,21 +93,26 @@ export function BattlePrevPanelView({
   const selectedBidMap = selectedGroup.children.find((map) => map.id === selectedBidMapId) ?? sceneDefaultBidMap(selectedGroup) ?? selectedGroup.children[0]!;
   const selectedParentMap = selectedGroup.parent;
   const selectedAccess = bidKingBidMapAccess(profile, selectedBidMap.id);
-  const selectedInitialCash = bidKingInitialCashForBidMap(selectedBidMap.id, gameConfig.rules.initialCash);
+  const selectedInitialCash = bidKingInitialCashForBidMap(selectedBidMap.id);
   const selectedIsDefault = bidKingIsDefaultUnknownBidMap(selectedBidMap.id);
   const sourceRoles = bidKingSourceRoles(gameConfig.roles);
   const [sceneEntered, setSceneEntered] = useState(false);
   const [activePopover, setActivePopover] = useState<ScenePopover>();
   const [configuredRoleId, setConfiguredRoleId] = useState<string>();
   const [configuredItemIds, setConfiguredItemIds] = useState<number[]>([]);
-  const fallbackRole = sourceRoles.find((role) => role.id === selectedRoleId)
-    ?? sourceRoles.find((role) => role.id === selectedRole.id)
-    ?? sourceRoles[0]
-    ?? selectedRole;
-  const configuredRole = configuredRoleId
+  const selectedSourceRole = sourceRoles.find((role) => role.id === selectedRoleId)
+    ?? sourceRoles.find((role) => role.id === selectedRole.id);
+  if (!selectedSourceRole) {
+    throw new Error(`Selected role ${selectedRoleId} is not backed by BidKing Hero`);
+  }
+  const resolvedConfiguredRole = configuredRoleId
     ? sourceRoles.find((role) => role.id === configuredRoleId)
-    : fallbackRole;
-  const configuredRoleSkill = configuredRole ? roleSkillDetailForRole(configuredRole, sourceRoles) : undefined;
+    : selectedSourceRole;
+  if (!resolvedConfiguredRole) {
+    throw new Error(`Configured role ${configuredRoleId} is not backed by BidKing Hero`);
+  }
+  const configuredRole: RoleDefinition = resolvedConfiguredRole;
+  const configuredRoleSkill = roleSkillDetailForRole(configuredRole, sourceRoles);
   const configuredItemRows = configuredItemIds
     .map((itemId) => bidKingBattleItems.find((item) => item.id === itemId))
     .filter((item): item is BidKingBattleItemRow => Boolean(item));
@@ -204,7 +209,7 @@ export function BattlePrevPanelView({
       .filter((itemId) => inventoryQuantity(profile, itemId) > 0)
       .slice(0, MAX_SCENE_ITEM_COUNT);
     onConfirm({
-      roleId: configuredRole?.id ?? fallbackRole.id,
+      roleId: configuredRole.id,
       itemIds: ownedItemIds
     });
   }
@@ -212,12 +217,12 @@ export function BattlePrevPanelView({
   return (
     <div className="battle-scene-backdrop">
       <section
-        className={`battle-scene-shell ${sceneEntered ? 'scene-entered' : 'map-overview'} ${configuredRole ? 'has-role' : 'empty-role'}`}
+        className={`battle-scene-shell ${sceneEntered ? 'scene-entered' : 'map-overview'} has-role`}
         role="dialog"
         aria-modal="true"
         style={{
           '--scene-bg': `url(${containerArtForKey(selectedBidMap.art_key || selectedParentMap.art_key)})`,
-          '--role-color': configuredRole?.color ?? '#d7ff69'
+          '--role-color': configuredRole.color
         } as CSSProperties}
       >
         <header className="battle-scene-header">

@@ -22,12 +22,12 @@ export function parseBidKingRewardRows(raw: string): number[][] {
 
 export function bidKingRewardRowsLabel(
   rewards: readonly (readonly number[])[],
-  fallback = '无赏格'
+  emptyLabel = '无赏格'
 ): string {
   return rewards
     .filter((reward) => reward.length > 0)
     .map(([type = 0, refId = 0, quantity = 1]) => `${bidKingRewardRefLabel(type, refId)} x${quantity.toLocaleString()}`)
-    .join(' / ') || fallback;
+    .join(' / ') || emptyLabel;
 }
 
 function bidKingRewardRefLabel(type: number, refId: number): string {

@@ -1,4 +1,3 @@
-import { Head } from '@bitkingdom/bidking-compat';
 import {
   bidKingDefaultHeroId,
   bidKingStarterOwnedHeroIds,
@@ -11,8 +10,7 @@ import { refreshExpiredShopRestocks } from '../economy/profileCommerceRuntime';
 import { sanitizeDisplayName } from '../system/textGuard';
 import {
   DEFAULT_PROFILE_COINS,
-  DEFAULT_PROFILE_RANK_POINTS,
-  LEGACY_DEFAULT_PROFILE_COINS
+  DEFAULT_PROFILE_RANK_POINTS
 } from './profileRuntimeConfig';
 import { addInventory } from './profileInventory';
 import { ensureProfileHeroState } from './profileHeroRuntime';
@@ -40,7 +38,6 @@ export function getOrCreateProfileInState(
 export function hydrateExistingProfile(profile: PlayerProfile, name?: string): PlayerProfile {
   ensureProfileShape(profile);
   const refreshed = refreshTicketState(profile);
-  migrateLegacyStarterCoins(refreshed);
   ensureStarterRewards(refreshed);
   ensureProfileHeroState(refreshed);
   const nextName = sanitizeDisplayName(name, profile.name);
@@ -54,22 +51,11 @@ export function hydrateExistingProfile(profile: PlayerProfile, name?: string): P
   return refreshed;
 }
 
-function migrateLegacyStarterCoins(profile: PlayerProfile): void {
-  if (profile.coins !== LEGACY_DEFAULT_PROFILE_COINS) {
-    return;
-  }
-  profile.coins = DEFAULT_PROFILE_COINS;
-  if (profile.auctionStats?.currentTotalAssets === LEGACY_DEFAULT_PROFILE_COINS) {
-    profile.auctionStats.currentTotalAssets = DEFAULT_PROFILE_COINS;
-  }
-  profile.updatedAt = Date.now();
-}
-
 function ensureStarterRewards(profile: PlayerProfile): void {
   if (profile.settings.bidkingStarterRewardsV1 === true) {
     return;
   }
-  profile.headId ??= bidKingStarterHeadId(Head[0]?.id);
+  profile.headId ??= bidKingStarterHeadId();
   for (const reward of bidKingStarterInventoryRewards()) {
     addInventory(profile, reward.type, reward.refId, reward.quantity, `starter:init_items:${reward.type}:${reward.refId}`);
   }
@@ -89,7 +75,7 @@ export function createDefaultProfile(playerId: string, name: string | undefined,
     goldCoins: 0,
     boundGoldCoins: 0,
     rankPoints: DEFAULT_PROFILE_RANK_POINTS,
-    headId: bidKingStarterHeadId(Head[0]?.id),
+    headId: bidKingStarterHeadId(),
     selectedHeroId: bidKingDefaultHeroId(),
     ownedHeroIds: bidKingStarterOwnedHeroIds(),
     freeHeroIds: [],

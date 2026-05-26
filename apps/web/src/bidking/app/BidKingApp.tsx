@@ -286,13 +286,11 @@ export function BidKingApp(): JSX.Element {
 
       {view === 'play' && room && !snapshot && (
         <RoomLobbyRoute
-          coreAuctionMode={coreAuctionMode}
           isHost={matchState.isHost}
           mapGroups={bidKingBattleMapGroups}
           profile={profile}
           room={room}
           roomActions={roomActions}
-          selectedBidMapId={selectedBidMapId}
           selectedRoleId={selectedRoleId}
           selfPlayerId={selfPlayerId}
           onReady={() => socket?.emit('setReady', { ready: true })}

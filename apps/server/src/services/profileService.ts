@@ -252,7 +252,7 @@ export function createProfileService(store: ServerStore): ProfileService {
     return getSnapshot(playerId);
   }
 
-  function consumeBidMapEntryCost(playerId: string, bidMapId: number | undefined, sourceId: string): ProfileSnapshot {
+  function consumeBidMapEntryCost(playerId: string, bidMapId: number, sourceId: string): ProfileSnapshot {
     const profile = getOrCreateProfile(playerId);
     const batchSourceId = `${sourceId}:entry_cost`;
     if (hasTransactionSource(batchSourceId)) {

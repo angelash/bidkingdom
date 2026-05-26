@@ -1,6 +1,5 @@
 import {
   Hero as bidKingHeroes,
-  Head as bidKingHeads,
   Ticket as bidKingTickets,
   bidKingTicketDisplayName
 } from '@bitkingdom/bidking-compat';
@@ -22,8 +21,7 @@ const ACCOUNT_SESSION_KEY = 'bk_account_session_v1';
 const DEVICE_ID_KEY = 'bk_device_id_v1';
 const CORE_AUCTION_MODE_KEY = 'bk_core_auction_mode';
 const UNLOCK_ALL_CODEX_FOR_REVIEW = true;
-const LEGACY_DEFAULT_PROFILE_COINS = 12_000;
-const DEFAULT_PROFILE_COINS = bidKingStarterCoins(LEGACY_DEFAULT_PROFILE_COINS);
+const DEFAULT_PROFILE_COINS = bidKingStarterCoins();
 
 export interface StoredAccountSession {
   account: PublicPlayerAccount;
@@ -126,7 +124,7 @@ function createDefaultProfile(): PlayerProfile {
     goldCoins: 0,
     boundGoldCoins: 0,
     rankPoints: 0,
-    headId: bidKingStarterHeadId(bidKingHeads[0]?.id),
+    headId: bidKingStarterHeadId(),
     selectedHeroId: bidKingDefaultHeroId(),
     ownedHeroIds: bidKingStarterOwnedHeroIds(),
     freeHeroIds: [],
@@ -197,7 +195,7 @@ function createDefaultProfile(): PlayerProfile {
 
 export function normalizeProfileForReview(profile: PlayerProfile): PlayerProfile {
   const now = Date.now();
-  const profileCoins = profile.coins === LEGACY_DEFAULT_PROFILE_COINS ? DEFAULT_PROFILE_COINS : profile.coins;
+  const profileCoins = profile.coins;
   const ticket = bidKingTickets.find((row) => row.id === profile.tickets?.id) ?? bidKingTickets[0];
   const catalogIds = new Set(codexCatalogItems.map((item) => item.id));
   const retainedCodex = profile.codex
@@ -268,9 +266,6 @@ export function normalizeProfileForReview(profile: PlayerProfile): PlayerProfile
   if (!normalized.selectedHeroId || normalized.heroStates.find((state) => state.heroId === normalized.selectedHeroId)?.state === 'locked') {
     normalized.selectedHeroId = normalized.heroStates.find((state) => state.state !== 'locked')?.heroId ?? bidKingDefaultHeroId();
   }
-  if (profile.coins === LEGACY_DEFAULT_PROFILE_COINS && normalized.auctionStats?.currentTotalAssets === LEGACY_DEFAULT_PROFILE_COINS) {
-    normalized.auctionStats.currentTotalAssets = DEFAULT_PROFILE_COINS;
-  }
   ensureStarterRewards(normalized, now);
   if (!UNLOCK_ALL_CODEX_FOR_REVIEW) {
     return { ...normalized, codex: [...new Set(retainedCodex)] };
@@ -284,12 +279,8 @@ export function normalizeProfileForReview(profile: PlayerProfile): PlayerProfile
 }
 
 function normalizeOwnedHeroIds(profile: PlayerProfile): number[] {
-  const legacyDefault = bidKingHeroes.slice(0, 8).map((hero) => hero.id);
   const ownedHeroIds = profile.ownedHeroIds ?? bidKingStarterOwnedHeroIds();
-  const shouldReplaceLegacyDefault = profile.settings?.bidkingHeroSourceStateV1 !== true
-    && ownedHeroIds.length === legacyDefault.length
-    && ownedHeroIds.every((heroId) => legacyDefault.includes(heroId));
-  const owned = new Set(shouldReplaceLegacyDefault ? bidKingStarterOwnedHeroIds() : ownedHeroIds);
+  const owned = new Set(ownedHeroIds);
   profile.settings ??= {};
   profile.settings.bidkingHeroSourceStateV1 = true;
   return [...owned].sort((left, right) => (
@@ -311,7 +302,7 @@ function ensureStarterRewards(profile: PlayerProfile, now: number): void {
   if (profile.settings.bidkingStarterRewardsV1 === true) {
     return;
   }
-  profile.headId ??= bidKingStarterHeadId(bidKingHeads[0]?.id);
+  profile.headId ??= bidKingStarterHeadId();
   for (const reward of bidKingStarterInventoryRewards()) {
     const key = `${reward.type}:${reward.refId}`;
     const entry = profile.inventory.find((candidate) => candidate.key === key);

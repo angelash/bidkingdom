@@ -3,10 +3,8 @@ import {
   bidKingBotHeroIdForBidMap,
   bidKingBidMapPlayerCount,
   bidKingInitialCashForBidMap,
-  bidKingHeroIdForRoleId,
   bidKingRoleIdForHeroId,
   bidKingRoleHasSourceHero,
-  bidKingSourceRoles,
   type CreateMatchPlayer,
   type MatchRuntimeState
 } from '@bitkingdom/match-core';
@@ -16,7 +14,6 @@ import type {
   RoomSnapshot
 } from '@bitkingdom/shared';
 import { languageNameFromSeed } from '../profile/languageNameRuntime';
-import { BOT_ROLE_SEQUENCE } from './roomRuntimeConfig';
 
 export interface RoomPlayer extends CreateMatchPlayer {
   socketId?: string;
@@ -31,14 +28,14 @@ export interface RoomSnapshotSource {
   totalRounds: number;
   initialCash: number;
   coreAuctionMode: CoreAuctionMode;
-  selectedBidMapId?: number;
+  selectedBidMapId: number;
   status: RoomSnapshot['status'];
   players: RoomPlayer[];
   match?: MatchRuntimeState;
 }
 
 export interface CreateBotRoomPlayerOptions {
-  selectedBidMapId?: number;
+  selectedBidMapId: number;
   heroCid?: number;
   occupiedHeroIds?: readonly number[];
   seed?: string | number;
@@ -47,20 +44,21 @@ export interface CreateBotRoomPlayerOptions {
 export function createBotRoomPlayer(
   index: number,
   id: string,
-  options: CreateBotRoomPlayerOptions = {}
+  options: CreateBotRoomPlayerOptions
 ): { player: RoomPlayer; profileId: string } {
-  const sourceRoles = bidKingSourceRoles(gameConfig.roles);
-  const fallbackRoleId = sourceRoles[index % Math.max(1, sourceRoles.length)]?.id
-    ?? BOT_ROLE_SEQUENCE[index - 1]
-    ?? BOT_ROLE_SEQUENCE[index % BOT_ROLE_SEQUENCE.length]!;
   const sourceHeroCid = options.heroCid ?? bidKingBotHeroIdForBidMap({
     bidMapId: options.selectedBidMapId,
     seed: options.seed ?? `${id}:${index}`,
     excludeHeroIds: options.occupiedHeroIds
   });
   const sourceRoleId = bidKingRoleIdForHeroId(sourceHeroCid, gameConfig.roles);
-  const role = gameConfig.roles.find((candidate) => candidate.id === (sourceRoleId ?? fallbackRoleId))
-    ?? gameConfig.roles[index % gameConfig.roles.length]!;
+  if (!sourceRoleId) {
+    throw new Error(`Hero ${sourceHeroCid} is not mapped to a room role`);
+  }
+  const role = gameConfig.roles.find((candidate) => candidate.id === sourceRoleId);
+  if (!role) {
+    throw new Error(`Room role ${sourceRoleId} is missing`);
+  }
   const profile = gameConfig.botProfiles[index % gameConfig.botProfiles.length]!;
   return {
     player: {
@@ -68,7 +66,7 @@ export function createBotRoomPlayer(
       name: languageNameFromSeed(10_000 + index),
       kind: 'bot',
       roleId: role.id,
-      heroCid: sourceHeroCid ?? bidKingHeroIdForRoleId(role.id, gameConfig.roles),
+      heroCid: sourceHeroCid,
       ready: true,
       status: 'ready'
     },
@@ -78,8 +76,8 @@ export function createBotRoomPlayer(
 
 export function snapshotRoom(room: RoomSnapshotSource): RoomSnapshot {
   const matchPlayers = room.match?.players;
-  const lobbyInitialCash = bidKingInitialCashForBidMap(room.selectedBidMapId, room.initialCash);
-  const maxPlayers = bidKingBidMapPlayerCount(room.selectedBidMapId, 4);
+  const lobbyInitialCash = bidKingInitialCashForBidMap(room.selectedBidMapId);
+  const maxPlayers = bidKingBidMapPlayerCount(room.selectedBidMapId);
   return {
     id: room.id,
     code: room.code,
@@ -118,13 +116,22 @@ export function snapshotRoom(room: RoomSnapshotSource): RoomSnapshot {
 }
 
 export function validRole(roleId?: string): string {
-  return bidKingRoleHasSourceHero(roleId, gameConfig.roles) ? roleId! : bidKingSourceRoles(gameConfig.roles)[0]?.id ?? gameConfig.roles[0]!.id;
+  if (!bidKingRoleHasSourceHero(roleId, gameConfig.roles)) {
+    throw new Error(`Invalid BidKing role ${roleId ?? 'none'}`);
+  }
+  return roleId!;
 }
 
-export function validCoreAuctionMode(mode?: CoreAuctionMode): CoreAuctionMode {
-  return mode === 'open' || mode === 'sealed' ? mode : 'sealed';
+export function validCoreAuctionMode(mode: CoreAuctionMode): CoreAuctionMode {
+  if (mode !== 'open' && mode !== 'sealed') {
+    throw new Error(`Invalid auction mode ${mode}`);
+  }
+  return mode;
 }
 
-export function validBidMapId(bidMapId?: number): number | undefined {
-  return typeof bidMapId === 'number' && Number.isInteger(bidMapId) && bidMapId > 0 ? bidMapId : undefined;
+export function validBidMapId(bidMapId: number): number {
+  if (typeof bidMapId !== 'number' || !Number.isInteger(bidMapId) || bidMapId <= 0) {
+    throw new Error(`Invalid BidMap ${bidMapId}`);
+  }
+  return bidMapId;
 }

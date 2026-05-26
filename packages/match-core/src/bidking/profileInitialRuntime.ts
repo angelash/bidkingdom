@@ -1,8 +1,6 @@
 import { constantNumber, constantNumberRows } from './constant/constantEngine';
 import { createRewardPlans } from './reward/rewardEngine';
 
-const FALLBACK_PROFILE_COINS = 12_000;
-
 export interface BidKingStarterInventoryReward {
   type: string;
   refId: string;
@@ -13,11 +11,14 @@ export function bidKingStarterRewardRows(): number[][] {
   return constantNumberRows('init_items');
 }
 
-export function bidKingStarterCoins(fallback = FALLBACK_PROFILE_COINS): number {
+export function bidKingStarterCoins(): number {
   const coins = createRewardPlans(bidKingStarterRewardRows())
     .filter((reward) => reward.resource === 'coins')
     .reduce((total, reward) => total + reward.quantity, 0);
-  return coins > 0 ? coins : fallback;
+  if (coins <= 0) {
+    throw new Error('BidKing Constant.init_items must grant starter coins');
+  }
+  return coins;
 }
 
 export function bidKingStarterInventoryRewards(): BidKingStarterInventoryReward[] {
@@ -30,7 +31,10 @@ export function bidKingStarterInventoryRewards(): BidKingStarterInventoryReward[
     }));
 }
 
-export function bidKingStarterHeadId(fallback?: string): string | undefined {
+export function bidKingStarterHeadId(): string {
   const headId = constantNumber('init_head');
-  return headId > 0 ? String(headId) : fallback;
+  if (headId <= 0) {
+    throw new Error('BidKing Constant.init_head must be positive');
+  }
+  return String(headId);
 }

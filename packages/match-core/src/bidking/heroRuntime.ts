@@ -23,7 +23,7 @@ export function bidKingHeroIdForRoleId(roleId: string | undefined, roles: readon
   if (mappedHeroId && roles.some((role) => role.id === roleId) && bidKingHeroExists(mappedHeroId)) {
     return mappedHeroId;
   }
-  return BID_KING_BIDDER_SOURCE_HERO_IDS.find((heroId) => bidKingHeroExists(heroId)) ?? Hero[0]?.id ?? 0;
+  throw new Error(`BidKing role ${roleId ?? 'none'} is not mapped to a source Hero`);
 }
 
 export function bidKingRoleIdForHeroId(heroId: number | undefined, roles: readonly Pick<RoleConfig, 'id'>[]): string | undefined {
@@ -60,10 +60,11 @@ export function bidKingStarterHeroIds(count?: number): number[] {
 }
 
 export function bidKingDefaultHeroId(): number {
-  return bidKingStarterOwnedHeroIds()[0]
-    ?? bidKingStarterSelectableHeroIds()[0]
-    ?? Hero[0]?.id
-    ?? 0;
+  const heroId = bidKingStarterOwnedHeroIds()[0];
+  if (!heroId) {
+    throw new Error('BidKing starter hero configuration is missing');
+  }
+  return heroId;
 }
 
 export function bidKingHeroExists(heroId: number): boolean {
@@ -174,9 +175,9 @@ function sourceInventoryItemId(value: number | string): number {
 }
 
 function uniqueHeroIds(heroIds: readonly number[]): number[] {
-  const fallbackOffset = BID_KING_BIDDER_SOURCE_HERO_IDS.length;
+  const sourceOrderOffset = BID_KING_BIDDER_SOURCE_HERO_IDS.length;
   const order = new Map([
-    ...Hero.map((hero, index) => [hero.id, fallbackOffset + index] as const),
+    ...Hero.map((hero, index) => [hero.id, sourceOrderOffset + index] as const),
     ...BID_KING_BIDDER_SOURCE_HERO_IDS.map((heroId, index) => [heroId, index] as const)
   ]);
   return [...new Set(heroIds)]

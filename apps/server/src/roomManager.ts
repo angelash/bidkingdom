@@ -1,13 +1,11 @@
 import { gameConfig } from '@bitkingdom/config';
 import {
-  bidKingBestAvailableBidMapId,
   bidKingBidMapAccess,
   bidKingHeroIdForRoleId,
   bidKingHeroSkinForHero,
   bidKingInitialCashForBidMap,
   bidKingRoleHasSourceHero,
   bidKingRoleIdForHeroId,
-  bidKingSourceRoles,
   bidKingDefaultBidGameCount,
   bidKingMaxBotCount,
   createMatch,
@@ -103,7 +101,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       appendServerLog('warn', 'settle_failed', { error });
     }
   });
-  const maxBotCount = bidKingMaxBotCount(3);
+  const maxBotCount = bidKingMaxBotCount();
 
   function bindSocket(socket: AppSocket): void {
     socket.on('createRoom', (payload, ack) => {
@@ -113,7 +111,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
           payload.playerName,
           payload.roleId,
           payload.sourceHeroId,
-          payload.botCount ?? maxBotCount,
+          payload.botCount,
           payload.coreAuctionMode,
           payload.selectedBidMapId,
           payload.profileId
@@ -243,7 +241,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
         return;
       }
       context.room.selectedBidMapId = nextBidMapId;
-      context.room.initialCash = bidKingInitialCashForBidMap(nextBidMapId, gameConfig.rules.initialCash);
+      context.room.initialCash = bidKingInitialCashForBidMap(nextBidMapId);
       syncRoomBotsForBidMap(context.room, () => `bot_${randomUUID()}`);
       broadcasts.broadcastRoom(context.room);
     });
@@ -437,11 +435,11 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
   function createRoom(
     socket: AppSocket,
     playerName: string,
-    roleId?: string,
-    sourceHeroId?: number,
-    requestedBotCount = 3,
-    requestedCoreAuctionMode?: CoreAuctionMode,
-    requestedBidMapId?: number,
+    roleId: string | undefined,
+    sourceHeroId: number | undefined,
+    requestedBotCount: number,
+    requestedCoreAuctionMode: CoreAuctionMode,
+    requestedBidMapId: number,
     requestedProfileId?: string
   ): Room {
     const code = createUniqueRoomCode((candidate) => rooms.has(candidate));
@@ -458,8 +456,8 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       code,
       hostId: playerId,
       botCount: Math.max(0, Math.min(maxBotCount, requestedBotCount)),
-      totalRounds: bidKingDefaultBidGameCount(gameConfig.rules.totalRounds),
-      initialCash: bidKingInitialCashForBidMap(selectedBidMapId, gameConfig.rules.initialCash),
+      totalRounds: bidKingDefaultBidGameCount(),
+      initialCash: bidKingInitialCashForBidMap(selectedBidMapId),
       coreAuctionMode: validCoreAuctionMode(requestedCoreAuctionMode),
       selectedBidMapId,
     });
@@ -479,8 +477,11 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     let profile = services.profiles.getOrCreateProfile(playerId, playerName);
     const profileRoleId = bidKingRoleIdForHeroId(profile.selectedHeroId, gameConfig.roles);
     const resolvedSelection = resolveRoleSelection(roleId, sourceHeroId)
-      ?? resolveRoleSelection(profileRoleId, profile.selectedHeroId)
-      ?? defaultRoleSelection();
+      ?? resolveRoleSelection(profileRoleId, profile.selectedHeroId);
+    if (!resolvedSelection) {
+      emitError(socket, new Error('竞买人配置不存在'));
+      return undefined;
+    }
     const { roleId: resolvedRoleId, heroCid } = resolvedSelection;
     if (profile.selectedHeroId !== heroCid) {
       try {
@@ -523,11 +524,6 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     return undefined;
   }
 
-  function defaultRoleSelection(): { roleId: string; heroCid: number } {
-    const roleId = bidKingSourceRoles(gameConfig.roles)[0]?.id ?? gameConfig.roles[0]!.id;
-    return { roleId, heroCid: bidKingHeroIdForRoleId(roleId, gameConfig.roles) };
-  }
-
   function fillBots(room: Room): void {
     syncRoomBotsForBidMap(room, () => `bot_${randomUUID()}`);
   }
@@ -539,7 +535,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       throw new Error(`当前拍场仅支持 ${maxPlayers} 人同局`);
     }
     const matchBidMapId = room.selectedBidMapId;
-    room.initialCash = bidKingInitialCashForBidMap(matchBidMapId, room.initialCash);
+    room.initialCash = bidKingInitialCashForBidMap(matchBidMapId);
     const humanPlayers = room.players.filter((candidate) => candidate.kind === 'human');
     for (const player of humanPlayers) {
       const access = bidKingBidMapAccess(services.profiles.getSnapshot(player.id).profile, room.selectedBidMapId);
@@ -550,7 +546,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     clearRoomTimers(room);
     clearEmojiCooldowns(room);
     for (const player of humanPlayers) {
-      services.profiles.consumeBidMapEntryCost(player.id, room.selectedBidMapId, `match_start:${room.id}:${player.id}:bidmap:${room.selectedBidMapId ?? 'default'}`);
+      services.profiles.consumeBidMapEntryCost(player.id, room.selectedBidMapId, `match_start:${room.id}:${player.id}:bidmap:${room.selectedBidMapId}`);
       broadcasts.emitRoomPlayerProfile(room, player.id);
     }
     const match = createMatch({
@@ -614,9 +610,16 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
   function matchHeroCid(player: Room['players'][number]): number {
     if (player.kind === 'human') {
       const profile = services.profiles.getSnapshot(player.id).profile;
-      return profile.selectedHeroId ?? player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, gameConfig.roles);
+      const heroCid = profile.selectedHeroId ?? player.heroCid;
+      if (!heroCid) {
+        throw new Error(`Human player ${player.id} has no BidKing hero`);
+      }
+      return heroCid;
     }
-    return player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, gameConfig.roles);
+    if (!player.heroCid) {
+      throw new Error(`Bot player ${player.id} has no BidKing hero`);
+    }
+    return player.heroCid;
   }
 
   function matchHeroSkinCid(player: Room['players'][number]): number | undefined {
@@ -658,22 +661,22 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     }
   }
 
-  function resolveAccessibleBidMap(profile: ReturnType<ProfileService['getOrCreateProfile']>, requestedBidMapId?: number): number {
-    const preferredBidMapId = validBidMapId(requestedBidMapId);
-    const selectedBidMapId = bidKingBestAvailableBidMapId(profile, preferredBidMapId);
-    if (!selectedBidMapId) {
-      throw new Error('当前余额未满足任何拍场入场条件');
+  function resolveAccessibleBidMap(profile: ReturnType<ProfileService['getOrCreateProfile']>, requestedBidMapId: number): number {
+    const selectedBidMapId = validBidMapId(requestedBidMapId);
+    const access = bidKingBidMapAccess(profile, selectedBidMapId);
+    if (!access.canEnter) {
+      throw new Error(`未满足入场条件：${access.reasons.join('、')}`);
     }
     return selectedBidMapId;
   }
 
-  function requireAccessibleBidMap(profile: ReturnType<ProfileService['getOrCreateProfile']>, requestedBidMapId?: number): number {
+  function requireAccessibleBidMap(profile: ReturnType<ProfileService['getOrCreateProfile']>, requestedBidMapId: number): number {
     const bidMapId = validBidMapId(requestedBidMapId);
     const access = bidKingBidMapAccess(profile, bidMapId);
     if (!access.canEnter) {
       throw new Error(`未满足入场条件：${access.reasons.join('、')}`);
     }
-    return bidMapId!;
+    return bidMapId;
   }
 
   function getSocketContext(socketId: string): { room: Room; playerId: string } | undefined {

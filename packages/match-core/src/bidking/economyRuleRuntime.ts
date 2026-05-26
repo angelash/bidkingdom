@@ -11,21 +11,24 @@ export interface BidKingBidLossRebateRuntime {
   ratePerMille: number;
 }
 
-export function bidKingMailMaxCount(fallback = 100): number {
-  const value = constantNumber('mail_max_count', fallback);
-  return value > 0 ? value : fallback;
+export function bidKingMailMaxCount(): number {
+  return positiveNumber('mail_max_count');
 }
 
 export function bidKingCollectionRuleRuntime(): BidKingCollectionRuleRuntime {
   return {
-    collectionCountMax: positiveNumber('collection_counts_max', 10),
-    duplicateRatesPerMille: constantNumberArray('cabinet_rate').filter((value) => value > 0),
-    gainIntervalSeconds: positiveNumber('cabinet_gaincoin', 10)
+    collectionCountMax: positiveNumber('collection_counts_max'),
+    duplicateRatesPerMille: positiveArray('cabinet_rate'),
+    gainIntervalSeconds: positiveNumber('cabinet_gaincoin')
   };
 }
 
 export function bidKingBidLossRebateRuntime(): BidKingBidLossRebateRuntime {
-  const [threshold = 0, ratePerMille = 0] = constantNumberArray('bid_fanli');
+  const values = constantNumberArray('bid_fanli');
+  if (values.length < 2) {
+    throw new Error('BidKing Constant.bid_fanli must contain threshold and rate');
+  }
+  const [threshold = 0, ratePerMille = 0] = values;
   return {
     threshold: Math.max(0, Math.floor(threshold)),
     ratePerMille: Math.max(0, Math.floor(ratePerMille))
@@ -41,7 +44,18 @@ export function bidKingBidLossRebateAmount(loss: number): number {
   return Math.floor(safeLoss * runtime.ratePerMille / 1000);
 }
 
-function positiveNumber(id: string, fallback: number): number {
-  const value = constantNumber(id, fallback);
-  return value > 0 ? value : fallback;
+function positiveNumber(id: string): number {
+  const value = constantNumber(id);
+  if (value <= 0) {
+    throw new Error(`BidKing Constant.${id} must be positive`);
+  }
+  return value;
+}
+
+function positiveArray(id: string): number[] {
+  const values = constantNumberArray(id).filter((value) => value > 0);
+  if (values.length === 0) {
+    throw new Error(`BidKing Constant.${id} must contain positive values`);
+  }
+  return values;
 }

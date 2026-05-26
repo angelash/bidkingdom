@@ -237,7 +237,7 @@ export function buildSourceSendAuctionData(auction: SendAuctionState): SendAucti
     mapCid: auction.mapCid,
     slotId: auction.slotId,
     stockData: toBidKingStockContainer(auction.stockContainer),
-    sendTime: auction.createdAt
+    sendTime: toUnixSeconds(auction.createdAt)
   };
 }
 
@@ -301,6 +301,7 @@ function buildSendAuctionGameState(
   const userLog = buildSendAuctionUserLog(auction, finalPrice);
   const ownerUid = stableNumericId(profile.playerId);
   const systemLimits = bidKingBaseGameDataSystemLimits();
+  const nowSeconds = toUnixSeconds(now);
   const gameData: BidKingGameDataSnapshot = {
     uid: `${auction.id}:game:${now}`,
     mapId: auction.bidMapId,
@@ -310,7 +311,7 @@ function buildSendAuctionGameState(
     heroSkillLog: [],
     mapSkillLog: [],
     itemSkillLog: [],
-    nextRoundTime: now,
+    nextRoundTime: nowSeconds,
     selectItemCount: 0,
     roundCanUseItemCount: systemLimits.roundCanUseItemCount,
     gameCarryItemMax: systemLimits.gameCarryItemMax,
@@ -321,7 +322,7 @@ function buildSendAuctionGameState(
     sendAuctionUserHead: 0,
     sendAuctionHeadBox: 0,
     sendAuctionUserTitle: 0,
-    serverTime: now
+    serverTime: nowSeconds
   };
   return {
     id: `send_auction_game_${auction.id}_${now}`,
@@ -333,13 +334,17 @@ function buildSendAuctionGameState(
     mapName: auction.mapName,
     bidMapId: auction.bidMapId,
     gameData,
-    gameOverTime: now,
+    gameOverTime: nowSeconds,
     userSkillList: [],
     finalPrice,
     totalValue: auction.totalValue,
     profit: finalPrice - auction.totalValue,
     createdAt: now
   };
+}
+
+function toUnixSeconds(timestampMs: number): number {
+  return Math.floor(timestampMs / 1000);
 }
 
 function toBidKingStockContainer(container: ProfileStockContainerState): BidKingStockContainerDataSnapshot {
@@ -436,30 +441,27 @@ function buildSendAuctionUserLog(auction: SendAuctionState, finalPrice: number):
 
 function rankAiForHero(heroId: number, roundCount: number) {
   const heroRows = RankAi.filter((row) => row.role_id === heroId);
-  return heroRows.find((row) => row.round_count === roundCount)
-    ?? heroRows.find((row) => row.round_count > roundCount)
-    ?? heroRows.at(-1)
-    ?? RankAi.find((row) => row.round_count === roundCount)
-    ?? RankAi[0];
+  const row = heroRows.find((candidate) => candidate.round_count === roundCount);
+  if (!row) {
+    throw new Error(`Missing RankAi row for hero ${heroId} round ${roundCount}`);
+  }
+  return row;
 }
 
-function rankAiPressure(rankAi: (typeof RankAi)[number] | undefined): number {
-  if (!rankAi) {
-    return 0.5;
-  }
-  const minRatio = weightedRangeAverage(rankAi.min_bid_ratio, 850) / 1000;
-  const pkRatio = weightedRangeAverage(rankAi.bid_pk, 1000) / 1000;
+function rankAiPressure(rankAi: (typeof RankAi)[number]): number {
+  const minRatio = weightedRangeAverage(rankAi.min_bid_ratio) / 1000;
+  const pkRatio = weightedRangeAverage(rankAi.bid_pk) / 1000;
   return clamp((minRatio * 0.45 + pkRatio * 0.55 - 0.4) / 1.6, 0.15, 0.95);
 }
 
-function weightedRangeAverage(ranges: readonly (readonly number[])[], fallback: number): number {
+function weightedRangeAverage(ranges: readonly (readonly number[])[]): number {
   let weighted = 0;
   let totalWeight = 0;
   for (const range of ranges) {
     if (range.length < 2) {
       continue;
     }
-    const min = Number(range[0] ?? fallback);
+    const min = Number(range[0]);
     const max = Number(range[1] ?? min);
     const weight = Math.max(0, Number(range[2] ?? 1));
     if (!Number.isFinite(min) || !Number.isFinite(max) || weight <= 0) {
@@ -468,7 +470,10 @@ function weightedRangeAverage(ranges: readonly (readonly number[])[], fallback: 
     weighted += ((min + max) / 2) * weight;
     totalWeight += weight;
   }
-  return totalWeight > 0 ? weighted / totalWeight : fallback;
+  if (totalWeight <= 0) {
+    throw new Error('RankAi weighted range has no valid candidates');
+  }
+  return weighted / totalWeight;
 }
 
 function generatedSendAuctionFinalPrice(auction: SendAuctionState): number {

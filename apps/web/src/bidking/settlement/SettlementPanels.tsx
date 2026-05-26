@@ -89,7 +89,7 @@ export function RoundFeedbackPanel({ players, snapshot }: { players: PublicPlaye
       {feedback.closeThreshold !== undefined && (
         <span>
           成交线：{feedback.closeThreshold > 0
-            ? `最高价超过第二名 ${Math.round((1 + feedback.closeThreshold) * 100)}%`
+            ? `最高价高出第二名 ${Math.round(feedback.closeThreshold * 100)}%`
             : '最高价高于第二名'}
         </span>
       )}

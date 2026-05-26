@@ -25,7 +25,7 @@ export function registerAccountRoutes(app: FastifyInstance, accounts: AccountSer
   });
 
   app.post<{
-    Body: { deviceId?: string; playerName?: string; legacyProfileId?: string };
+    Body: { deviceId?: string; playerName?: string };
   }>('/api/account/guest', async (request, reply) => {
     try {
       return accounts.createGuestSession(request.body ?? {});

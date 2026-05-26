@@ -8,11 +8,11 @@
   },
   "counts": {
     "backgrounds": 2,
-    "roles": 47,
+    "roles": 41,
     "containers": 0,
     "items": 0,
     "ui": 1,
-    "total": 50
+    "total": 44
   },
   "assets": {
     "background_auction_hall": {
@@ -53,48 +53,6 @@
     "role_appraiser_avatar": {
       "path": "/art/approved/roles/role_appraiser_avatar_v1.png",
       "generatedPath": "/art/generated/roles/role_appraiser_avatar_v1.png",
-      "type": "role_avatar",
-      "ratio": "1:1",
-      "qc": "B: generated and wired for BidKing runtime."
-    },
-    "role_smuggler_portrait": {
-      "path": "/art/approved/roles/role_smuggler_portrait_v1.png",
-      "generatedPath": "/art/generated/roles/role_smuggler_portrait_v1.png",
-      "type": "role_portrait",
-      "ratio": "3:4",
-      "qc": "B: generated and wired for BidKing runtime."
-    },
-    "role_smuggler_avatar": {
-      "path": "/art/approved/roles/role_smuggler_avatar_v1.png",
-      "generatedPath": "/art/generated/roles/role_smuggler_avatar_v1.png",
-      "type": "role_avatar",
-      "ratio": "1:1",
-      "qc": "B: generated and wired for BidKing runtime."
-    },
-    "role_psychologist_portrait": {
-      "path": "/art/approved/roles/role_psychologist_portrait_v1.png",
-      "generatedPath": "/art/generated/roles/role_psychologist_portrait_v1.png",
-      "type": "role_portrait",
-      "ratio": "3:4",
-      "qc": "B: generated and wired for BidKing runtime."
-    },
-    "role_psychologist_avatar": {
-      "path": "/art/approved/roles/role_psychologist_avatar_v1.png",
-      "generatedPath": "/art/generated/roles/role_psychologist_avatar_v1.png",
-      "type": "role_avatar",
-      "ratio": "1:1",
-      "qc": "B: generated and wired for BidKing runtime."
-    },
-    "role_table_strategist_portrait": {
-      "path": "/art/approved/roles/role_table_strategist_portrait_v1.png",
-      "generatedPath": "/art/generated/roles/role_table_strategist_portrait_v1.png",
-      "type": "role_portrait",
-      "ratio": "3:4",
-      "qc": "B: generated and wired for BidKing runtime."
-    },
-    "role_table_strategist_avatar": {
-      "path": "/art/approved/roles/role_table_strategist_avatar_v1.png",
-      "generatedPath": "/art/generated/roles/role_table_strategist_avatar_v1.png",
       "type": "role_avatar",
       "ratio": "1:1",
       "qc": "B: generated and wired for BidKing runtime."

@@ -122,13 +122,13 @@ function selectRouteWarehouseStockBoxes(profile: PlayerProfile, itemCid: number,
 
 async function createGuestAuth(
   app: BitKingdomServerRuntime['app'],
-  legacyProfileId: string,
-  playerName = legacyProfileId
+  profileKey: string,
+  playerName = profileKey
 ): Promise<{ profileId: string; sessionToken: string; headers: { authorization: string } }> {
   const guest = await app.inject({
     method: 'POST',
     url: '/api/account/guest',
-    payload: { deviceId: `device_${legacyProfileId}`, legacyProfileId, playerName }
+    payload: { deviceId: `device_${profileKey}`, playerName }
   });
   const guestPayload = JSON.parse(guest.payload) as AccountSessionSnapshot;
 
@@ -483,7 +483,7 @@ describe('server routes', () => {
         const auth = await createGuestAuth(app, playerId, playerId);
         const profile = await app.inject({
           method: 'GET',
-          url: `/api/profile?playerId=${playerId}&playerName=${playerId}`,
+          url: `/api/profile?playerId=${auth.profileId}&playerName=${playerId}`,
           headers: auth.headers
         });
         expect(profile.statusCode).toBe(200);

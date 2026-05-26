@@ -13,39 +13,6 @@ const roles: GameConfig['roles'] = [
     color: '#38bdf8'
   },
   {
-    id: 'smuggler',
-    name: '黑市行商',
-    animal: '暗市掮客',
-    archetype: '高价值单品判断',
-    skillId: 'single_treasure',
-    passive: '稀有品类线索出现概率略高',
-    cooldownRounds: 2,
-    usesPerMatch: 2,
-    color: '#a78bfa'
-  },
-  {
-    id: 'psychologist',
-    name: '读局谋士',
-    animal: '席间观风客',
-    archetype: '观察对手',
-    skillId: 'read_intent',
-    passive: '更容易从报价节奏中发现异常判断',
-    cooldownRounds: 1,
-    usesPerMatch: 2,
-    color: '#34d399'
-  },
-  {
-    id: 'table_strategist',
-    name: '场边谋士',
-    animal: '席间谋士',
-    archetype: '观察对手',
-    skillId: 'read_intent',
-    passive: '更容易从报价节奏中判断对手心理价',
-    cooldownRounds: 2,
-    usesPerMatch: 2,
-    color: '#fb7185'
-  },
-  {
     id: 'restorer',
     name: '器物鉴客',
     animal: '器物行家',

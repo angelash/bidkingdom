@@ -405,7 +405,7 @@ function buildFeedbackMessage(
   const thresholdRatio = Math.round((1 + (coreDecision?.threshold ?? 0)) * 100);
   const thresholdMargin = Math.round((coreDecision?.threshold ?? 0) * 100);
   const threshold = thresholdMargin > 0
-    ? `最高价超过第二名 ${thresholdRatio}%，即高出 ${thresholdMargin}%`
+    ? `最高价达到第二名 ${thresholdRatio}%，即高出 ${thresholdMargin}%`
     : '最高价高于第二名';
   if (mode === 'open') {
     const secondText = secondAmount > 0 ? `第二名 ${secondAmount.toLocaleString()}，` : '暂无第二名有效出价，';

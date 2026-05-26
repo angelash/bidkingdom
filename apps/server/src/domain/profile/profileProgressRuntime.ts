@@ -242,19 +242,22 @@ function collectionExperienceGainForProfile(
   for (const awardedItem of awardedItems) {
     const itemId = sourceItemIdFromRef(awardedItem.id);
     if (!itemId) {
-      total += Math.max(0, Math.floor(awardedItem.displayValue || awardedItem.value));
-      continue;
+      throw new Error(`Awarded item ${awardedItem.id} is not backed by Item`);
     }
     const beforeCount = acquisitionCounts.get(itemId) ?? collectionAcquisitionCount(profile, itemId);
     if (beforeCount >= rule.collectionCountMax) {
       acquisitionCounts.set(itemId, beforeCount + 1);
       continue;
     }
-    const ratePerMille = rule.duplicateRatesPerMille[Math.min(beforeCount, rule.duplicateRatesPerMille.length - 1)] ?? 1000;
+    const ratePerMille = rule.duplicateRatesPerMille[Math.min(beforeCount, rule.duplicateRatesPerMille.length - 1)];
+    if (ratePerMille === undefined) {
+      throw new Error('BidKing duplicate collection rate configuration is missing');
+    }
     const item = Item.find((candidate) => candidate.id === itemId);
-    const fallbackValue = awardedItem.displayValue > 0 ? awardedItem.displayValue : awardedItem.value;
-    const baseValue = item?.base_value ?? fallbackValue;
-    total += Math.floor(Math.max(0, baseValue) * Math.max(0, ratePerMille) / 1000);
+    if (!item) {
+      throw new Error(`Awarded item ${awardedItem.id} is missing from Item`);
+    }
+    total += Math.floor(Math.max(0, item.base_value) * Math.max(0, ratePerMille) / 1000);
     acquisitionCounts.set(itemId, beforeCount + 1);
   }
   return total;
@@ -666,28 +669,7 @@ function auctionStatsForProfile(profile: PlayerProfile, summary: FinalMatchSumma
   if (explicit) {
     return explicit;
   }
-  const ranking = summary.rankings.find((candidate) => candidate.playerId === profile.playerId);
-  const initialValue = summary.netWorthCurve[0]?.values[profile.playerId] ?? 0;
-  const fallbackProfit = Math.max(0, (ranking?.netWorth ?? 0) - initialValue);
-  const highestItemValue = summary.revealedItems.reduce((max, item) => Math.max(max, item.displayValue || item.value), 0);
-  return {
-    playerId: profile.playerId,
-    totalProfit: fallbackProfit,
-    netProfit: fallbackProfit,
-    successfulAuctionCount: ranking ? 1 : 0,
-    failedAuctionCount: 0,
-    highestBidAmount: 0,
-    highestSingleAuctionProfit: fallbackProfit,
-    currentTotalAssets: ranking?.netWorth ?? profile.coins,
-    highestItemValue,
-    highestWinningItemTotalValue: highestItemValue,
-    lowestWinningItemTotalValue: highestItemValue > 0 ? highestItemValue : undefined,
-    completedMapIds: [],
-    completedBidMapIds: [],
-    successfulAuctionCountByMap: {},
-    lowestWinningItemTotalValueByMap: {},
-    lowestWinningItemTotalValueByBidMap: {}
-  };
+  throw new Error(`Final summary is missing auctionStats for ${profile.playerId}`);
 }
 
 function minPositive(left: number | undefined, right: number | undefined): number | undefined {

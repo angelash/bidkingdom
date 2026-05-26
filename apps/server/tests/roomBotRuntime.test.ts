@@ -15,6 +15,8 @@ describe('BidKing room bot runtime', () => {
         { id: 'b2', name: '丙', kind: 'bot', roleId: gameConfig.roles[2]!.id },
         { id: 'b3', name: '丁', kind: 'bot', roleId: gameConfig.roles[3]!.id }
       ],
+      coreAuctionMode: 'sealed',
+      coreBidMapId: 2601,
       config: gameConfig,
       now: 1000
     });
@@ -28,6 +30,7 @@ describe('BidKing room bot runtime', () => {
       totalRounds: 3,
       initialCash: gameConfig.rules.initialCash,
       coreAuctionMode: 'sealed',
+      selectedBidMapId: 2601,
       status: 'playing',
       players: [],
       botProfiles: new Map([
@@ -78,11 +81,12 @@ describe('BidKing room bot runtime', () => {
       totalRounds: 5,
       coreMode: true,
       coreAuctionMode: 'sealed',
+      coreBidMapId: 2601,
       config: gameConfig,
       now: 1000
     });
     for (const player of match.players) {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     }
     startNextRound(match, 2000);
     match.currentRound!.container.publicInfo.risk = 'high';
@@ -103,6 +107,7 @@ describe('BidKing room bot runtime', () => {
       totalRounds: 5,
       initialCash: gameConfig.rules.initialCash,
       coreAuctionMode: 'sealed',
+      selectedBidMapId: 2601,
       status: 'playing',
       players: [],
       botProfiles: new Map([
@@ -135,6 +140,7 @@ describe('BidKing room bot runtime', () => {
       ],
       totalRounds: 5,
       coreMode: true,
+      coreAuctionMode: 'sealed',
       coreBidMapId: 2101,
       config: gameConfig,
       now: 1000
@@ -188,8 +194,8 @@ describe('BidKing room bot runtime', () => {
       id: 'probe',
       seed: 1,
       players: [
-        { id: 'p1', name: '甲', kind: 'human', roleId: gameConfig.roles[0]!.id },
-        { id: 'b1', name: '乙', kind: 'bot', roleId: gameConfig.roles[1]!.id }
+        { id: 'p1', name: '甲', kind: 'human', roleId: 'historian', heroCid: 101 },
+        { id: 'b1', name: '乙', kind: 'bot', roleId: 'historian', heroCid: 101 }
       ],
       totalRounds: 5,
       coreMode: true,

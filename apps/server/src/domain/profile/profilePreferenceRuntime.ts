@@ -198,8 +198,8 @@ export function cabinetPlacementRuleForItem(itemId: string): CabinetPlacementRul
   const typeAccepted = item.item_type_ids.some((typeId) => cabinet.location_type.includes(typeId));
   const qualityAccepted = qualityRequirement.length === 0 || qualityRequirement.includes(item.item_quality);
   const accepted = typeAccepted && qualityAccepted;
-  const placeMax = positiveLimit(cabinet.place_max, 15);
-  const maxSlotLimit = positiveLimit(cabinet.max_slot_limit, placeMax);
+  const placeMax = positiveLimit(cabinet.place_max, 'Cabinet.place_max');
+  const maxSlotLimit = positiveLimit(cabinet.max_slot_limit, 'Cabinet.max_slot_limit');
   const placeLimit = placeMax;
   return {
     accepted,
@@ -225,10 +225,12 @@ function itemForCanonicalId(canonicalId: string): BidKingItemRow | undefined {
 }
 
 function cabinetForItem(item: BidKingItemRow): BidKingCabinetRow | undefined {
-  return Cabinet.find((cabinet) => item.item_type_ids.some((typeId) => cabinet.location_type.includes(typeId)))
-    ?? Cabinet[0];
+  return Cabinet.find((cabinet) => item.item_type_ids.some((typeId) => cabinet.location_type.includes(typeId)));
 }
 
-function positiveLimit(value: number | undefined, fallback: number): number {
-  return typeof value === 'number' && value > 0 ? value : fallback;
+function positiveLimit(value: number | undefined, field: string): number {
+  if (typeof value !== 'number' || value <= 0) {
+    throw new Error(`${field} must be positive`);
+  }
+  return value;
 }

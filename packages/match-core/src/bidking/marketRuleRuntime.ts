@@ -22,30 +22,34 @@ export interface BidKingMarketRuleRuntime {
 
 export function bidKingMarketRuleRuntime(): BidKingMarketRuleRuntime {
   return {
-    listingFeeRatePerMille: nonNegativeConstant('item_fee_rate', 0),
-    auctionTaxRatePerMille: nonNegativeConstant('item_bid_fax', 0),
-    auctionStorageFeeRatePerMille: nonNegativeConstant('item_bid_fee', 0),
-    bidIncrementRatePerTenThousand: nonNegativeConstant('item_bid_price_add', 0),
-    listingCostRatePerTenThousand24h: nonNegativeConstant('item_bid_cost', 0),
+    listingFeeRatePerMille: nonNegativeConstant('item_fee_rate'),
+    auctionTaxRatePerMille: nonNegativeConstant('item_bid_fax'),
+    auctionStorageFeeRatePerMille: nonNegativeConstant('item_bid_fee'),
+    bidIncrementRatePerTenThousand: nonNegativeConstant('item_bid_price_add'),
+    listingCostRatePerTenThousand24h: nonNegativeConstant('item_bid_cost'),
     listingDurationHours: positiveArray('item_bid_time'),
-    publicTimeHours: nonNegativeConstant('item_bid_public_time', 0),
-    slotBase: positiveConstant('item_bid_slot_base', 5),
-    slotMax: positiveConstant('item_bid_slot_max', 10),
+    publicTimeHours: nonNegativeConstant('item_bid_public_time'),
+    slotBase: positiveConstant('item_bid_slot_base'),
+    slotMax: positiveConstant('item_bid_slot_max'),
     auctionTimeLimitSeconds: positiveArray('auction_time_limit'),
     auctionSlotPrices: positiveArray('auction_slot_price'),
-    auctionCounts: positiveConstant('auction_counts', 100),
-    priceNoticePerMille: positiveConstant('auction_price_notice', 2500)
+    auctionCounts: positiveConstant('auction_counts'),
+    priceNoticePerMille: positiveConstant('auction_price_notice')
   };
 }
 
-export function bidKingMarketOrderDurationHours(orderType: BidKingMarketOrderType, fallback = 24): number {
+export function bidKingMarketOrderDurationHours(orderType: BidKingMarketOrderType): number {
   const durations = bidKingMarketRuleRuntime().listingDurationHours;
   const index = orderType === 'auction' ? 1 : 0;
-  return durations[index] ?? durations[0] ?? fallback;
+  const value = durations[index];
+  if (value === undefined) {
+    throw new Error(`BidKing Constant.item_bid_time missing duration for ${orderType}`);
+  }
+  return value;
 }
 
-export function bidKingMarketOrderDurationMs(orderType: BidKingMarketOrderType, fallbackMs = 24 * HOUR_MS): number {
-  return bidKingMarketOrderDurationHours(orderType, Math.max(1, Math.round(fallbackMs / HOUR_MS))) * HOUR_MS;
+export function bidKingMarketOrderDurationMs(orderType: BidKingMarketOrderType): number {
+  return bidKingMarketOrderDurationHours(orderType) * HOUR_MS;
 }
 
 export function bidKingMarketListingCost(price: number, durationHours: number): number {
@@ -94,16 +98,26 @@ export function bidKingMarketPriceNoticeLimit(baseValue: number): number {
   return Math.floor(safeBase * bidKingMarketRuleRuntime().priceNoticePerMille / 1000);
 }
 
-function positiveConstant(id: string, fallback: number): number {
-  const value = constantNumber(id, fallback);
-  return value > 0 ? value : fallback;
+function positiveConstant(id: string): number {
+  const value = constantNumber(id);
+  if (value <= 0) {
+    throw new Error(`BidKing Constant.${id} must be positive`);
+  }
+  return value;
 }
 
-function nonNegativeConstant(id: string, fallback: number): number {
-  const value = constantNumber(id, fallback);
-  return value >= 0 ? value : fallback;
+function nonNegativeConstant(id: string): number {
+  const value = constantNumber(id);
+  if (value < 0) {
+    throw new Error(`BidKing Constant.${id} must be non-negative`);
+  }
+  return value;
 }
 
 function positiveArray(id: string): number[] {
-  return constantNumberArray(id).filter((value) => value > 0);
+  const values = constantNumberArray(id).filter((value) => value > 0);
+  if (values.length === 0) {
+    throw new Error(`BidKing Constant.${id} must contain positive values`);
+  }
+  return values;
 }

@@ -10,10 +10,10 @@ import type { BidKingBattleMapGroup } from './BattlePrevPanelView';
 
 export const SELECTED_BID_MAP_KEY = 'bk_selected_bid_map';
 
-export function loadSelectedBidMapId(defaultBidMapId?: number): number | undefined {
+export function loadSelectedBidMapId(): number | undefined {
   const raw = localStorage.getItem(SELECTED_BID_MAP_KEY);
   const id = raw ? Number(raw) : undefined;
-  return id && bidKingBidMaps.some((map) => map.id === id && map.is_visiable === 1) ? id : defaultBidMapId;
+  return id && bidKingBidMaps.some((map) => map.id === id && map.is_visiable === 1) ? id : undefined;
 }
 
 export function buildBidKingBattleMapGroups(): BidKingBattleMapGroup[] {
@@ -21,9 +21,6 @@ export function buildBidKingBattleMapGroups(): BidKingBattleMapGroup[] {
     map.is_visiable === 1
     && map.auction_rounds_rate.some((rate) => rate > 0)
   ));
-  const fallbackBidMaps = visibleBidMaps.length > 0
-    ? visibleBidMaps
-    : bidKingBidMaps.filter((map) => map.is_visiable === 1 && map.auction_rounds_rate.some((rate) => rate > 0));
   const openParents = bidKingMaps.filter((map) => map.is_open === 1);
   const xs = openParents.map((map) => map.map_position[0] ?? 0);
   const ys = openParents.map((map) => map.map_position[1] ?? 0);
@@ -34,7 +31,7 @@ export function buildBidKingBattleMapGroups(): BidKingBattleMapGroup[] {
 
   const groups = openParents
     .map((parent, index) => {
-      const children = fallbackBidMaps
+      const children = visibleBidMaps
         .filter((bidMap) => bidMap.parent_map_id === parent.id)
         .sort((left, right) => left.id - right.id);
       if (children.length === 0) {

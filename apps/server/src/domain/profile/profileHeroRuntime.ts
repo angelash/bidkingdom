@@ -1,13 +1,10 @@
 import { Hero } from '@bitkingdom/bidking-compat';
 import {
-  bidKingDefaultHeroId,
   bidKingHeroItemIdForHero,
   bidKingHeroStateFromProfile,
   bidKingStarterOwnedHeroIds
 } from '@bitkingdom/match-core';
 import type { PlayerProfile, ProfileHeroState } from '@bitkingdom/shared';
-
-const LEGACY_FIRST_PASS_HERO_IDS = Hero.slice(0, 8).map((hero) => hero.id);
 
 export function ensureProfileHeroState(profile: PlayerProfile, now = Date.now()): void {
   profile.goldCoins ??= 0;
@@ -21,7 +18,11 @@ export function ensureProfileHeroState(profile: PlayerProfile, now = Date.now())
   profile.heroStates = Hero.map((hero) => bidKingHeroStateFromProfile(profile, hero.id));
 
   if (!profile.selectedHeroId || heroStateForProfile(profile, profile.selectedHeroId).state === 'locked') {
-    profile.selectedHeroId = firstSelectableHeroId(profile) ?? bidKingDefaultHeroId();
+    const selectedHeroId = firstSelectableHeroId(profile);
+    if (!selectedHeroId) {
+      throw new Error(`Profile ${profile.playerId} has no selectable BidKing Hero`);
+    }
+    profile.selectedHeroId = selectedHeroId;
     profile.updatedAt = now;
   }
 }
@@ -45,9 +46,7 @@ export function addOwnedHeroToProfile(profile: PlayerProfile, heroId: number): v
 
 function normalizeOwnedHeroIds(profile: PlayerProfile): number[] {
   const profileOwnedIds = profile.ownedHeroIds ?? bidKingStarterOwnedHeroIds();
-  const shouldReplaceLegacyDefault = profile.settings?.bidkingHeroSourceStateV1 !== true
-    && sameHeroSet(profileOwnedIds, LEGACY_FIRST_PASS_HERO_IDS);
-  const owned = new Set<number>(shouldReplaceLegacyDefault ? [] : profileOwnedIds);
+  const owned = new Set<number>(profileOwnedIds);
   for (const hero of Hero) {
     const heroItemId = bidKingHeroItemIdForHero(hero.id);
     if (heroItemId && inventoryQuantity(profile, heroItemId) > 0) {
@@ -75,12 +74,4 @@ function sourceInventoryItemId(value: number | string): number {
   const raw = String(value);
   const compatMatch = /^compat_(\d+)/.exec(raw);
   return Number(compatMatch?.[1] ?? raw);
-}
-
-function sameHeroSet(left: readonly number[], right: readonly number[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-  const rightSet = new Set(right);
-  return left.every((value) => rightSet.has(value));
 }

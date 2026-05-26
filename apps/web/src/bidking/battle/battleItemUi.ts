@@ -102,7 +102,9 @@ function battleItemBadges(effectPlan: BattleItemEffectPlan, cooldownRemaining: n
     targetModeLabel(effectPlan.targetMode),
     effectPlan.durationRounds > 0 ? `持续${effectPlan.durationRounds}` : '即时',
     cooldownRemaining > 0 ? `冷却${cooldownRemaining}` : cooldownLabel(effectPlan.cooldownRounds),
-    effectPlan.implementationStatus === 'implemented' ? '已落实' : '简化等价'
+    effectPlan.implementationStatus === 'implemented'
+      ? '已落实'
+      : '协议推断'
   ];
 }
 

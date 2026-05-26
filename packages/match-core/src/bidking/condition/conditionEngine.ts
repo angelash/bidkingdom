@@ -37,12 +37,8 @@ export interface ConditionContext {
   lowestAuctionItemTotalValueByBidMap?: Readonly<Record<string, number>>;
 }
 
-export interface AccessEngineOptions {
-  strictUnsupported?: boolean;
-}
-
 const SUPPORTED_CONDITION_TYPES = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25]);
-const EXPLICIT_UNSUPPORTED_CONDITION_TYPES = new Set<number>();
+const UNMAPPED_CONDITION_TYPES = new Set<number>();
 
 export interface AccessCheckResult {
   ok: boolean;
@@ -51,7 +47,6 @@ export interface AccessCheckResult {
   reason?: string;
   requirementType?: number;
   requirementValue?: number;
-  unsupported?: boolean;
 }
 
 export interface ConditionCheckResult {
@@ -62,22 +57,20 @@ export interface ConditionCheckResult {
   requiredValue: number;
   label: string;
   reason?: string;
-  unsupported?: boolean;
 }
 
 export function evaluateBidKingCondition(
   conditionOrId: BidKingConditionRow | number,
-  context: ConditionContext,
-  options: AccessEngineOptions = {}
+  context: ConditionContext
 ): ConditionCheckResult {
   const row = typeof conditionOrId === 'number'
     ? Condition.find((candidate) => candidate.id === conditionOrId)
     : conditionOrId;
   if (!row) {
-    return unsupportedConditionResult(undefined, '门槛未登记', options);
+    throw new Error(`BidKing Condition ${conditionOrId} is missing from source table`);
   }
 
-  const prerequisiteResult = evaluatePrerequisites(row, context, options);
+  const prerequisiteResult = evaluatePrerequisites(row, context);
   if (prerequisiteResult && !prerequisiteResult.ok) {
     return {
       ...prerequisiteResult,
@@ -89,7 +82,7 @@ export function evaluateBidKingCondition(
 
   const currentValue = currentValueForCondition(row, context);
   if (currentValue === undefined) {
-    return unsupportedConditionResult(row, unsupportedConditionLabel(row.condition), options);
+    throw new Error(`BidKing Condition ${row.id} has unmapped condition type ${row.condition}`);
   }
 
   const requiredValue = row.maxvalue > 0 ? row.maxvalue : 1;
@@ -108,28 +101,27 @@ export function evaluateBidKingCondition(
 export function bidKingConditionTypeCoverage(): {
   tableTypes: number[];
   supportedTypes: number[];
-  explicitUnsupportedTypes: number[];
+  unmappedTypes: number[];
   unexpectedTypes: number[];
 } {
   const tableTypes = uniqueSorted(Condition.map((row) => row.condition));
   const supportedTypes = uniqueSorted(tableTypes.filter((type) => SUPPORTED_CONDITION_TYPES.has(type)));
-  const explicitUnsupportedTypes = uniqueSorted(tableTypes.filter((type) => EXPLICIT_UNSUPPORTED_CONDITION_TYPES.has(type)));
+  const unmappedTypes = uniqueSorted(tableTypes.filter((type) => UNMAPPED_CONDITION_TYPES.has(type)));
   const unexpectedTypes = uniqueSorted(tableTypes.filter((type) => (
     !SUPPORTED_CONDITION_TYPES.has(type) &&
-    !EXPLICIT_UNSUPPORTED_CONDITION_TYPES.has(type)
+    !UNMAPPED_CONDITION_TYPES.has(type)
   )));
   return {
     tableTypes,
     supportedTypes,
-    explicitUnsupportedTypes,
+    unmappedTypes,
     unexpectedTypes
   };
 }
 
 export function checkBidKingAccess(
   context: ConditionContext,
-  accessId?: string | number,
-  options: AccessEngineOptions = {}
+  accessId?: string | number
 ): AccessCheckResult {
   if (accessId === undefined || accessId === '' || Number(accessId) === 0) {
     return { ok: true, label: '默认开放' };
@@ -137,7 +129,7 @@ export function checkBidKingAccess(
 
   const row = Access.find((candidate) => candidate.id === String(accessId));
   if (!row) {
-    return unsupportedAccessResult(String(accessId), '未登记入口', options);
+    throw new Error(`BidKing Access ${accessId} is missing from source table`);
   }
 
   const requirementType = Number(row.columns[3] ?? 0);
@@ -170,7 +162,7 @@ export function checkBidKingAccess(
     };
   }
 
-  return unsupportedAccessResult(row.id, `${label} · 未解释条件${requirementType}`, options, requirementType, requirementValue);
+  throw new Error(`BidKing Access ${row.id} has unmapped requirement type ${requirementType}`);
 }
 
 function currentValueForCondition(row: BidKingConditionRow, context: ConditionContext): number | undefined {
@@ -333,14 +325,13 @@ function bidMapPrerequisiteTarget(row: BidKingConditionRow): number | undefined 
 
 function evaluatePrerequisites(
   row: BidKingConditionRow,
-  context: ConditionContext,
-  options: AccessEngineOptions
+  context: ConditionContext
 ): ConditionCheckResult | undefined {
-  const andResult = evaluateConditionGroup(row.preconditions, row.preconditionsparam, context, true, options);
+  const andResult = evaluateConditionGroup(row.preconditions, row.preconditionsparam, context, true);
   if (andResult && !andResult.ok) {
     return andResult;
   }
-  const orResult = evaluateConditionGroup(row.preorconditions, row.preorconditionsparam, context, false, options);
+  const orResult = evaluateConditionGroup(row.preorconditions, row.preorconditionsparam, context, false);
   if (orResult && !orResult.ok) {
     return orResult;
   }
@@ -351,8 +342,7 @@ function evaluateConditionGroup(
   conditionTypes: readonly number[] | undefined,
   params: readonly (readonly number[])[] | undefined,
   context: ConditionContext,
-  requireAll: boolean,
-  options: AccessEngineOptions
+  requireAll: boolean
 ): ConditionCheckResult | undefined {
   const types = (conditionTypes ?? []).filter((type) => type > 0);
   if (types.length === 0) {
@@ -373,7 +363,7 @@ function evaluateConditionGroup(
       desc: `precondition_${conditionType}`,
       packaged_desc: `前置门槛 ${conditionType}`
     };
-    return evaluateBidKingCondition(syntheticRow, context, options);
+    return evaluateBidKingCondition(syntheticRow, context);
   });
   if (requireAll) {
     const failed = results.find((result) => !result.ok);
@@ -406,48 +396,6 @@ function inventoryQuantity(inventory: Readonly<Record<string, number>> | undefin
   return inventory[String(target)] ?? 0;
 }
 
-function unsupportedConditionResult(
-  row: BidKingConditionRow | undefined,
-  label: string,
-  options: AccessEngineOptions
-): ConditionCheckResult {
-  return {
-    ok: options.strictUnsupported ? false : true,
-    conditionId: row?.id,
-    conditionType: row?.condition,
-    currentValue: 0,
-    requiredValue: row?.maxvalue ?? 1,
-    label,
-    reason: options.strictUnsupported ? label : undefined,
-    unsupported: true
-  };
-}
-
-function unsupportedConditionLabel(conditionType: number): string {
-  return EXPLICIT_UNSUPPORTED_CONDITION_TYPES.has(conditionType)
-    ? `门槛类型 ${conditionType} 已登记为暂缓`
-    : `未解释门槛类型 ${conditionType}`;
-}
-
 function uniqueSorted(values: number[]): number[] {
   return [...new Set(values)].sort((left, right) => left - right);
-}
-
-function unsupportedAccessResult(
-  accessId: string,
-  label: string,
-  options: AccessEngineOptions,
-  requirementType?: number,
-  requirementValue?: number
-): AccessCheckResult {
-  const reason = requirementType === undefined ? '入口未登记到珍宝局入口表' : `未解释入口条件类型 ${requirementType}`;
-  return {
-    ok: options.strictUnsupported ? false : true,
-    accessId,
-    label,
-    reason: options.strictUnsupported ? reason : undefined,
-    requirementType,
-    requirementValue,
-    unsupported: true
-  };
 }

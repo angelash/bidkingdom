@@ -68,7 +68,7 @@ export async function fetchAccountSession(serverUrl: string, sessionToken: strin
 
 export async function createGuestAccountSession(
   serverUrl: string,
-  input: { deviceId: string; playerName: string; legacyProfileId?: string }
+  input: { deviceId: string; playerName: string }
 ): Promise<AccountSessionSnapshot> {
   return postAccountSession(serverUrl, '/api/account/guest', input);
 }
@@ -179,11 +179,11 @@ function authHeaders(sessionToken?: string): Record<string, string> {
   return sessionToken ? { authorization: `Bearer ${sessionToken}` } : {};
 }
 
-function apiErrorText(payload: unknown, fallback: string): string {
+function apiErrorText(payload: unknown, defaultMessage: string): string {
   if (!payload || typeof payload !== 'object') {
-    return fallback;
+    return defaultMessage;
   }
   const record = payload as ApiErrorPayload;
-  const message = record.error ?? fallback;
+  const message = record.error ?? defaultMessage;
   return record.errorCode ? `${record.errorCode} · ${message}` : message;
 }

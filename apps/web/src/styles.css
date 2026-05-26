@@ -8629,7 +8629,7 @@ button.danger {
 }
 
 .map-intro-overlay,
-.auctioneer-overlay {
+.intelligence-overlay {
   position: fixed;
   inset: 0;
   z-index: 72;
@@ -8643,12 +8643,12 @@ button.danger {
   backdrop-filter: blur(10px);
 }
 
-.auctioneer-overlay {
+.intelligence-overlay {
   z-index: 73;
 }
 
 .map-intro-panel,
-.auctioneer-panel {
+.intelligence-panel {
   width: min(980px, calc(100vw - 32px));
   display: grid;
   gap: 18px;
@@ -8662,18 +8662,18 @@ button.danger {
   box-shadow: 0 32px 110px rgba(0, 0, 0, 0.68), inset 0 0 0 1px rgba(255, 236, 180, 0.08);
 }
 
-.auctioneer-panel {
+.intelligence-panel {
   width: min(940px, calc(100vw - 32px));
   min-height: 360px;
   align-content: start;
   background:
     linear-gradient(180deg, rgba(55, 34, 20, 0.9), rgba(16, 11, 9, 0.96)),
-    var(--auctioneer-map-art);
+    var(--intelligence-map-art);
   background-position: center;
   background-size: cover;
 }
 
-.auctioneer-heading {
+.intelligence-heading {
   min-width: 0;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -8688,11 +8688,11 @@ button.danger {
   background: rgba(9, 7, 5, 0.42);
 }
 
-.auctioneer-heading svg {
+.intelligence-heading svg {
   color: #d7b96b;
 }
 
-.auctioneer-heading strong {
+.intelligence-heading strong {
   min-width: 0;
   color: #fff2cc;
   font-size: 24px;
@@ -8700,7 +8700,7 @@ button.danger {
   text-align: center;
 }
 
-.auctioneer-heading span {
+.intelligence-heading span {
   grid-column: 1 / -1;
   color: #d8bd88;
   font-size: 13px;
@@ -8794,7 +8794,7 @@ button.danger {
   display: flex;
   gap: var(--map-card-gap);
   will-change: transform;
-  animation: mapRoll 4.35s cubic-bezier(0.16, 0.92, 0.2, 1) both;
+  animation: mapRoll 1.45s cubic-bezier(0.16, 0.92, 0.2, 1) both;
 }
 
 .map-track.locked {
@@ -8898,7 +8898,7 @@ button.danger {
 }
 
 .map-result small,
-.auctioneer-clue small {
+.intelligence-clue small {
   color: #d8bd88;
   font-size: 12px;
 }
@@ -8919,14 +8919,14 @@ button.danger {
   font-style: normal;
 }
 
-.auctioneer-card-row {
+.intelligence-card-row {
   width: 100%;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 
-.auctioneer-card {
+.intelligence-card {
   position: relative;
   min-height: 188px;
   display: grid;
@@ -8948,10 +8948,10 @@ button.danger {
     inset 0 20px 42px rgba(255, 232, 156, 0.06),
     0 12px 28px rgba(0, 0, 0, 0.32);
   transform-style: preserve-3d;
-  animation: auctioneerCardFlip 0.58s ease-out var(--card-delay, 0ms) both;
+  animation: intelligenceCardFlip 0.58s ease-out var(--card-delay, 0ms) both;
 }
 
-.auctioneer-card::before {
+.intelligence-card::before {
   content: "";
   position: absolute;
   inset: 16px;
@@ -8963,7 +8963,7 @@ button.danger {
   opacity: 0.76;
 }
 
-.auctioneer-card.hidden::after {
+.intelligence-card.hidden::after {
   content: "B";
   position: absolute;
   inset: 44px 28px;
@@ -8979,7 +8979,7 @@ button.danger {
     inset 0 0 22px rgba(239, 204, 134, 0.08);
 }
 
-.auctioneer-card.selected {
+.intelligence-card.selected {
   border-color: rgba(245, 216, 139, 0.9);
   background:
     radial-gradient(circle at 50% 30%, rgba(245, 216, 139, 0.24), transparent 42%),
@@ -8991,7 +8991,7 @@ button.danger {
     0 14px 30px rgba(0, 0, 0, 0.36);
 }
 
-.auctioneer-card span {
+.intelligence-card span {
   position: relative;
   z-index: 1;
   width: fit-content;
@@ -9004,7 +9004,7 @@ button.danger {
   font-weight: 900;
 }
 
-.auctioneer-card strong {
+.intelligence-card strong {
   position: relative;
   z-index: 1;
   min-width: 0;
@@ -9015,16 +9015,16 @@ button.danger {
   text-align: center;
 }
 
-.auctioneer-card.hidden span {
+.intelligence-card.hidden span {
   color: #d8bd88;
   background: rgba(9, 7, 5, 0.78);
 }
 
-.auctioneer-card.hidden strong {
+.intelligence-card.hidden strong {
   color: rgba(248, 231, 189, 0.78);
 }
 
-.auctioneer-clue {
+.intelligence-clue {
   display: grid;
   gap: 6px;
   border: 1px solid rgba(245, 216, 139, 0.26);
@@ -9033,7 +9033,7 @@ button.danger {
   background: rgba(12, 7, 5, 0.62);
 }
 
-.auctioneer-clue p {
+.intelligence-clue p {
   margin: 0;
   color: #fff1c9;
   font-weight: 800;
@@ -9055,7 +9055,7 @@ button.danger {
   }
 }
 
-@keyframes auctioneerCardFlip {
+@keyframes intelligenceCardFlip {
   0% {
     opacity: 0;
     transform: rotateY(78deg) translateY(8px);
@@ -11499,7 +11499,7 @@ button.danger {
   }
 
   .map-intro-panel,
-  .auctioneer-panel {
+  .intelligence-panel {
     width: calc(100vw - 20px);
     max-height: calc(100vh - 20px);
     overflow-y: auto;
@@ -11521,15 +11521,15 @@ button.danger {
     width: calc(100vw - 28px);
   }
 
-  .auctioneer-card-row {
+  .intelligence-card-row {
     grid-template-columns: 1fr;
   }
 
-  .auctioneer-card {
+  .intelligence-card {
     min-height: 118px;
   }
 
-  .auctioneer-card.hidden::after {
+  .intelligence-card.hidden::after {
     inset: 28px 34px;
     font-size: 64px;
   }

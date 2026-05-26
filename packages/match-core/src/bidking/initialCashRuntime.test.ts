@@ -94,11 +94,12 @@ describe('BidKing initial cash runtime', () => {
       id: 'cash_restore',
       players: [
         { id: 'p1', name: '甲', kind: 'human', roleId: 'appraiser' },
-        { id: 'p2', name: '乙', kind: 'bot', roleId: 'smuggler' },
-        { id: 'p3', name: '丙', kind: 'bot', roleId: 'psychologist' },
-        { id: 'p4', name: '丁', kind: 'bot', roleId: 'table_strategist' }
+        { id: 'p2', name: '乙', kind: 'bot', roleId: 'restorer' },
+        { id: 'p3', name: '丙', kind: 'bot', roleId: 'insurer' },
+        { id: 'p4', name: '丁', kind: 'bot', roleId: 'historian' }
       ],
       coreMode: true,
+      coreAuctionMode: 'sealed',
       coreBidMapId: 2601
     });
 
@@ -123,7 +124,7 @@ describe('BidKing initial cash runtime', () => {
     expect(bidKingRoomPlayerCountChoices()).toEqual([2, 3, 4]);
     expect(bidKingDefaultRoomPlayerCount()).toBe(4);
     expect(bidKingRoundTimeChoicesSeconds()).toEqual([40, 60, 120]);
-    expect(bidKingDefaultAuctionDurationMs()).toBe(60_000);
+    expect(bidKingDefaultAuctionDurationMs()).toBe(40_000);
     expect(bidKingBidRateChoices()).toEqual([2000, 1800, 1600, 1400, 1200, 1100, 0]);
     expect(bidKingInitialWarehouseCapacity()).toBe(50);
     expect(bidKingEntrustSlotBase()).toBe(3);

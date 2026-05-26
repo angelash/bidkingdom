@@ -143,7 +143,7 @@ function marketOrderSettlementNetPrice(
 }
 
 function assertExchangeBuyLevel(profile: PlayerProfile): void {
-  const requiredLevel = constantNumber('bid_lv', 25);
+  const requiredLevel = constantNumber('bid_lv');
   if (Math.max(1, Math.floor(profile.level ?? 1)) < requiredLevel) {
     throw new Error('CODE_105');
   }
@@ -1299,7 +1299,7 @@ function activeMarketOrderSlotCount(profile: PlayerProfile, orderType: 'trade' |
 
 function marketListingSlotLimit(profile: PlayerProfile, orderType: 'trade' | 'auction'): number {
   if (orderType === 'trade') {
-    return Math.max(1, Math.floor(constantNumber('listed_quantity', 10)));
+    return Math.max(1, Math.floor(constantNumber('listed_quantity')));
   }
   return Math.min(auctionHouseLanchSlotUnlockMax(), bidKingMarketListingSlotBase() + marketListingSlotUnlockCount(profile));
 }
@@ -1321,7 +1321,10 @@ function marketOrderListingSlotUsage(
 
 function sourceExchangeListingChunkSize(refId: string): number {
   const item = Item.find((row) => String(row.id) === String(refId));
-  const maxPerListing = Math.floor(Number(item?.max_per_listing) || 0);
+  if (!item) {
+    throw new Error(`Market item ${refId} is missing from Item`);
+  }
+  const maxPerListing = Math.floor(Number(item.max_per_listing) || 0);
   return maxPerListing > 0 ? maxPerListing : Number.MAX_SAFE_INTEGER;
 }
 

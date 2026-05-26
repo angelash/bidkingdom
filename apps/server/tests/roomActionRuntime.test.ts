@@ -84,7 +84,7 @@ describe('BidKing battle action runtime', () => {
     expect(emojiAllowedRoleIds(restricted)).toEqual(['appraiser']);
     expect(() => applyEmojiRuntime(restricted, {
       playerId: 'p_wrong_role',
-      roleId: 'smuggler',
+      roleId: 'historian',
       cooldowns: new Map<string, number>(),
       inventory: { [requirement.refId]: requirement.quantity },
       now: 1000

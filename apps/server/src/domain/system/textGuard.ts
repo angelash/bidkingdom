@@ -4,9 +4,9 @@ const dirtyWords = DirtyWords
   .map((row) => row.columns[1]?.trim())
   .filter((word): word is string => Boolean(word));
 
-export function sanitizeDisplayName(value: string | undefined, fallback: string): string {
+export function sanitizeDisplayName(value: string | undefined, defaultValue: string): string {
   const cleaned = sanitizeText(value ?? '').trim().slice(0, 12);
-  return cleaned || fallback;
+  return cleaned || defaultValue;
 }
 
 export function sanitizeText(value: string): string {

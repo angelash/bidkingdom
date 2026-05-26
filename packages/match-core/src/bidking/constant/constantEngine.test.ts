@@ -16,7 +16,7 @@ describe('constantEngine', () => {
     expect(constantNumberRows('init_items')[0]).toEqual([6, 6001, 1]);
   });
 
-  it('keeps raw values available for unsupported constant types', () => {
+  it('keeps raw values available for string constants', () => {
     expect(constantRawValue('init_head')).toBe('120000');
   });
 

@@ -12,9 +12,9 @@ import {
   RareRevealBanner
 } from '../settlement/SettlementPanels';
 import {
-  AuctioneerRevealOverlay,
+  BattleRandomOverlay,
   CloseRuleLadder,
-  MapIntroOverlay,
+  IntelligencePanelOverlay,
   PlayerGrid,
   WarehouseGrid,
   auctionModeName,
@@ -36,8 +36,8 @@ interface MatchShellProps {
   phaseRemaining: number;
   selectedSkillTargetId?: string;
   selfPlayer?: PublicPlayer;
-  showAuctioneerReveal: boolean;
-  showMapIntro: boolean;
+  showBattleRandom: boolean;
+  showIntelligencePanel: boolean;
   skillTargets: PublicPlayer[];
   snapshot: PlayerSnapshot;
   onInspectWarehouseSlot: (slot: WarehouseSlotView) => void;
@@ -56,8 +56,8 @@ export function MatchShell({
   phaseRemaining,
   selectedSkillTargetId,
   selfPlayer,
-  showAuctioneerReveal,
-  showMapIntro,
+  showBattleRandom,
+  showIntelligencePanel,
   skillTargets,
   snapshot,
   onInspectWarehouseSlot,
@@ -76,8 +76,8 @@ export function MatchShell({
       className="match-layout auction-room"
       style={{ '--room-art': `url(${containerArtForKey(currentRound.container.artKey)})` } as CSSProperties}
     >
-      {showMapIntro && <MapIntroOverlay round={currentRound} />}
-      {showAuctioneerReveal && <AuctioneerRevealOverlay round={currentRound} />}
+      {showBattleRandom && <BattleRandomOverlay round={currentRound} />}
+      {showIntelligencePanel && <IntelligencePanelOverlay round={currentRound} />}
 
       <aside className="player-rail">
         <PlayerGrid players={snapshot.public.players} selfPlayerId={selfPlayer?.id} compact roundIndex={currentRound.index} />

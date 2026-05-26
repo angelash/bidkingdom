@@ -108,9 +108,9 @@ test.describe('BidKing system panel text polish', () => {
 });
 
 async function dismissStartupNotice(page: Page): Promise<void> {
-  const legacyAction = page.locator('.notice-action').first();
-  if (await legacyAction.isVisible().catch(() => false)) {
-    await legacyAction.click();
+  const noticeAction = page.locator('.notice-action').first();
+  if (await noticeAction.isVisible().catch(() => false)) {
+    await noticeAction.click();
   }
 
   const startupNotice = page.getByRole('dialog', { name: '启动公告' });

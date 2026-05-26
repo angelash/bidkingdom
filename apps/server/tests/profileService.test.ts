@@ -1,4 +1,4 @@
-import type { FinalMatchSummary, PlayerProfile } from '@bitkingdom/shared';
+import type { FinalMatchSummary, FinalPlayerAuctionStats, PlayerProfile } from '@bitkingdom/shared';
 import { Activity, Cabinet, GuildArea, Head, Hero, Item, Mission, Pay, Shop, ShopItem, bidKingPayRuntime } from '@bitkingdom/bidking-compat';
 import {
   bidKingHeroItemIdForHero,
@@ -14,10 +14,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { languageNameFromSeed, languageNamesFromSeed } from '../src/domain/profile/languageNameRuntime';
 import { addMailFromTemplate } from '../src/domain/profile/profileMailRuntime';
-import {
-  DEFAULT_PROFILE_COINS,
-  LEGACY_DEFAULT_PROFILE_COINS
-} from '../src/domain/profile/profileRuntimeConfig';
+import { DEFAULT_PROFILE_COINS } from '../src/domain/profile/profileRuntimeConfig';
 import { createAccountService } from '../src/services/accountService';
 import { createProfileService } from '../src/services/profileService';
 import { createSQLiteStore, type ServerStore } from '../src/services/store';
@@ -173,20 +170,6 @@ describe('profile service', () => {
     expect(afterCoinCost.profile.tickets.current).toBe(0);
     expect(afterCoinCost.transactions.filter((transaction) => transaction.reason === 'bidmap_entry_cost_coins')).toHaveLength(1);
     expect(afterCoinCost.transactions.some((transaction) => transaction.resource === 'ticket')).toBe(false);
-  });
-
-  it('migrates legacy starter coin defaults to original init_items coins', () => {
-    const profiles = createProfileService(createMemoryStore());
-    const legacy = profiles.getOrCreateProfile('p_legacy_money', '旧掌柜');
-    legacy.coins = LEGACY_DEFAULT_PROFILE_COINS;
-    legacy.auctionStats!.currentTotalAssets = LEGACY_DEFAULT_PROFILE_COINS;
-
-    const migrated = profiles.getSnapshot('p_legacy_money').profile;
-
-    expect(migrated.coins).toBe(DEFAULT_PROFILE_COINS);
-    expect(migrated.auctionStats?.currentTotalAssets).toBe(DEFAULT_PROFILE_COINS);
-    expect(migrated.settings.bidkingStarterRewardsV1).toBe(true);
-    expect(inventoryQuantity(migrated, '7101')).toBe(1);
   });
 
   it('persists profile and ledger state through the SQLite store', () => {
@@ -1372,15 +1355,15 @@ describe('profile service', () => {
     ]);
   });
 
-  it('preflights legacy source exchange orders without locked stock boxes before spending coins', () => {
+  it('preflights source exchange orders without locked stock boxes before spending coins', () => {
     const profiles = createProfileService(createMemoryStore());
-    const seller = profiles.getOrCreateProfile('p_exchange_legacy_seller', '旧交易卖家');
-    const buyer = profiles.getOrCreateProfile('p_exchange_legacy_buyer', '旧交易买家');
+    const seller = profiles.getOrCreateProfile('p_exchange_source_seller', '交易卖家');
+    const buyer = profiles.getOrCreateProfile('p_exchange_source_buyer', '交易买家');
     buyer.level = 25;
     buyer.coins = 10_000;
     const now = Date.now();
     seller.marketOrders.unshift({
-      id: 'legacy_exchange_order_no_locked_stock',
+      id: 'source_exchange_order_no_locked_stock',
       orderType: 'trade',
       refId: '100102',
       quantity: 1,
@@ -1400,10 +1383,10 @@ describe('profile service', () => {
     fillSingleSlotWarehouse(buyer, 100102);
     const buyerCoinsBefore = buyer.coins;
 
-    expect(() => profiles.buyExchangeItem('p_exchange_legacy_buyer', 100102, 1, 1000)).toThrow('仓库空间不足');
+    expect(() => profiles.buyExchangeItem('p_exchange_source_buyer', 100102, 1, 1000)).toThrow('仓库空间不足');
 
-    const buyerSnapshot = profiles.getSnapshot('p_exchange_legacy_buyer');
-    const sellerSnapshot = profiles.getSnapshot('p_exchange_legacy_seller');
+    const buyerSnapshot = profiles.getSnapshot('p_exchange_source_buyer');
+    const sellerSnapshot = profiles.getSnapshot('p_exchange_source_seller');
     const order = sellerSnapshot.profile.marketOrders[0]!;
     expect(buyerSnapshot.profile.coins).toBe(buyerCoinsBefore);
     expect(inventoryQuantity(buyerSnapshot.profile, '100102')).toBe(0);
@@ -1487,7 +1470,7 @@ describe('profile service', () => {
         uid: expect.any(Number),
         mapCid: 101,
         slotId: 2,
-        sendTime: auction.createdAt,
+        sendTime: Math.floor(auction.createdAt / 1000),
         stockData: expect.objectContaining({
           stockId: 2,
           stockCid: 2101,
@@ -1559,6 +1542,8 @@ describe('profile service', () => {
       })
     }));
     expect(recycledGame.gameData.stockContainer.stockBoxes[0]?.item.isLock).toBe(true);
+    expect(recycledGame.gameData.nextRoundTime).toBe(recycledGame.gameOverTime);
+    expect(recycledGame.gameData.serverTime).toBe(recycledGame.gameOverTime);
     expect(recycledGame.gameData.userLog.some((user) =>
       user.priceLog.at(-1)?.itemCidOrPrice === unitValue * 15
     )).toBe(true);
@@ -1648,6 +1633,7 @@ describe('profile service', () => {
       bestMove: { title: '测试', detail: '测试' },
       biggestMistake: { title: '测试', detail: '测试' },
       revealedItems: [],
+      auctionStats: [testAuctionStats('p_rank_snapshot_b', { currentTotalAssets: DEFAULT_PROFILE_COINS })],
       rewards: [{ playerId: 'p_rank_snapshot_b', xp: 0, coins: 0, rankPoints: 12 }],
       eventCount: 0,
       transactionCount: 0
@@ -2117,6 +2103,12 @@ describe('profile service', () => {
         ]
       },
       lossRecoveryByPlayerId: { p_loss_recovery: 12_000 },
+      auctionStats: [testAuctionStats('p_loss_recovery', {
+        currentTotalAssets: 0,
+        netProfit: -12_000,
+        highestItemValue: itemBaseValue,
+        highestWinningItemTotalValue: itemBaseValue * 2
+      })],
       rewards: [{ playerId: 'p_loss_recovery', xp: 999_999, coins: 0, rankPoints: -5 }],
       eventCount: 0,
       transactionCount: 0
@@ -2206,6 +2198,14 @@ describe('profile service', () => {
       bestMove: { title: '达成', detail: '测试' },
       biggestMistake: { title: '无', detail: '测试' },
       revealedItems: [],
+      auctionStats: [testAuctionStats('p_mission_progress', {
+        currentTotalAssets: 110000,
+        totalProfit: 10000,
+        netProfit: 10000,
+        successfulAuctionCount: 1,
+        highestItemValue: 10000,
+        highestWinningItemTotalValue: 10000
+      })],
       rewards: [{ playerId: 'p_mission_progress', xp: 0, coins: 0, rankPoints: 0 }],
       eventCount: 0,
       transactionCount: 0
@@ -2224,6 +2224,31 @@ describe('profile service', () => {
     }));
   });
 });
+
+function testAuctionStats(
+  playerId: string,
+  overrides: Partial<FinalPlayerAuctionStats> = {}
+): FinalPlayerAuctionStats {
+  return {
+    playerId,
+    totalProfit: 0,
+    netProfit: 0,
+    successfulAuctionCount: 0,
+    failedAuctionCount: 0,
+    highestBidAmount: 0,
+    highestSingleAuctionProfit: 0,
+    currentTotalAssets: 0,
+    highestItemValue: 0,
+    highestWinningItemTotalValue: 0,
+    lowestWinningItemTotalValue: undefined,
+    completedMapIds: [],
+    completedBidMapIds: [],
+    successfulAuctionCountByMap: {},
+    lowestWinningItemTotalValueByMap: {},
+    lowestWinningItemTotalValueByBidMap: {},
+    ...overrides
+  };
+}
 
 function inventoryQuantity(profile: { inventory: Array<{ refId: string; quantity: number }> }, refId: string): number {
   return profile.inventory

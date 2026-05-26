@@ -1,5 +1,5 @@
 import { gameConfig } from '@bitkingdom/config';
-import { bidKingRoleHasSourceHero, bidKingSourceRoles, createMatch, startNextRound } from '@bitkingdom/match-core';
+import { bidKingRoleHasSourceHero, createMatch, startNextRound } from '@bitkingdom/match-core';
 import { RankMap } from '@bitkingdom/bidking-compat';
 import { describe, expect, it } from 'vitest';
 import {
@@ -24,7 +24,8 @@ describe('BidKing room lifecycle runtime', () => {
       botCount: 0,
       totalRounds: 3,
       initialCash: gameConfig.rules.initialCash,
-      coreAuctionMode: 'sealed'
+      coreAuctionMode: 'sealed',
+      selectedBidMapId: 2601
     });
     room.players.push(createHumanRoomPlayer({
       id: 'p1',
@@ -42,6 +43,8 @@ describe('BidKing room lifecycle runtime', () => {
         { id: 'b2', name: '丙', kind: 'bot', roleId: gameConfig.roles[2]!.id },
         { id: 'b3', name: '丁', kind: 'bot', roleId: gameConfig.roles[3]!.id }
       ],
+      coreAuctionMode: 'sealed',
+      coreBidMapId: 2601,
       config: gameConfig,
       now: 1000
     });
@@ -65,7 +68,8 @@ describe('BidKing room lifecycle runtime', () => {
       botCount: 3,
       totalRounds: 3,
       initialCash: gameConfig.rules.initialCash,
-      coreAuctionMode: 'sealed'
+      coreAuctionMode: 'sealed',
+      selectedBidMapId: 2601
     });
     room.players.push(createHumanRoomPlayer({
       id: 'p1',
@@ -91,16 +95,13 @@ describe('BidKing room lifecycle runtime', () => {
   });
 
   it('bounds human role selection to source Hero-backed bidder rows', () => {
-    const extraRole = gameConfig.roles.find((role) => !bidKingRoleHasSourceHero(role.id, gameConfig.roles));
-    expect(extraRole).toBeDefined();
-    const player = createHumanRoomPlayer({
+    expect(gameConfig.roles.every((role) => bidKingRoleHasSourceHero(role.id, gameConfig.roles))).toBe(true);
+    expect(() => createHumanRoomPlayer({
       id: 'p_extra_role',
       name: '甲',
-      roleId: extraRole!.id,
+      roleId: 'not_source_role',
       socketId: 'socket_extra_role'
-    });
-
-    expect(player.roleId).toBe(bidKingSourceRoles(gameConfig.roles)[0]?.id);
+    })).toThrow(/Invalid BidKing role/);
   });
 
   it('previews original BidKing initial cash tiers before the match starts', () => {

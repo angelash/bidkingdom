@@ -51,8 +51,8 @@ export function MatchRoute({
             phaseRemaining={matchState.phaseRemaining}
             selectedSkillTargetId={matchState.selectedSkillTargetId}
             selfPlayer={matchState.selfPlayer}
-            showAuctioneerReveal={matchState.showAuctioneerReveal}
-            showMapIntro={matchState.showMapIntro}
+            showBattleRandom={matchState.showBattleRandom}
+            showIntelligencePanel={matchState.showIntelligencePanel}
             skillTargets={matchState.skillTargets}
             snapshot={snapshot}
             onInspectWarehouseSlot={liveIntel.inspectWarehouseSlot}

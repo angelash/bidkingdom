@@ -920,7 +920,7 @@ const BID_KING_RAW_TABLE_PACKAGING_OVERRIDES: Record<string, BidKingItemPackagin
 };
 
 const BID_KING_ITEM_TYPE_PACKAGING_OVERRIDES: Partial<Record<number, BidKingItemPackagingOverride>> = {
-  1: { name: '杂项', desc: '零散杂项与兜底物件。' },
+  1: { name: '杂项', desc: '零散杂项与通用物件。' },
   2: { name: '券契', desc: '入场、互市、兑换等票券契据。' },
   3: { name: '令牌', desc: '珍宝局与各方势力通行令牌。' },
   4: { name: '宝匣', desc: '随机开出的礼匣与宝箱。' },

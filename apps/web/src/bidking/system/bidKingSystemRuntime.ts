@@ -83,27 +83,27 @@ export function normalizeBidKingLanguageListenColumn(column: unknown): number {
   return clampInteger(column, 1, 16);
 }
 
-export function translateBidKingLanguage(key: string, column: unknown, fallback = key): string {
+export function translateBidKingLanguage(key: string, column: unknown, defaultText = key): string {
   const row = languageRowsByKey.get(key);
   if (!row) {
-    return safeDisplayValue(fallback) || commonLanguageLabels[key] || humanizeBidKingLocalizationKey(key, '文书条目');
+    return safeDisplayValue(defaultText) || commonLanguageLabels[key] || humanizeBidKingLocalizationKey(key, '文书条目');
   }
   return safeDisplayValue(columnValue(row, normalizeBidKingLanguageColumn(column)))
     || commonLanguageLabels[key]
-    || safeDisplayValue(fallback)
+    || safeDisplayValue(defaultText)
     || safeDisplayValue(row.packaged_name)
     || safeDisplayValue(row.packaged_desc)
     || humanizeBidKingLocalizationKey(key, '文书条目');
 }
 
-export function translateBidKingListen(key: string, column: unknown, fallback = key): string {
+export function translateBidKingListen(key: string, column: unknown, defaultText = key): string {
   const row = languageListenRowsByKey.get(key);
   if (!row) {
-    return safeDisplayValue(fallback) || formatBidKingLanguageListenLabel(key) || '语音试听';
+    return safeDisplayValue(defaultText) || formatBidKingLanguageListenLabel(key) || '语音试听';
   }
   return safeDisplayValue(columnValue(row, normalizeBidKingLanguageListenColumn(column)))
     || formatBidKingLanguageListenLabel(key)
-    || safeDisplayValue(fallback)
+    || safeDisplayValue(defaultText)
     || safeDisplayValue(row.packaged_name)
     || safeDisplayValue(row.packaged_desc)
     || '语音试听';
@@ -126,8 +126,8 @@ export function isBidKingRawLocalizationValue(value: string): boolean {
   return rawLocalizationValuePattern.test(normalized) || rawAssetValuePattern.test(normalized) || rawConfigValuePattern.test(normalized);
 }
 
-export function safeBidKingDisplayText(value: string, fallback = ''): string {
-  return safeDisplayValue(value) || safeDisplayValue(fallback);
+export function safeBidKingDisplayText(value: string, defaultText = ''): string {
+  return safeDisplayValue(value) || safeDisplayValue(defaultText);
 }
 
 export function findBidKingSound(soundRef: number | string): BidKingSoundRow | undefined {
@@ -222,22 +222,22 @@ export function bidKingNoticeRuntime(row: BidKingRawTableRow): BidKingStartupNot
 
 export function formatBidKingNoticeTypeLabel(type: string): string {
   const normalized = type.trim();
-  const fallbackLabel = '公告';
+  const defaultLabel = '公告';
   const knownLabels: Record<string, string> = {
-    notice_general: fallbackLabel,
+    notice_general: defaultLabel,
     notice_system: '系统公告',
     notice_songpai: '送拍确认',
     notice_quxiaosongpai: '下架确认'
   };
   if (!normalized) {
-    return fallbackLabel;
+    return defaultLabel;
   }
   const knownLabel = knownLabels[normalized];
   if (knownLabel) {
     return knownLabel;
   }
   const translated = safeDisplayValue(translateBidKingLanguage(normalized, 1, ''));
-  return translated && translated !== '文书条目' ? translated : fallbackLabel;
+  return translated && translated !== '文书条目' ? translated : defaultLabel;
 }
 
 export function nextBidKingGuideStep(
@@ -337,17 +337,17 @@ function safeNoticeTitle(value: string): string {
   return /^公告弹窗\d+$/.test(title) ? '' : title;
 }
 
-function humanizeBidKingLocalizationKey(key: string, fallback: string): string {
+function humanizeBidKingLocalizationKey(key: string, defaultText: string): string {
   const voiceLabel = key.includes('voice_path_') ? formatBidKingLanguageListenLabel(key) : '';
   if (voiceLabel) {
     return voiceLabel;
   }
-  return fallback;
+  return defaultText;
 }
 
-function numberColumn(row: BidKingRawTableRow, index: number, fallback: number): number {
+function numberColumn(row: BidKingRawTableRow, index: number, defaultValue: number): number {
   const numeric = Number(row.columns[index]);
-  return Number.isFinite(numeric) ? numeric : fallback;
+  return Number.isFinite(numeric) ? numeric : defaultValue;
 }
 
 function nonZeroColumn(row: BidKingRawTableRow, index: number): string {

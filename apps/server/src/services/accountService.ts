@@ -34,7 +34,6 @@ export interface AccountPasswordChangeInput {
 export interface GuestAccountInput {
   deviceId?: string;
   playerName?: string;
-  legacyProfileId?: string;
 }
 
 export function createAccountService(store: ServerStore, profiles: ProfileService): AccountService {
@@ -90,13 +89,13 @@ export function createAccountService(store: ServerStore, profiles: ProfileServic
     const now = Date.now();
     let account = store.state.accounts[accountId];
     if (!account) {
-      const profileId = safeLegacyProfileId(input.legacyProfileId) ?? `p_${accountId}`;
-      const fallbackName = `游客${hashStable(deviceId).slice(0, 4).toUpperCase()}`;
-      profiles.getOrCreateProfile(profileId, input.playerName || fallbackName);
+      const profileId = `p_${accountId}`;
+      const guestName = `游客${hashStable(deviceId).slice(0, 4).toUpperCase()}`;
+      profiles.getOrCreateProfile(profileId, input.playerName || guestName);
       account = {
         accountId,
-        accountName: fallbackName,
-        displayName: sanitizeDisplayName(input.playerName, fallbackName),
+        accountName: guestName,
+        displayName: sanitizeDisplayName(input.playerName, guestName),
         kind: 'guest',
         normalizedName: `guest:${accountId}`,
         profileId,
@@ -317,11 +316,6 @@ function cleanDeviceId(value: string | undefined): string {
     return cleaned;
   }
   return randomUUID();
-}
-
-function safeLegacyProfileId(value: string | undefined): string | undefined {
-  const cleaned = value?.trim();
-  return cleaned && /^p_[a-zA-Z0-9_-]{8,80}$/.test(cleaned) ? cleaned : undefined;
 }
 
 function hashStable(value: string): string {

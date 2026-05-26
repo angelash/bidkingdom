@@ -70,7 +70,6 @@ export function ensureProfileStockState(profile: PlayerProfile, now = Date.now()
 
   if (profile.settings?.bidkingStockContainersV1 !== true) {
     migrateInventoryEntriesToWarehouse(profile, now);
-    migrateLegacyCabinetEntries(profile, now);
     profile.stockState.migratedInventoryAt = now;
     profile.settings ??= {};
     profile.settings.bidkingStockContainersV1 = true;
@@ -380,14 +379,14 @@ export function placeStockItemInCabinet(profile: PlayerProfile, itemId: string, 
     throw new Error('仓库中没有该实体藏品，无法陈列');
   }
   const sourceBox = warehouse.boxes[sourceIndex]!;
-  const cabinet = cabinetForItem(item) ?? Cabinet[0];
+  const cabinet = cabinetForItem(item);
   if (!cabinet) {
     throw new Error('收藏柜配置不存在');
   }
   assertCabinetAcceptsItem(cabinet, item, sourceBox);
 
   const cabinetContainer = ensureCabinetContainer(profile, cabinet, now);
-  if (cabinetContainer.boxes.length >= positiveLimit(cabinet.place_max, 15)) {
+  if (cabinetContainer.boxes.length >= positiveLimit(cabinet.place_max, 'Cabinet.place_max')) {
     throw new Error('收藏柜陈列数量已满');
   }
   const position = firstAvailablePosition(cabinetContainer, item);
@@ -485,8 +484,11 @@ export function refreshProfileStockCabinetRewards(profile: PlayerProfile, now = 
       continue;
     }
     const cabinet = Cabinet.find((row) => row.id === container.cabinet?.cabinetId);
+    if (!cabinet) {
+      throw new Error(`Cabinet ${container.cabinet.cabinetId} is missing`);
+    }
     const hourlyCoins = cabinetHourlyCoins(container, cabinet);
-    const maxElapsedMs = positiveLimit(cabinet?.timemax, 24 * 3600) * 1000;
+    const maxElapsedMs = positiveLimit(cabinet.timemax, 'Cabinet.timemax') * 1000;
     const elapsedMs = Math.min(maxElapsedMs, Math.max(0, now - container.cabinet.lastRewardAt));
     container.cabinet.basicRewardPerHour = hourlyCoins;
     container.cabinet.pendingReward = Math.floor(hourlyCoins * (elapsedMs / 3600_000));
@@ -527,43 +529,6 @@ function reconcileInventoryRefToWarehouse(
     warehouse.boxes.push(createStockBox(profile, item, warehouse, `stock_reconcile:${refId}:${index}`, now));
   }
   warehouse.updatedAt = now;
-}
-
-function migrateLegacyCabinetEntries(profile: PlayerProfile, now: number): void {
-  const legacyItemIds = profile.cabinetItemIds ?? [];
-  for (const legacyItemId of legacyItemIds) {
-    const item = bidKingItemByInventoryRef(legacyItemId);
-    if (!item || findStockBox(profile, item.id, ['cabinet'])) {
-      continue;
-    }
-    const cabinet = cabinetForItem(item) ?? Cabinet[0];
-    if (!cabinet) {
-      continue;
-    }
-    const cabinetContainer = ensureCabinetContainer(profile, cabinet, now);
-    const warehouseBoxRef = findStockBox(profile, item.id, ['warehouse']);
-    const box = warehouseBoxRef?.box ?? createStockBox(profile, item, cabinetContainer, `legacy_cabinet:${legacyItemId}`, now);
-    const position = firstAvailablePosition(cabinetContainer, item);
-    if (position < 0) {
-      continue;
-    }
-    if (warehouseBoxRef) {
-      warehouseBoxRef.container.boxes = warehouseBoxRef.container.boxes.filter((candidate) => candidate.boxId !== box.boxId);
-    } else if (!profile.inventory.some((entry) => entry.refId === canonicalInventoryRef(item.id))) {
-      profile.inventory.push({
-        key: `warehouse:${canonicalInventoryRef(item.id)}`,
-        type: 'warehouse',
-        refId: canonicalInventoryRef(item.id),
-        quantity: 1,
-        updatedAt: now
-      });
-    }
-    box.position = position;
-    box.item.rotate = false;
-    box.item.boxPositionData = boxPositionDataForItem(position, cabinetContainer.width, item, false);
-    cabinetContainer.boxes.push(box);
-    cabinetContainer.updatedAt = now;
-  }
 }
 
 function createStockBox(
@@ -708,7 +673,7 @@ function assertCabinetAcceptsItem(cabinet: BidKingCabinetRow, item: BidKingItemR
     throw new Error(`藏品品质不符合收藏柜要求：需要 ${cabinet.quality_requirement.join('/')}，当前 ${item.item_quality}`);
   }
   const footprint = itemFootprint(item.slot_type);
-  if (footprint.w * footprint.h > positiveLimit(cabinet.max_slot_limit, footprint.w * footprint.h)) {
+  if (footprint.w * footprint.h > positiveLimit(cabinet.max_slot_limit, 'Cabinet.max_slot_limit')) {
     throw new Error('藏品占格超过收藏柜限制');
   }
   if (item.in_case <= 0 && !box.item.canTrade && !bidKingItemRuntimeFlags(item).saleable) {
@@ -756,12 +721,15 @@ function footprintFits(
   return true;
 }
 
-function cabinetHourlyCoins(container: ProfileStockContainerState, cabinet?: BidKingCabinetRow): number {
+function cabinetHourlyCoins(container: ProfileStockContainerState, cabinet: BidKingCabinetRow): number {
   const itemCoins = container.boxes.reduce((sum, box) => {
     const item = Item.find((candidate) => candidate.id === box.item.cid);
-    return sum + (item?.collection_coin ?? 0) * 3600;
+    if (!item) {
+      throw new Error(`Stock box item ${box.item.cid} is missing from Item`);
+    }
+    return sum + item.collection_coin * 3600;
   }, 0);
-  return itemCoins + (container.boxes.length > 0 ? positiveLimit(cabinet?.coinbonus, 0) : 0);
+  return itemCoins + (container.boxes.length > 0 ? nonNegativeNumber(cabinet.coinbonus, 'Cabinet.coinbonus') : 0);
 }
 
 function syncCabinetItemIdsFromStock(profile: PlayerProfile): void {
@@ -836,9 +804,10 @@ function stockBoxPositionData(
     return box.item.boxPositionData;
   }
   const item = Item.find((candidate) => candidate.id === box.item.cid);
-  return item
-    ? boxPositionDataForItem(box.position, container.width, item, box.item.rotate)
-    : sourceBoxPositionData(box.position, container.width, { w: 1, h: 1 });
+  if (!item) {
+    throw new Error(`Stock box item ${box.item.cid} is missing from Item`);
+  }
+  return boxPositionDataForItem(box.position, container.width, item, box.item.rotate);
 }
 
 function boxPositionDataForItem(
@@ -875,8 +844,7 @@ function sourceInventoryItemId(value: number | string): string {
 }
 
 function cabinetForItem(item: BidKingItemRow): BidKingCabinetRow | undefined {
-  return Cabinet.find((cabinet) => item.item_type_ids.some((typeId) => cabinet.location_type.includes(typeId)))
-    ?? Cabinet[0];
+  return Cabinet.find((cabinet) => item.item_type_ids.some((typeId) => cabinet.location_type.includes(typeId)));
 }
 
 function nextBoxIdFromContainers(containers: readonly ProfileStockContainerState[]): number {
@@ -891,8 +859,18 @@ function canonicalInventoryRef(itemId: number): string {
   return `compat_${itemId}`;
 }
 
-function positiveLimit(value: number | undefined, fallback: number): number {
-  return typeof value === 'number' && value > 0 ? value : fallback;
+function positiveLimit(value: number | undefined, field: string): number {
+  if (typeof value !== 'number' || value <= 0) {
+    throw new Error(`${field} must be positive`);
+  }
+  return value;
+}
+
+function nonNegativeNumber(value: number | undefined, field: string): number {
+  if (typeof value !== 'number' || value < 0) {
+    throw new Error(`${field} must be non-negative`);
+  }
+  return value;
 }
 
 function stableNumericId(value: string): number {

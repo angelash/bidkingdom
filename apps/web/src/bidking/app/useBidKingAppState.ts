@@ -94,8 +94,7 @@ export function useBidKingAppState() {
     try {
       applyAccountSessionSnapshot(await createGuestAccountSession(SERVER_URL, {
         deviceId: loadDeviceId(),
-        playerName: nextPlayerName,
-        legacyProfileId: loadProfileId()
+        playerName: nextPlayerName
       }));
     } catch (error) {
       setAuthStatus('signedOut');

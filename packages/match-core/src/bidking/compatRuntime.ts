@@ -7,7 +7,6 @@ import {
   Drop,
   getBidKingCloseThreshold,
   Hero,
-  Item,
   itemById,
   itemFootprint,
   RankMap,
@@ -23,10 +22,7 @@ import {
 import type { Clue, PublicContainerInfo, RevealedItem, Rarity, SkillFeedEntry } from '@bitkingdom/shared';
 import { sumItemValue } from '../scoring';
 import type { ContainerInstance, MatchRuntimeState, RuntimePlayer, RuntimeRound, WarehouseSlot } from '../types';
-import {
-  bidKingHighestConfiguredMinimumBidForBidMap,
-  bidKingInitialCashForBidMap
-} from './initialCashRuntime';
+import { bidKingRandomBidMapCandidates, bidKingResolveRandomBidMapId } from './bidMapRuntime';
 import { bidKingHeroIdForRoleId } from './heroRuntime';
 import {
   bidKingKnowledgeByItemIdFromSkillFeed,
@@ -38,9 +34,17 @@ import {
 export { getBidKingCloseThreshold };
 
 export function createBidKingCoreWarehouseInstance(state: MatchRuntimeState, now: number): ContainerInstance {
-  const bidMap = resolveBidMapForState(state);
-  const hiddenItems = drawItemsForBidMap(state, bidMap);
-  return createContainerFromBidMap(state, bidMap, hiddenItems, now, bidKingRoundRuleForBidMap(bidMap, state.roundIndex, state));
+  const { sourceBidMap, resolvedBidMap } = resolveBidMapForState(state);
+  state.coreSourceBidMapId = sourceBidMap.id;
+  state.coreResolvedBidMapId = resolvedBidMap.id;
+  const hiddenItems = drawItemsForBidMap(state, resolvedBidMap);
+  return createContainerFromBidMap(
+    state,
+    resolvedBidMap,
+    hiddenItems,
+    now,
+    bidKingRoundRuleForBidMap(resolvedBidMap, state.roundIndex, state)
+  );
 }
 
 export function applyBidKingRoundRule(
@@ -50,7 +54,7 @@ export function applyBidKingRoundRule(
 ): ContainerInstance {
   const bidMap = bidMapFromTemplateId(container.templateId);
   if (!bidMap) {
-    return container;
+    throw new Error(`Container template ${container.templateId} is not backed by BidMap`);
   }
   const rule = bidKingRoundRuleForBidMap(bidMap, roundIndex, state);
   return {
@@ -64,22 +68,14 @@ export function buildBidKingOpeningCandidates(
   state: MatchRuntimeState,
   selected: PublicContainerInfo,
   now: number
-): PublicContainerInfo[] {
-  const selectedTemplateId = selected.templateId;
-  const alternatives = shuffleByRng(
-    eligibleBidMapsForState(state).filter((row) => templateIdForBidMap(row) !== selectedTemplateId),
-    state
-  );
-  const rows = alternatives.length > 0
-    ? alternatives
-    : shuffleByRng(BidMap.filter((row) => row.is_visiable === 1), state);
+): PublicContainerInfo[] | undefined {
+  const rows = openingCandidateRowsForState(state);
+  if (rows.length === 0) {
+    return undefined;
+  }
   const candidates: PublicContainerInfo[] = rows
     .slice(0, 7)
     .map((row, index) => openingCandidateInfo(row, now + index + 1));
-  while (candidates.length < 7 && rows.length > 0) {
-    const row = rows[candidates.length % rows.length]!;
-    candidates.push(openingCandidateInfo(row, now + candidates.length + 1));
-  }
   return [
     ...candidates,
     {
@@ -87,6 +83,21 @@ export function buildBidKingOpeningCandidates(
       tags: [...selected.tags]
     }
   ];
+}
+
+function openingCandidateRowsForState(state: MatchRuntimeState): BidKingBidMapRow[] {
+  const sourceBidMap = BidMap.find((row) => row.id === (state.coreSourceBidMapId ?? state.coreBidMapId));
+  if (!sourceBidMap) {
+    throw new Error(`Unknown BidMap ${state.coreSourceBidMapId ?? state.coreBidMapId}`);
+  }
+  return bidKingRandomBidMapCandidates(sourceBidMap.id)
+    .map((id) => {
+      const row = BidMap.find((candidate) => candidate.id === id && candidate.is_visiable === 1);
+      if (!row) {
+        throw new Error(`BidMap ${sourceBidMap.id} references unavailable opening candidate ${id}`);
+      }
+      return row;
+    });
 }
 
 export function buildBidKingAutoSkillClues(
@@ -218,13 +229,18 @@ function bidKingRoundRuleForBidMap(
   roundIndex: number,
   state?: MatchRuntimeState
 ): BidKingRoundRule {
-  const row = RankMap.find((candidate) => candidate.id === bidMap.id) ?? RankMap[Math.max(0, roundIndex) % RankMap.length]!;
+  const row = RankMap.find((candidate) => candidate.id === bidMap.id);
+  if (!row) {
+    throw new Error(`Missing RankMap ${bidMap.id}`);
+  }
   const seconds = bidMap.map_time[Math.min(Math.max(0, roundIndex), Math.max(0, bidMap.map_time.length - 1))]
-    ?? weightedRangeValue(row.match_time, state)
-    ?? 60;
+    ?? weightedRangeValue(row.match_time, state);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    throw new Error(`BidMap ${bidMap.id} round ${roundIndex + 1} has invalid auction duration`);
+  }
   return {
     auctionDurationMs: seconds * 1000,
-    minimumBid: weightedRangeValue(row.min_bid_range, state) ?? 1000
+    minimumBid: weightedRangeValue(row.min_bid_range, state)
   };
 }
 
@@ -244,57 +260,52 @@ function skillForMapRound(
     return undefined;
   }
   const group = SkillGroup.find((row) => row.groupid === groupId);
-  const candidates = group?.skill_group
-    .map(([skillId, weight]) => ({ item: skillById(skillId), weight }))
-    .filter((candidate): candidate is { item: BidKingSkillRow; weight: number } => Boolean(candidate.item));
-  if (!candidates || candidates.length === 0) {
-    return undefined;
+  if (!group) {
+    throw new Error(`BidMap ${bidMap.id} map_random_skill references missing SkillGroup ${groupId}`);
   }
-  const weighted = candidates.filter((candidate) => candidate.weight > 0);
-  return state.rng.weighted(weighted.length > 0 ? weighted : candidates.map((candidate) => ({ ...candidate, weight: 1 })));
+  const candidates = group.skill_group
+    .map(([skillId, weight]) => {
+      const skill = skillById(skillId);
+      if (!skill) {
+        throw new Error(`SkillGroup ${groupId} references missing Skill ${skillId}`);
+      }
+      return { item: skill, weight };
+    })
+    .filter((candidate) => candidate.weight > 0);
+  if (candidates.length === 0) {
+    throw new Error(`SkillGroup ${groupId} has no positive Skill weights`);
+  }
+  return state.rng.weighted(candidates);
 }
 
-function eligibleBidMapsForState(state: MatchRuntimeState): BidKingBidMapRow[] {
-  return eligibleBidMapsForPlayerCount(state.players.length, state.config.rules.initialCash);
+function resolveBidMapForState(state: MatchRuntimeState): {
+  sourceBidMap: BidKingBidMapRow;
+  resolvedBidMap: BidKingBidMapRow;
+} {
+  const sourceBidMap = BidMap.find((row) => row.id === state.coreBidMapId);
+  if (!sourceBidMap) {
+    throw new Error(`Unknown BidMap ${state.coreBidMapId}`);
+  }
+  if (sourceBidMap.is_visiable !== 1) {
+    throw new Error(`BidMap ${state.coreBidMapId} is not visible`);
+  }
+  if (sourceBidMap.bidder_number !== state.players.length) {
+    throw new Error(`BidMap ${state.coreBidMapId} requires exactly ${sourceBidMap.bidder_number} players`);
+  }
+  const seed = `${state.seed}:${state.id}`;
+  return {
+    sourceBidMap,
+    resolvedBidMap: resolveBidMapGroup(sourceBidMap, seed)
+  };
 }
 
-function resolveBidMapForState(state: MatchRuntimeState): BidKingBidMapRow {
-  const eligible = eligibleBidMapsForState(state);
-  const requested = state.coreBidMapId
-    ? BidMap.find((row) => row.id === state.coreBidMapId && row.is_visiable === 1)
-    : undefined;
-  if (!requested) {
-    return state.rng.pick(eligible);
+function resolveBidMapGroup(bidMap: BidKingBidMapRow, seed: string | number): BidKingBidMapRow {
+  const resolvedId = bidKingResolveRandomBidMapId(bidMap.id, seed);
+  const resolved = BidMap.find((row) => row.id === resolvedId);
+  if (!resolved) {
+    throw new Error(`BidMap ${bidMap.id} resolved missing BidMap ${resolvedId}`);
   }
-  if (requested.bidder_number === state.players.length || eligible.length === 0) {
-    return requested;
-  }
-  return state.rng.pick(eligible);
-}
-
-function eligibleBidMapsForPlayerCount(playerCount: number, maxMinimumBid?: number): BidKingBidMapRow[] {
-  const visible = BidMap.filter((row) => row.is_visiable === 1 && row.auction_rounds_rate.some((rate) => rate > 0));
-  const exact = visible.filter((row) => row.bidder_number === playerCount);
-  if (exact.length > 0) {
-    const affordable = maxMinimumBid === undefined
-      ? exact
-      : exact.filter((row) => (
-        bidKingHighestConfiguredMinimumBidForBidMap(row.id) <= maxMinimumBid
-        && bidKingInitialCashForBidMap(row.id) <= maxMinimumBid
-      ));
-    return affordable.length > 0 ? affordable : exact;
-  }
-  const multiplayer = visible.filter((row) => row.bidder_number > 1);
-  if (multiplayer.length > 0) {
-    const affordable = maxMinimumBid === undefined
-      ? multiplayer
-      : multiplayer.filter((row) => (
-        bidKingHighestConfiguredMinimumBidForBidMap(row.id) <= maxMinimumBid
-        && bidKingInitialCashForBidMap(row.id) <= maxMinimumBid
-      ));
-    return affordable.length > 0 ? affordable : multiplayer;
-  }
-  return BidMap;
+  return resolved;
 }
 
 function openingCandidateInfo(bidMap: BidKingBidMapRow, idSeed: number): PublicContainerInfo {
@@ -312,16 +323,7 @@ function openingCandidateInfo(bidMap: BidKingBidMapRow, idSeed: number): PublicC
   };
 }
 
-function shuffleByRng<T>(items: readonly T[], state: MatchRuntimeState): T[] {
-  const shuffled = [...items];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const target = state.rng.int(0, index);
-    [shuffled[index], shuffled[target]] = [shuffled[target]!, shuffled[index]!];
-  }
-  return shuffled;
-}
-
-function weightedRangeValue(ranges: readonly (readonly number[])[], state?: MatchRuntimeState): number | undefined {
+function weightedRangeValue(ranges: readonly (readonly number[])[], state?: MatchRuntimeState): number {
   const candidates = ranges
     .filter((range) => range.length >= 2)
     .map((range) => ({
@@ -331,7 +333,7 @@ function weightedRangeValue(ranges: readonly (readonly number[])[], state?: Matc
     }))
     .filter((range) => range.max >= range.min && range.weight > 0);
   if (candidates.length === 0) {
-    return undefined;
+    throw new Error('Weighted range table has no valid candidates');
   }
   if (!state) {
     return candidates[0]!.min;
@@ -357,20 +359,20 @@ function drawSourceItemRowsForBidMap(state: MatchRuntimeState, bidMap: BidKingBi
     ? doSourceDrop(state, routeGroupId, routeCount)
     : directSourceDrop(routeGroupId, routeCount);
   const rows = drops
-    .map((drop) => itemById(drop.item_id))
-    .filter((item): item is BidKingItemRow => Boolean(item));
+    .map((drop) => {
+      const item = itemById(drop.item_id);
+      if (!item) {
+        throw new Error(`Drop route for BidMap ${bidMap.id} references missing Item ${drop.item_id}`);
+      }
+      return item;
+    });
   const routeKnown = routeType === 9999
     ? routeGroupId !== undefined && Drop.some((candidate) => candidate.group_id === routeGroupId)
     : routeGroupId !== undefined && Boolean(itemById(routeGroupId));
-  if (routeKnown || rows.length > 0) {
-    return rows;
+  if (!routeKnown) {
+    throw new Error(`BidMap ${bidMap.id} references unknown drop route ${JSON.stringify(bidMap.drop_group_id)}`);
   }
-  const fallbackItems = Item.filter((item) => item.drop_group_id === routeGroupId);
-  const fallbackCount = Math.max(1, routeCount);
-  return Array.from({ length: fallbackCount }, (_, index) => (
-    fallbackItems[index % Math.max(1, fallbackItems.length)]
-    ?? Item[((routeGroupId ?? bidMap.id) * 11 + index * 17) % Item.length]!
-  ));
+  return rows;
 }
 
 function directSourceDrop(itemId: number | undefined, count: number): BidKingDropItemRow[] {
@@ -388,12 +390,15 @@ function directSourceDrop(itemId: number | undefined, count: number): BidKingDro
 
 function doSourceDrop(state: MatchRuntimeState, groupId: number, dropCount = 1, depth = 0): BidKingDropItemRow[] {
   if (depth > 8) {
-    return [];
+    throw new Error(`Drop group ${groupId} exceeded recursion depth`);
   }
   const group = Drop.find((candidate) => candidate.group_id === groupId);
   const drops = group?.items_list.filter((row) => row.drop_weight > 0) ?? [];
-  if (!group || drops.length === 0 || dropCount <= 0) {
+  if (dropCount <= 0) {
     return [];
+  }
+  if (!group || drops.length === 0) {
+    throw new Error(`Missing or empty Drop group ${groupId}`);
   }
   const result: BidKingDropItemRow[] = [];
   for (let index = 0; index < dropCount; index += 1) {
@@ -791,7 +796,11 @@ function skillWithRuntimeOverrides(skill: BidKingSkillRow, overrides: Partial<Bi
 
 function heroForPlayer(player: RuntimePlayer, state?: MatchRuntimeState) {
   const mappedHeroId = player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, state?.config.roles ?? []);
-  return Hero.find((hero) => hero.id === mappedHeroId) ?? Hero[player.seat % Hero.length]!;
+  const hero = Hero.find((candidate) => candidate.id === mappedHeroId);
+  if (!hero) {
+    throw new Error(`Player ${player.id} role ${player.roleId} is not mapped to a BidKing Hero`);
+  }
+  return hero;
 }
 
 function skillForHero(hero: ReturnType<typeof heroForPlayer>, roundIndex: number): BidKingSkillRow | undefined {
@@ -800,12 +809,19 @@ function skillForHero(hero: ReturnType<typeof heroForPlayer>, roundIndex: number
 }
 
 function effectForSkill(skill: BidKingSkillRow): BidKingSkillEffectRow {
-  const effectId = skill.skilleffect_position[0] ?? 1000;
-  return skillEffectById(effectId) ?? { EffectId: 1000, Category: 1, Param: [0], effect_key: 'category_1', effect_desc: '显示轮廓尺寸' };
+  const effectId = skill.skilleffect_position[0];
+  if (!effectId) {
+    throw new Error(`Skill ${skill.id} has no SkillEffect reference`);
+  }
+  const effect = skillEffectById(effectId);
+  if (!effect) {
+    throw new Error(`Skill ${skill.id} references missing SkillEffect ${effectId}`);
+  }
+  return effect;
 }
 
-function skillEffectSummaryLabel(skill: BidKingSkillRow, fallbackEffect: BidKingSkillEffectRow): string {
-  const effectiveCategories = skillEffectCategories(skill, fallbackEffect);
+function skillEffectSummaryLabel(skill: BidKingSkillRow, primaryEffect: BidKingSkillEffectRow): string {
+  const effectiveCategories = skillEffectCategories(skill, primaryEffect);
   if (effectiveCategories.includes(6)) {
     return '完整信息';
   }
@@ -840,18 +856,18 @@ function skillEffectSummaryLabel(skill: BidKingSkillRow, fallbackEffect: BidKing
   if (effectiveCategories.includes(2)) {
     labels.push('总占格');
   }
-  return labels.length > 0 ? [...new Set(labels)].join('和') : fallbackEffect.effect_desc;
+  return labels.length > 0 ? [...new Set(labels)].join('和') : primaryEffect.effect_desc;
 }
 
 function buildMapSkillFeedText(
   bidMapName: string,
   skillName: string,
   skill: BidKingSkillRow,
-  fallbackEffect: BidKingSkillEffectRow,
+  primaryEffect: BidKingSkillEffectRow,
   hitSlots: readonly WarehouseSlot[]
 ): string {
-  const categories = skillEffectCategories(skill, fallbackEffect);
-  const effectName = skillEffectSummaryLabel(skill, fallbackEffect);
+  const categories = skillEffectCategories(skill, primaryEffect);
+  const effectName = skillEffectSummaryLabel(skill, primaryEffect);
   const targetCount = hitSlots.length;
   const prefix = `${bidMapName}·${skillName}`;
   if (targetCount === 0) {
@@ -896,11 +912,11 @@ function buildMapSkillFeedText(
   return `${prefix}：揭示 ${targetCount} 个命中格的${effectName}。`;
 }
 
-function skillEffectCategories(skill: BidKingSkillRow, fallbackEffect: BidKingSkillEffectRow): number[] {
+function skillEffectCategories(skill: BidKingSkillRow, primaryEffect: BidKingSkillEffectRow): number[] {
   const categories = [...new Set(skill.skilleffect_position
     .map((effectId) => skillEffectById(effectId)?.Category)
     .filter((category): category is number => typeof category === 'number' && category > 0))];
-  return categories.length > 0 ? categories : [fallbackEffect.Category];
+  return categories.length > 0 ? categories : [primaryEffect.Category];
 }
 
 function skillFeedEffectMetadata(

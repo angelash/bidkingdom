@@ -28,6 +28,7 @@ describe('BidKing bid map runtime', () => {
         { id: 'b1', name: '乙', kind: 'bot', roleId: 'appraiser', heroCid: 101 }
       ],
       coreMode: true,
+      coreAuctionMode: 'sealed',
       coreBidMapId: 2101
     });
 
@@ -38,6 +39,7 @@ describe('BidKing bid map runtime', () => {
         { id: 'p1', name: '甲', kind: 'human', roleId: 'appraiser', heroCid: 101 }
       ],
       coreMode: true,
+      coreAuctionMode: 'sealed',
       coreBidMapId: 2101
     })).toThrow(/exactly 2 players/);
   });
@@ -73,17 +75,23 @@ describe('BidKing bid map runtime', () => {
     expect(bidKingRoleHasSourceHero(sourceRoles[sourceRoles.length - 1]?.id, gameConfig.roles)).toBe(true);
     expect(bidKingRoleHasSourceHero(extraRole?.id, gameConfig.roles)).toBe(false);
     expect(bidKingHeroIdForRoleId(sourceRoles[sourceRoles.length - 1]?.id, gameConfig.roles)).toBe(301);
-    expect(bidKingHeroIdForRoleId(extraRole?.id, gameConfig.roles)).toBe(BID_KING_BIDDER_SOURCE_HERO_IDS[0]);
+    expect(() => bidKingHeroIdForRoleId(extraRole?.id, gameConfig.roles)).toThrow(/not mapped/);
   });
 
-  it('keeps the selected source BidMap id instead of rerolling map_group branches', () => {
+  it('resolves selected source BidMap ids through original map_group weights', () => {
     const candidates = bidKingRandomBidMapCandidates(2101);
     const resolved = bidKingResolveRandomBidMapId(2101, 'random-map-test');
+    const sampled = new Set(Array.from({ length: 24 }, (_, index) => (
+      bidKingResolveRandomBidMapId(2101, `random-map-test-${index}`)
+    )));
 
-    expect(candidates).toEqual([2101]);
-    expect(resolved).toBe(2101);
+    expect(candidates).toEqual([2101, 2102, 2103, 2104, 2105, 2106, 2107]);
+    expect(candidates).toContain(resolved);
     expect(bidKingResolveRandomBidMapId(2101, 'random-map-test')).toBe(resolved);
-    expect(bidKingRandomBidMapCandidates(999999)).toEqual([999999]);
-    expect(bidKingResolveRandomBidMapId(999999, 'random-map-test')).toBe(999999);
+    expect([...sampled].every((id) => id !== undefined && candidates.includes(id))).toBe(true);
+    expect(sampled.size).toBeGreaterThan(1);
+    expect(bidKingRandomBidMapCandidates(4402)).toEqual([]);
+    expect(() => bidKingRandomBidMapCandidates(999999)).toThrow(/Unknown BidMap/);
+    expect(() => bidKingResolveRandomBidMapId(999999, 'random-map-test')).toThrow(/Unknown BidMap/);
   });
 });

@@ -1,4 +1,4 @@
-export type BidKingSkillEffectRuntimeKind = 'warehouse' | 'aggregate' | 'text' | 'system' | 'unsupported';
+export type BidKingSkillEffectRuntimeKind = 'warehouse' | 'aggregate' | 'text' | 'system';
 
 export interface BidKingSkillEffectFieldMask {
   itemCid: boolean;
@@ -77,13 +77,13 @@ export function bidKingSkillEffectRuntimeProfile(category: number): BidKingSkill
   if ([2, 3, 4, 8, 9, 10].includes(normalizedCategory)) {
     return profile(normalizedCategory, 'aggregate');
   }
-  if ([12, 13, 14].includes(normalizedCategory)) {
+  if ([12, 13, 14, 15].includes(normalizedCategory)) {
     return profile(normalizedCategory, 'text');
   }
   if ([16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28].includes(normalizedCategory)) {
     return profile(normalizedCategory, 'system');
   }
-  return profile(normalizedCategory, 'unsupported');
+  throw new Error(`BidKing SkillEffect Category ${normalizedCategory} is not mapped`);
 }
 
 export function bidKingSkillEffectAffectsWarehouseKnowledge(category: number): boolean {

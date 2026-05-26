@@ -631,12 +631,12 @@ function ledgerSourceMatches(transaction: ProfileTransaction, source: string): b
   return sourceId.startsWith(`${source}:`) || reason.startsWith(`${source}_`);
 }
 
-function numberQuery(value: string | undefined, fallback: number): number {
+function numberQuery(value: string | undefined, defaultValue: number): number {
   if (!value) {
-    return fallback;
+    return defaultValue;
   }
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
 function adminProfileLimit(value: string | undefined): number {

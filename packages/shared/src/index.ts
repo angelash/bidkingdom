@@ -3,9 +3,6 @@ export type AuctionMode = 'open' | 'sealed';
 export type CoreAuctionMode = AuctionMode;
 
 export type RoundPhase =
-  | 'warehouse_roll'
-  | 'warehouse_selected'
-  | 'auctioneer_reveal'
   | 'intel'
   | 'auction'
   | 'reveal'
@@ -520,8 +517,8 @@ export interface PublicRoundState {
   isFinalAuction?: boolean;
   container: PublicContainerInfo;
   openingCandidates?: PublicContainerInfo[];
-  auctioneerClue?: Clue;
-  auctioneerChoices?: Clue[];
+  intelligenceClue?: Clue;
+  intelligenceChoices?: Clue[];
   publicClues: Clue[];
   warehouseSlots?: WarehouseSlotView[];
   bids: BidRecord[];
@@ -582,7 +579,7 @@ export interface RoomSnapshot {
   totalRounds: number;
   initialCash: number;
   coreAuctionMode: CoreAuctionMode;
-  selectedBidMapId?: number;
+  selectedBidMapId: number;
   status: 'lobby' | 'playing' | 'ended';
 }
 
@@ -1581,7 +1578,7 @@ export interface RankSnapshot {
 
 export interface ClientToServerEvents {
   createRoom: (
-    payload: { playerName: string; profileId?: string; roleId?: string; sourceHeroId?: number; botCount?: number; coreAuctionMode?: CoreAuctionMode; selectedBidMapId?: number; initialCash?: number },
+    payload: { playerName: string; profileId?: string; roleId?: string; sourceHeroId?: number; botCount: number; coreAuctionMode: CoreAuctionMode; selectedBidMapId: number; initialCash?: number },
     ack: (snapshot: RoomAck) => void
   ) => void;
   joinRoom: (

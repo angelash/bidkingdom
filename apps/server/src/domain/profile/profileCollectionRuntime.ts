@@ -1,7 +1,6 @@
-import { Item, NumberTable } from '@bitkingdom/bidking-compat';
+import { NumberTable } from '@bitkingdom/bidking-compat';
 import { bidKingCollectionRuleRuntime } from '@bitkingdom/match-core';
 import type { PlayerProfile, ProfileTransaction } from '@bitkingdom/shared';
-import { canonicalCodexItemId } from './profileInventory';
 import {
   claimProfileStockCabinetRewards,
   profileStockCabinetIncomeSnapshot
@@ -32,19 +31,16 @@ export type CollectionIncomeNumberApplier = (
 export function collectionIncomeSnapshot(profile: PlayerProfile, now = Date.now()): CollectionIncomeSnapshot {
   const rule = bidKingCollectionRuleRuntime();
   const stockIncome = profileStockCabinetIncomeSnapshot(profile, now);
-  const cabinetHourlyCoins = stockIncome.hasCabinetItems
-    ? stockIncome.hourlyCoins
-    : collectionCabinetHourlyCoins(profile);
+  const cabinetHourlyCoins = stockIncome.hourlyCoins;
   const activeBonus = NumberTable
     .filter((row) => profile.codex.length >= row.counts)
     .reduce((sum, row) => sum + row.numberbonus, 0);
   const lastClaimedAt = profile.lastCollectionIncomeAt ?? profile.createdAt ?? now;
   const elapsedMs = Math.min(MAX_COLLECTION_INCOME_MS, Math.max(0, now - lastClaimedAt));
   const nextClaimAt = lastClaimedAt + rule.gainIntervalSeconds * 1000;
-  const legacyClaimableCoins = Math.floor(cabinetHourlyCoins * (1 + activeBonus) * (elapsedMs / 3600_000));
   const stockClaimableCoins = Math.floor(stockIncome.baseClaimableCoins * (1 + activeBonus));
   const claimableCoins = now >= nextClaimAt
-    ? stockIncome.hasCabinetItems ? stockClaimableCoins : legacyClaimableCoins
+    ? stockIncome.hasCabinetItems ? stockClaimableCoins : 0
     : 0;
   return {
     activeBonus,
@@ -79,11 +75,4 @@ export function claimCollectionIncomeForProfile(
   claimProfileStockCabinetRewards(profile, now);
   profile.updatedAt = now;
   return true;
-}
-
-function collectionCabinetHourlyCoins(profile: PlayerProfile): number {
-  return (profile.cabinetItemIds ?? [])
-    .map((itemId) => Item.find((row) => canonicalCodexItemId(`compat_${row.id}`) === canonicalCodexItemId(itemId)))
-    .filter((item): item is (typeof Item)[number] => Boolean(item))
-    .reduce((sum, item) => sum + item.collection_coin * 3600, 0);
 }

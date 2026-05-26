@@ -5,6 +5,7 @@ import {
   BidMap,
   Emoji,
   Hero,
+  Item,
   Map,
   RankAi,
   RankMap,
@@ -43,9 +44,9 @@ import {
   bidKingMarketOrderDurationHours,
   bidKingMarketRuleRuntime
 } from './marketRuleRuntime';
-import { buildSnapshot, createMatch, setRoundPhase, startNextRound } from '../match';
+import { buildSnapshot, createMatch as createRuntimeMatch, setRoundPhase, startNextRound } from '../match';
 import { useSkill } from '../skills';
-import { battleItemCooldownRemaining, battleItemEffectPlanForItem, skillForBattleItem, skillGroupForBattleItem, useBattleItem } from '../items';
+import { battleItemCooldownRemaining, battleItemEffectPlanForItem, skillForBattleItem, useBattleItem } from '../items';
 import type { BattleItemEffectPlan } from '../items';
 import { bidKingHeroIdForRoleId } from './heroRuntime';
 import { BID_KING_BIDDER_ROLE_BINDINGS } from './bidderCatalog';
@@ -120,12 +121,22 @@ import {
   bidKingSystemEffectOperationsForSkillIds
 } from './systemEffectRuntime';
 
+const sourceRoleBindings = BID_KING_BIDDER_ROLE_BINDINGS;
 const players = [
-  { id: 'p1', name: '玩家一', kind: 'human' as const, roleId: 'appraiser' },
-  { id: 'p2', name: '玩家二', kind: 'bot' as const, roleId: 'smuggler' },
-  { id: 'p3', name: '玩家三', kind: 'bot' as const, roleId: 'psychologist' },
-  { id: 'p4', name: '玩家四', kind: 'bot' as const, roleId: 'restorer' }
+  { id: 'p1', name: '玩家一', kind: 'human' as const, roleId: sourceRoleBindings[0]!.roleId, heroCid: sourceRoleBindings[0]!.sourceHeroId },
+  { id: 'p2', name: '玩家二', kind: 'bot' as const, roleId: sourceRoleBindings[1]!.roleId, heroCid: sourceRoleBindings[1]!.sourceHeroId },
+  { id: 'p3', name: '玩家三', kind: 'bot' as const, roleId: sourceRoleBindings[2]!.roleId, heroCid: sourceRoleBindings[2]!.sourceHeroId },
+  { id: 'p4', name: '玩家四', kind: 'bot' as const, roleId: sourceRoleBindings[3]!.roleId, heroCid: sourceRoleBindings[3]!.sourceHeroId }
 ];
+
+type CreateMatchParams = Parameters<typeof createRuntimeMatch>[0];
+
+function createMatch(params: Omit<CreateMatchParams, 'coreBidMapId'> & { coreBidMapId?: number }) {
+  return createRuntimeMatch({
+    ...params,
+    coreBidMapId: params.coreBidMapId ?? 2601
+  });
+}
 
 describe('BidKing compatible core runtime', () => {
   it('keeps table parity targets valid', () => {
@@ -177,15 +188,13 @@ describe('BidKing compatible core runtime', () => {
     expect(publicRound?.container.estimateHidden).toBe(true);
     expect(publicRound?.container.estimateMin).toBe(0);
     expect(publicRound?.container.estimateMax).toBe(0);
-    expect(publicRound?.publicClues).toEqual([]);
+    expect(publicRound?.publicClues.length).toBeGreaterThan(0);
     const publicFeed = publicRound?.skillFeed ?? [];
-    expect(publicFeed.some((entry) => entry.source === 'map')).toBe(false);
+    expect(publicFeed.some((entry) => entry.source === 'map')).toBe(true);
     expect(publicFeed.some((entry) => entry.playerId === 'p2')).toBe(false);
-    setRoundPhase(match, 'auctioneer_reveal', 5000, 1300);
-    const revealedRound = buildSnapshot(match, 'p1').public.currentRound;
-    expect(revealedRound?.auctioneerChoices).toHaveLength(4);
-    expect(revealedRound?.auctioneerChoices?.filter((choice) => choice.text).length).toBe(1);
-    expect(revealedRound?.skillFeed?.some((entry) => entry.source === 'map')).toBe(true);
+    expect(publicRound?.intelligenceClue?.source).toBe('public');
+    expect(publicRound?.intelligenceChoices).toHaveLength(4);
+    expect(publicRound?.intelligenceChoices?.filter((choice) => choice.text).length).toBe(1);
   });
 
   it('tags core match events with source protocol references without exposing sealed bid amounts', () => {
@@ -261,6 +270,7 @@ describe('BidKing compatible core runtime', () => {
     });
     startNextRound(match, 1000);
     expect(match.currentRound?.container.templateId).toBe('bidmap_4402');
+    expect(match.currentRound?.openingCandidates).toBeUndefined();
     expect(match.currentRound?.auctionMode).toBe('sealed');
     expect(match.currentRound?.container.publicInfo.source).toContain('旧藏');
     expect(match.currentRound?.container.publicInfo.source).not.toContain('掉落组');
@@ -279,7 +289,16 @@ describe('BidKing compatible core runtime', () => {
     startNextRound(match, 1000);
 
     const slots = match.currentRound?.container.warehouseSlots ?? [];
-    expect(match.currentRound?.container.templateId).toBe('bidmap_2101');
+    const resolvedBidMapId = Number(/^bidmap_(\d+)$/.exec(match.currentRound?.container.templateId ?? '')?.[1] ?? 0);
+    const candidateBidMapIds = bidMap.map_group
+      .map(([id = 0]) => id)
+      .filter((id) => id > 0);
+    expect(candidateBidMapIds).toContain(resolvedBidMapId);
+    const openingBidMapIds = (match.currentRound?.openingCandidates ?? [])
+      .map((candidate) => Number(/^bidmap_(\d+)$/.exec(candidate.templateId)?.[1] ?? 0))
+      .filter((id) => id > 0);
+    expect(new Set(openingBidMapIds)).toEqual(new Set(candidateBidMapIds));
+    expect(openingBidMapIds.at(-1)).toBe(resolvedBidMapId);
     const occupied = new Set<string>();
     for (const slot of slots) {
       expect(slot.x + slot.w).toBeLessThanOrEqual(10);
@@ -306,7 +325,7 @@ describe('BidKing compatible core runtime', () => {
     });
     startNextRound(match, 1000);
     match.players.forEach((player) => {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     });
     setRoundPhase(match, 'auction', 60000, 1200);
     const secondBid = Math.max(match.currentRound?.container.minimumBid ?? 0, 50000);
@@ -334,7 +353,7 @@ describe('BidKing compatible core runtime', () => {
     });
     startNextRound(match, 1000);
     match.players.forEach((player) => {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     });
     match.currentRound!.index = 4;
     match.roundIndex = 4;
@@ -367,7 +386,7 @@ describe('BidKing compatible core runtime', () => {
     });
     startNextRound(match, 1000);
     match.players.forEach((player) => {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     });
     setRoundPhase(match, 'auction', 60000, 1200);
     const firstBid = Math.max(match.currentRound?.container.minimumBid ?? 0, 60000);
@@ -420,7 +439,7 @@ describe('BidKing compatible core runtime', () => {
       coreAuctionMode: 'sealed'
     });
     match.players.forEach((player) => {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     });
     startNextRound(match, 1000);
 
@@ -475,7 +494,7 @@ describe('BidKing compatible core runtime', () => {
       coreAuctionMode: 'sealed'
     });
     match.players.forEach((player) => {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     });
     startNextRound(match, 1000);
     advanceCoreAuctionRound(match, 1500);
@@ -508,7 +527,7 @@ describe('BidKing compatible core runtime', () => {
       coreAuctionMode: 'sealed'
     });
     match.players.forEach((player) => {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     });
     startNextRound(match, 1000);
 
@@ -548,7 +567,7 @@ describe('BidKing compatible core runtime', () => {
         coreAuctionMode: 'sealed'
       });
       match.players.forEach((player) => {
-        player.cash = 1_000_000;
+        player.cash = 10_000_000;
       });
       startNextRound(match, 1000);
 
@@ -677,31 +696,35 @@ describe('BidKing compatible core runtime', () => {
         .map((effect) => effect.Category)
     )].sort((left, right) => left - right);
     const aggregateCategories = [2, 3, 4, 8, 9, 10];
-    const textOnlyCategories = [12, 13, 14];
+    const textOnlyCategories = [12, 13, 14, 15];
     const systemCategories = [16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28];
 
     expect(warehouseCategories).toEqual([1, 5, 6, 7, 11, 22]);
     expect(aggregateCategories.every((category) => bidKingSkillEffectRuntimeProfile(category).runtimeKind === 'aggregate')).toBe(true);
     expect(textOnlyCategories.every((category) => bidKingSkillEffectRuntimeProfile(category).runtimeKind === 'text')).toBe(true);
     expect(systemCategories.every((category) => bidKingSkillEffectRuntimeProfile(category).runtimeKind === 'system')).toBe(true);
-    expect(bidKingSkillEffectRuntimeProfile(15).runtimeKind).toBe('unsupported');
     expect(bidKingSkillEffectPublicFields([5]).itemPrice).toBe(true);
     expect(bidKingSkillEffectPublicFields([14]).itemPrice).toBe(false);
+    expect(bidKingSkillEffectPublicFields([15]).itemPrice).toBe(false);
     expect(bidKingSkillEffectPublicFields([13]).itemType).toBe(false);
   });
 
   it('keeps non-warehouse SkillEffect categories out of BattleItem clue targeting semantics', () => {
-    const textTypePlan = battleItemEffectPlanForItem(BattleItem[0]!, { effect: skillEffectById(13000) });
+    const sourceSkill = skillForBattleItem(BattleItem[0]!)!;
+    const textTypePlan = battleItemEffectPlanForItem(BattleItem[0]!, { skill: sourceSkill, effect: skillEffectById(13000) });
+    const textPriceDigitPlan = battleItemEffectPlanForItem(BattleItem[0]!, { skill: sourceSkill, effect: skillEffectById(15000) });
     const systemSkill = skillById(3056)!;
     const systemEffect = skillEffectById(16001)!;
     const systemPlan = battleItemEffectPlanForItem(BattleItem[0]!, { skill: systemSkill, effect: systemEffect });
 
     expect(textTypePlan.revealKind).toBe('category');
     expect(textTypePlan.implementationStatus).toBe('implemented');
+    expect(textPriceDigitPlan.revealKind).toBe('value');
+    expect(textPriceDigitPlan.implementationStatus).toBe('implemented');
     expect(systemPlan.revealKind).toBe('system');
     expect(systemPlan.targetMode).toBe('system_effect');
     expect(systemPlan.targetPlayerRequired).toBe(false);
-    expect(systemPlan.implementationStatus).toBe('simplified');
+    expect(systemPlan.implementationStatus).toBe('protocol_inferred');
     expect(systemPlan.description).toContain('非仓库情报效果');
   });
 
@@ -1898,7 +1921,7 @@ describe('BidKing compatible core runtime', () => {
       if (RankMap.some((row) => row.id === bidMap.id)) {
         directRankMapCount += 1;
       } else if (RankMap.length === 0) {
-        invalidBidMaps.push({ bidMapId: bidMap.id, reason: 'missing RankMap fallback' });
+        invalidBidMaps.push({ bidMapId: bidMap.id, reason: 'missing RankMap table' });
       }
       const [routeType, routeGroupId] = bidMap.drop_group_id;
       if (routeType === 9999 && routeGroupId && dropsForGroup(routeGroupId).length === 0) {
@@ -1958,6 +1981,7 @@ describe('BidKing compatible core runtime', () => {
       seed: 1002,
       totalRounds: 5,
       coreMode: true,
+      coreAuctionMode: 'sealed',
       coreBidMapId: 2101
     });
     startNextRound(match, 1000);
@@ -1991,7 +2015,7 @@ describe('BidKing compatible core runtime', () => {
     });
     startNextRound(match, 1000);
     match.players.forEach((player) => {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     });
     const bot = match.players.find((player) => player.id === 'p2')!;
     bot.skillCooldown = 1;
@@ -2028,7 +2052,7 @@ describe('BidKing compatible core runtime', () => {
     });
     startNextRound(match, 1000);
     match.players.forEach((player) => {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     });
     setRoundPhase(match, 'auction', 60000, 1200);
     expect(() => useSkill(match, 'p1', 'p2', 1400)).toThrow(/automatic/);
@@ -2045,18 +2069,15 @@ describe('BidKing compatible core runtime', () => {
     startNextRound(match, 1000);
     setRoundPhase(match, 'intel', 3200, 1200);
     useBattleItem(match, 'p1', BattleItem[0]!, 1300);
-    const group = SkillGroup.find((row) => row.groupid === BattleItem[0]!.skill_group + 100);
-    const groupSkillNames = new Set(group?.skill_group.map(([skillId]) => {
-      const skill = skillById(skillId);
-      return skill ? bidKingSkillDisplayName(skill) : undefined;
-    }).filter(Boolean));
+    const sourceItem = Item.find((row) => row.id === BattleItem[0]!.id)!;
+    const sourceSkill = skillById(sourceItem.skills[0]!)!;
     const itemEntry = match.currentRound?.skillFeed.at(-1);
     const eventPayload = match.events.at(-1)?.payload as { effectPlan?: BattleItemEffectPlan } | undefined;
     const itemName = bidKingBattleItemDisplayName(BattleItem[0]!);
 
     expect(match.players[0]?.privateClues.at(-1)?.text).toContain(itemName);
     expect(itemEntry?.source).toBe('item');
-    expect(groupSkillNames.has(itemEntry?.skillName.split(' · ')[0])).toBe(true);
+    expect(itemEntry?.skillName.split(' · ')[0]).toBe(bidKingSkillDisplayName(sourceSkill));
     expect(eventPayload?.effectPlan?.itemId).toBe(BattleItem[0]!.id);
     expect(eventPayload?.effectPlan?.targetCount).toBeGreaterThan(0);
     expect(eventPayload?.effectPlan?.description).toContain(itemName);
@@ -2064,14 +2085,14 @@ describe('BidKing compatible core runtime', () => {
     expect((buildSnapshot(match, 'p2').public.currentRound?.skillFeed ?? []).some((entry) => entry.source === 'item')).toBe(false);
   });
 
-  it('maps BattleItem rows through source itemName_<itemId> Skill rows instead of inferred groups', () => {
-    const missingDirectSkills: number[] = [];
+  it('maps BattleItem rows through source Item.skills Skill rows', () => {
+    const missingSourceSkills: number[] = [];
     const wrongPlans: number[] = [];
 
     for (const item of BattleItem) {
       const skill = skillForBattleItem(item);
       if (!skill) {
-        missingDirectSkills.push(item.id);
+        missingSourceSkills.push(item.id);
         continue;
       }
       const plan = battleItemEffectPlanForItem(item);
@@ -2082,7 +2103,7 @@ describe('BidKing compatible core runtime', () => {
 
     const allVision = BattleItem.find((item) => item.id === 100100)!;
     const totalValue = BattleItem.find((item) => item.id === 100121)!;
-    expect(missingDirectSkills).toEqual([]);
+    expect(missingSourceSkills).toEqual([]);
     expect(wrongPlans).toEqual([]);
     expect(skillForBattleItem(allVision)?.id).toBe(100);
     expect(battleItemEffectPlanForItem(allVision)).toEqual(expect.objectContaining({
@@ -2393,6 +2414,9 @@ describe('BidKing compatible core runtime', () => {
       itemType: [],
       itemPrice: target.item.value
     };
+    const priceDigitValueBox = {
+      ...priceDigitsBox
+    };
     const entries: SkillFeedEntry[] = [
       {
         id: `${round.id}_text_quality`,
@@ -2438,10 +2462,25 @@ describe('BidKing compatible core runtime', () => {
         targetItemIds: [target.item.id],
         hitBoxList: [priceDigitsBox],
         createdAt: 1202
+      },
+      {
+        id: `${round.id}_text_price_digit_value`,
+        round: round.index + 1,
+        source: 'map',
+        sourceName: '拍场',
+        skillName: '价格指定位',
+        skillCid: 15000,
+        effectId: 15000,
+        effectCategory: 15,
+        text: '目标价格指定数位为测试值。',
+        visibility: 'public',
+        targetItemIds: [target.item.id],
+        hitBoxList: [priceDigitValueBox],
+        createdAt: 1203
       }
     ];
     round.skillFeed.push(...entries);
-    setRoundPhase(match, 'auctioneer_reveal', 5000, 1300);
+    setRoundPhase(match, 'intel', 5000, 1300);
 
     const publicRound = buildSnapshot(match, 'p1').public.currentRound!;
     const publicWarehouseSlots = publicRound.warehouseSlots ?? [];
@@ -2450,10 +2489,12 @@ describe('BidKing compatible core runtime', () => {
     const publicQualityBox = publicSkillFeed.find((entry) => entry.id.endsWith('_text_quality'))?.hitBoxList?.[0];
     const publicTypeBox = publicSkillFeed.find((entry) => entry.id.endsWith('_text_type'))?.hitBoxList?.[0];
     const publicPriceDigitsBox = publicSkillFeed.find((entry) => entry.id.endsWith('_text_price_digits'))?.hitBoxList?.[0];
+    const publicPriceDigitValueBox = publicSkillFeed.find((entry) => entry.id.endsWith('_text_price_digit_value'))?.hitBoxList?.[0];
     const gameData = buildBidKingGameDataSnapshot(match, round);
     const qualityLog = gameData.mapSkillLog.find((entry) => entry.skillCid === 200052);
     const typeLog = gameData.mapSkillLog.find((entry) => entry.skillCid === 13000);
     const priceDigitsLog = gameData.mapSkillLog.find((entry) => entry.skillCid === 14000);
+    const priceDigitValueLog = gameData.mapSkillLog.find((entry) => entry.skillCid === 15000);
     const knownFromQualityText = bidKingKnowledgeByItemIdFromSkillFeed(round.container.warehouseSlots, [entries[0]!], 'p1').get(target.item.id);
 
     expect(baseView.visibleRarity).toBeUndefined();
@@ -2466,9 +2507,11 @@ describe('BidKing compatible core runtime', () => {
     expect(publicQualityBox?.itemQuility).toBe(0);
     expect(publicTypeBox?.itemType).toEqual([]);
     expect(publicPriceDigitsBox?.itemPrice).toBe(0);
+    expect(publicPriceDigitValueBox?.itemPrice).toBe(0);
     expect(qualityLog?.hitBoxList[0]?.itemQuility).toBeGreaterThan(0);
     expect(typeLog?.hitBoxList[0]?.itemType.length).toBeGreaterThan(0);
     expect(priceDigitsLog?.hitBoxList[0]?.itemPrice).toBe(target.item.value);
+    expect(priceDigitValueLog?.hitBoxList[0]?.itemPrice).toBe(target.item.value);
     expect(knownFromQualityText?.rankKnown).not.toBe(true);
   });
 
@@ -2490,7 +2533,7 @@ describe('BidKing compatible core runtime', () => {
     });
     startNextRound(match, 1000);
     match.players.forEach((player) => {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     });
     match.currentRound!.index = 4;
     match.roundIndex = 4;
@@ -2504,8 +2547,9 @@ describe('BidKing compatible core runtime', () => {
       'S2C_39_game_use_item'
     ]);
     setRoundPhase(match, 'auction', 60000, 1400);
-    submitBid(match, 'p1', Math.max(match.currentRound?.container.minimumBid ?? 0, 500_000), 1500);
-    submitBid(match, 'p2', Math.max(match.currentRound?.container.minimumBid ?? 0, 100_000), 1600);
+    const minimumBid = match.currentRound?.container.minimumBid ?? 0;
+    submitBid(match, 'p1', Math.max(minimumBid + 500_000, 500_000), 1500);
+    submitBid(match, 'p2', Math.max(minimumBid, 100_000), 1600);
     settleCurrentRound(match, 1700);
     const warehouseSlotsBeforeArchive = match.currentRound?.container.warehouseSlots.map((slot) => ({ ...slot })) ?? [];
     finishRound(match, 1800);
@@ -2582,28 +2626,30 @@ describe('BidKing compatible core runtime', () => {
     expect(buildSnapshot(match, 'p1').private?.battleItemCooldowns?.[String(BattleItem[0]!.id)]).toBe(1);
   });
 
-  it('maps every BattleItem skill group to at least one Skill and SkillEffect row', () => {
-    const missingGroups: number[] = [];
+  it('maps every BattleItem source Item skill to one Skill and SkillEffect row', () => {
+    const missingItemSkills: number[] = [];
     const missingEffects: number[] = [];
     const missingPlans: number[] = [];
     const revealKinds = new Set<BattleItemEffectPlan['revealKind']>();
     const implementationStatuses = new Set<BattleItemEffectPlan['implementationStatus']>();
+    const effectCategories = new Set<number>();
     let skillTargetAwarePlans = 0;
 
     for (const item of BattleItem) {
-      const group = skillGroupForBattleItem(item);
-      const skills = group?.skill_group
-        .map(([skillId]) => skillById(skillId))
-        .filter(Boolean) ?? [];
-      if (skills.length === 0) {
-        missingGroups.push(item.id);
+      const sourceItem = Item.find((row) => row.id === item.id);
+      const skillId = sourceItem?.skills.find((candidate) => candidate > 0);
+      const skill = skillId ? skillById(skillId) : undefined;
+      if (!sourceItem || !skill) {
+        missingItemSkills.push(item.id);
         continue;
       }
-      for (const skill of skills) {
-        const effectId = skill?.skilleffect_position[0];
-        if (effectId && !skillEffectById(effectId)) {
-          missingEffects.push(item.id);
-        }
+      const effectId = skill.skilleffect_position[0];
+      const effect = effectId ? skillEffectById(effectId) : undefined;
+      if (!effectId || !effect) {
+        missingEffects.push(item.id);
+      }
+      if (effect) {
+        effectCategories.add(effect.Category);
       }
       const plan = battleItemEffectPlanForItem(item);
       revealKinds.add(plan.revealKind);
@@ -2624,11 +2670,12 @@ describe('BidKing compatible core runtime', () => {
       }
     }
 
-    expect(missingGroups).toEqual([]);
+    expect(missingItemSkills).toEqual([]);
     expect(missingEffects).toEqual([]);
     expect(missingPlans).toEqual([]);
     expect(revealKinds.size).toBeGreaterThan(1);
-    expect(implementationStatuses.has('implemented')).toBe(true);
+    expect([...implementationStatuses]).toEqual(['implemented']);
+    expect([...effectCategories].sort((left, right) => left - right)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 10, 11]);
     expect(skillTargetAwarePlans).toBeGreaterThan(0);
   });
 
@@ -2647,7 +2694,7 @@ function runDeterministicCoreReplay(seed: number): string {
     coreAuctionMode: 'sealed'
   });
   for (const player of match.players) {
-    player.cash = 1_000_000;
+    player.cash = 10_000_000;
   }
   startNextRound(match, 1000);
 

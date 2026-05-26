@@ -6,6 +6,10 @@ import { lastSubmittedBidAmount } from './BattlePanels';
 import type { EquippedBattleItemView } from './MatchShell';
 import { buildBattleItemActionState } from './battleItemUi';
 
+const INTEL_PRESENTATION_MS = 3200;
+const MAP_INTRO_PRESENTATION_MS = 1600;
+const INTELLIGENCE_PANEL_PRESENTATION_MS = 1600;
+
 interface UseMatchDerivedStateArgs {
   now: number;
   profile: PlayerProfile;
@@ -25,9 +29,39 @@ export interface MatchDerivedState {
   previousSelfBid?: number;
   selectedSkillTargetId?: string;
   selfPlayer?: PublicPlayer;
-  showAuctioneerReveal: boolean;
-  showMapIntro: boolean;
+  showBattleRandom: boolean;
+  showIntelligencePanel: boolean;
   skillTargets: PublicPlayer[];
+}
+
+export type RoundPresentationOverlay = 'battle_random' | 'intelligence_panel';
+
+export function roundPresentationOverlay(
+  currentRound: NonNullable<PlayerSnapshot['public']['currentRound']> | undefined,
+  now: number
+): RoundPresentationOverlay | undefined {
+  if (!currentRound) {
+    return undefined;
+  }
+  if (currentRound.phase !== 'intel') {
+    return undefined;
+  }
+
+  const elapsedMs = Math.max(0, INTEL_PRESENTATION_MS - Math.max(0, currentRound.phaseEndsAt - now));
+  const hasMapIntro = currentRound.index === 0 && (currentRound.openingCandidates?.length ?? 0) > 1;
+  const intelligenceStartMs = hasMapIntro ? MAP_INTRO_PRESENTATION_MS : 0;
+  const hasIntelligencePanel = Boolean(currentRound.intelligenceClue ?? currentRound.publicClues.at(-1));
+  if (hasMapIntro && elapsedMs < MAP_INTRO_PRESENTATION_MS) {
+    return 'battle_random';
+  }
+  if (
+    hasIntelligencePanel &&
+    elapsedMs >= intelligenceStartMs &&
+    elapsedMs < intelligenceStartMs + INTELLIGENCE_PANEL_PRESENTATION_MS
+  ) {
+    return 'intelligence_panel';
+  }
+  return undefined;
 }
 
 export function useMatchDerivedState({
@@ -51,8 +85,9 @@ export function useMatchDerivedState({
     : undefined;
   const selfAlreadyActed = Boolean(selfPlayer?.passed || selfPlayer?.hasSubmittedBid || selfCurrentBidRound?.submitted);
   const canBid = Boolean(currentRound?.phase === 'auction' && !selfAlreadyActed);
-  const showMapIntro = Boolean(currentRound && ['warehouse_roll', 'warehouse_selected'].includes(currentRound.phase));
-  const showAuctioneerReveal = Boolean(currentRound?.phase === 'auctioneer_reveal');
+  const presentationOverlay = roundPresentationOverlay(currentRound, now);
+  const showBattleRandom = presentationOverlay === 'battle_random';
+  const showIntelligencePanel = presentationOverlay === 'intelligence_panel';
   const canUseBattleItem = Boolean(
     currentRound &&
     ['intel', 'auction'].includes(currentRound.phase) &&
@@ -96,8 +131,8 @@ export function useMatchDerivedState({
     previousSelfBid,
     selectedSkillTargetId,
     selfPlayer,
-    showAuctioneerReveal,
-    showMapIntro,
+    showBattleRandom,
+    showIntelligencePanel,
     skillTargets
   };
 }

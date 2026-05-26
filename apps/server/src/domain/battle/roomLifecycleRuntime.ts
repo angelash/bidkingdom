@@ -18,7 +18,7 @@ export interface Room {
   totalRounds: number;
   initialCash: number;
   coreAuctionMode: CoreAuctionMode;
-  selectedBidMapId?: number;
+  selectedBidMapId: number;
   status: RoomSnapshot['status'];
   players: RoomPlayer[];
   botProfiles: Map<string, string>;
@@ -34,7 +34,7 @@ interface CreateRoomStateArgs {
   totalRounds: number;
   initialCash: number;
   coreAuctionMode: CoreAuctionMode;
-  selectedBidMapId?: number;
+  selectedBidMapId: number;
 }
 
 interface CreateHumanPlayerArgs {
@@ -113,7 +113,7 @@ export function replaceLobbyPlayerWithBot(room: Room, playerId: string, createBo
 }
 
 export function roomPlayerCapacity(room: Pick<Room, 'selectedBidMapId' | 'players'> | Pick<CreateRoomStateArgs, 'selectedBidMapId'>): number {
-  return bidKingBidMapPlayerCount(room.selectedBidMapId, 4);
+  return bidKingBidMapPlayerCount(room.selectedBidMapId);
 }
 
 export function syncRoomBotsForBidMap(room: Room, createBotId: (seat: number) => string): void {

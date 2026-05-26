@@ -3,7 +3,6 @@ import type { BidKingBidMapRow, BidKingMapRow } from '@bitkingdom/bidking-compat
 import { bidKingPlayableBidMaps } from './bidMapRuntime';
 import { constantNumberArray, constantNumberRows } from './constant/constantEngine';
 
-const FALLBACK_INITIAL_CASH = 100_000;
 const PREFERRED_DEFAULT_INITIAL_CASH = 1_000_000;
 const COIN_ITEM_ID = 1;
 
@@ -52,7 +51,10 @@ export function bidKingInitialCashChoices(): number[] {
   const choices = constantNumberArray('initial_points_chooses')
     .filter((value) => value > 0)
     .sort((left, right) => left - right);
-  return choices.length > 0 ? choices : [FALLBACK_INITIAL_CASH];
+  if (choices.length === 0) {
+    throw new Error('BidKing Constant.initial_points_chooses must contain positive values');
+  }
+  return choices;
 }
 
 export function bidKingItemBudgetChoices(): number[] {
@@ -61,57 +63,47 @@ export function bidKingItemBudgetChoices(): number[] {
     .sort((left, right) => left - right);
 }
 
-export function bidKingDefaultInitialCash(fallback = FALLBACK_INITIAL_CASH): number {
+export function bidKingDefaultInitialCash(): number {
   const choices = bidKingInitialCashChoices();
   return choices.find((value) => value >= PREFERRED_DEFAULT_INITIAL_CASH)
-    ?? choices[Math.floor(choices.length / 2)]
-    ?? fallback;
+    ?? choices[choices.length - 1]!;
 }
 
 export function bidKingHighestConfiguredMinimumBidForBidMap(bidMapId: number): number {
-  const row = RankMap.find((candidate) => candidate.id === bidMapId);
-  return row?.min_bid_range.reduce((max, range) => Math.max(max, range[1] ?? range[0] ?? 0), 0) ?? 0;
+  const row = requireRankMap(bidMapId);
+  return row.min_bid_range.reduce((max, range) => Math.max(max, range[1] ?? range[0] ?? 0), 0);
 }
 
-export function bidKingInitialCashForBidMap(bidMapId?: number, fallback = FALLBACK_INITIAL_CASH): number {
+export function bidKingInitialCashForBidMap(bidMapId: number): number {
   const choices = bidKingInitialCashChoices();
-  const bidMap = bidMapForId(bidMapId);
-  const parentMap = bidMap ? parentMapForBidMap(bidMap) : undefined;
+  const bidMap = requireBidMap(bidMapId);
+  const parentMap = requireParentMapForBidMap(bidMap);
   const target = parentMap?.auction_limit_notify && parentMap.auction_limit_notify > 0
     ? parentMap.auction_limit_notify
-    : bidMap
-      ? Math.max(bidKingBidMapRequiredCoins(bidMap.id), bidKingHighestConfiguredMinimumBidForBidMap(bidMap.id))
-      : bidKingDefaultInitialCash(fallback);
-  return choices.find((value) => value >= target) ?? choices[choices.length - 1] ?? fallback;
+    : Math.max(bidKingBidMapRequiredCoins(bidMap.id), bidKingHighestConfiguredMinimumBidForBidMap(bidMap.id));
+  return choices.find((value) => value >= target) ?? choices[choices.length - 1]!;
 }
 
 export function bidKingInitialCashForProfileCoins(
   _profileCoins: number | undefined,
-  bidMapId?: number,
-  fallback = FALLBACK_INITIAL_CASH
+  bidMapId: number
 ): number {
-  return bidKingInitialCashForBidMap(bidMapId, fallback);
+  return bidKingInitialCashForBidMap(bidMapId);
 }
 
-export function bidKingBidMapRequiredCoins(bidMapId?: number): number {
-  const bidMap = bidMapForId(bidMapId);
-  if (!bidMap) {
-    return 0;
-  }
+export function bidKingBidMapRequiredCoins(bidMapId: number): number {
+  const bidMap = requireBidMap(bidMapId);
   return maxCoinAmount(bidMap.required_items);
 }
 
-export function bidKingBidMapEntryCostCoins(bidMapId?: number): number {
+export function bidKingBidMapEntryCostCoins(bidMapId: number): number {
   return bidKingBidMapEntryCosts(bidMapId)
     .filter((cost) => cost.refId === COIN_ITEM_ID)
     .reduce((sum, cost) => sum + cost.quantity, 0);
 }
 
-export function bidKingBidMapEntryCosts(bidMapId?: number): BidKingBidMapEntryCost[] {
-  const bidMap = bidMapForId(bidMapId);
-  if (!bidMap) {
-    return [];
-  }
+export function bidKingBidMapEntryCosts(bidMapId: number): BidKingBidMapEntryCost[] {
+  const bidMap = requireBidMap(bidMapId);
   const costs = new Map<number, number>();
   const rows = bidKingIsDefaultUnknownBidMap(bidMap.id)
     ? [bidMap.currency_cost]
@@ -127,11 +119,8 @@ export function bidKingBidMapEntryCosts(bidMapId?: number): BidKingBidMapEntryCo
   return [...costs.entries()].map(([refId, quantity]) => ({ refId, quantity }));
 }
 
-export function bidKingIsDefaultUnknownBidMap(bidMapId?: number): boolean {
-  const bidMap = bidMapForId(bidMapId);
-  if (!bidMap) {
-    return false;
-  }
+export function bidKingIsDefaultUnknownBidMap(bidMapId: number): boolean {
+  const bidMap = requireBidMap(bidMapId);
   const defaultBidMap = BidMap
     .filter((candidate) => (
       candidate.parent_map_id === bidMap.parent_map_id
@@ -144,11 +133,11 @@ export function bidKingIsDefaultUnknownBidMap(bidMapId?: number): boolean {
 
 export function bidKingBidMapAccess(
   profile: BidKingBidMapAccessProfile,
-  bidMapId?: number,
+  bidMapId: number,
   now = Date.now()
 ): BidKingBidMapAccessResult {
-  const bidMap = bidMapForId(bidMapId);
-  const parentMap = bidMap ? parentMapForBidMap(bidMap) : undefined;
+  const bidMap = requireBidMap(bidMapId);
+  const parentMap = requireParentMapForBidMap(bidMap);
   const reasons: string[] = [];
   const requiredCoins = bidKingBidMapRequiredCoins(bidMapId);
   const entryCostCoins = bidKingBidMapEntryCostCoins(bidMapId);
@@ -158,14 +147,10 @@ export function bidKingBidMapAccess(
   const nextOpenAt = parentMap ? bidKingMapNextOpenAt(parentMap, now) : undefined;
   const worldProcess = parentMap ? bidKingWorldProcessStatusForProfile(profile, parentMap.world_process) : undefined;
 
-  if (!bidMap) {
-    reasons.push('拍场不存在');
-  } else if (bidMap.is_visiable !== 1) {
+  if (bidMap.is_visiable !== 1) {
     reasons.push('仓型未开放');
   }
-  if (bidMap && !parentMap) {
-    reasons.push('场景不存在');
-  } else if (parentMap && parentMap.is_open !== 1) {
+  if (parentMap.is_open !== 1) {
     reasons.push('场景未开放');
   }
   if (profile.coins < requiredCoins) {
@@ -257,12 +242,28 @@ export function bidKingBestAvailableBidMapId(
     ))[0]?.row.id;
 }
 
-function bidMapForId(bidMapId?: number): BidKingBidMapRow | undefined {
-  return bidMapId ? BidMap.find((candidate) => candidate.id === bidMapId) : undefined;
+function requireBidMap(bidMapId: number): BidKingBidMapRow {
+  const bidMap = BidMap.find((candidate) => candidate.id === bidMapId);
+  if (!bidMap) {
+    throw new Error(`Unknown BidMap ${bidMapId}`);
+  }
+  return bidMap;
 }
 
-function parentMapForBidMap(bidMap: BidKingBidMapRow): BidKingMapRow | undefined {
-  return BidKingMap.find((candidate) => candidate.id === bidMap.parent_map_id);
+function requireParentMapForBidMap(bidMap: BidKingBidMapRow): BidKingMapRow {
+  const parentMap = BidKingMap.find((candidate) => candidate.id === bidMap.parent_map_id);
+  if (!parentMap) {
+    throw new Error(`Missing Map ${bidMap.parent_map_id} for BidMap ${bidMap.id}`);
+  }
+  return parentMap;
+}
+
+function requireRankMap(bidMapId: number) {
+  const row = RankMap.find((candidate) => candidate.id === bidMapId);
+  if (!row) {
+    throw new Error(`Missing RankMap ${bidMapId}`);
+  }
+  return row;
 }
 
 export function bidKingDailyMapEntryKey(mapId: number, now = Date.now()): string {

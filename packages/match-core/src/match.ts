@@ -36,7 +36,6 @@ import {
 import { bidKingBidLossRebateAmount } from './bidking/economyRuleRuntime';
 import { buildBidKingGameDataSnapshot } from './bidking/gameDataRuntime';
 import { bidKingInitialCashForBidMap } from './bidking/initialCashRuntime';
-import { bidKingDefaultAuctionDurationMs } from './bidking/roomRuleRuntime';
 import { bidKingSkillEffectKnowledge, bidKingSkillEffectPublicFields } from './bidking/skillEffectRuntime';
 import { bidKingSourceEffectCategoriesForFeedEntry } from './bidking/skillTargeting';
 import { createRandom, hashSeed } from './random';
@@ -51,9 +50,6 @@ import type {
 } from './types';
 
 const CORE_ROUND_INTEL_DURATION_MS = 3200;
-const CORE_WAREHOUSE_ROLL_DURATION_MS = 4400;
-const CORE_WAREHOUSE_SELECTED_DURATION_MS = 1500;
-const CORE_AUCTIONEER_REVEAL_DURATION_MS = 5000;
 
 export function createMatch(params: {
   id: string;
@@ -61,8 +57,8 @@ export function createMatch(params: {
   seed?: number;
   totalRounds?: number;
   coreMode?: boolean;
-  coreAuctionMode?: CoreAuctionMode;
-  coreBidMapId?: number;
+  coreAuctionMode: CoreAuctionMode;
+  coreBidMapId: number;
   bidKingActiveSystemSkillIds?: number[];
   config?: GameConfig;
   now?: number;
@@ -71,14 +67,14 @@ export function createMatch(params: {
   if (params.coreMode === false) {
     throw new Error('Only BidKing core mode is supported');
   }
-  const matchInitialCash = bidKingInitialCashForBidMap(params.coreBidMapId, config.rules.initialCash);
+  const matchInitialCash = bidKingInitialCashForBidMap(params.coreBidMapId);
   const runtimeConfig = matchInitialCash === config.rules.initialCash
     ? config
     : { ...config, rules: { ...config.rules, initialCash: matchInitialCash } };
   const seed = params.seed ?? hashSeed(params.id);
   const now = params.now ?? Date.now();
   const rng = createRandom(seed);
-  const expectedPlayerCount = bidKingBidMapPlayerCount(params.coreBidMapId, 4);
+  const expectedPlayerCount = bidKingBidMapPlayerCount(params.coreBidMapId);
   const players = params.players.slice(0, expectedPlayerCount).map<RuntimePlayer>((player, seat) => ({
     ...(() => {
       const role = runtimeConfig.roles.find((candidate) => candidate.id === player.roleId);
@@ -118,7 +114,7 @@ export function createMatch(params: {
     status: 'playing',
     seed,
     coreMode: true,
-    coreAuctionMode: params.coreAuctionMode ?? rng.pick<CoreAuctionMode>(['open', 'sealed']),
+    coreAuctionMode: params.coreAuctionMode,
     coreBidMapId: params.coreBidMapId,
     bidKingActiveSystemSkillIds: params.bidKingActiveSystemSkillIds ? [...params.bidKingActiveSystemSkillIds] : undefined,
     roundIndex: -1,
@@ -160,23 +156,14 @@ export function startNextRound(state: MatchRuntimeState, now = Date.now()): Matc
   }
 
   const container = createContainerInstance(state, now);
-  const auctionMode = state.coreAuctionMode ?? 'sealed';
-  const isOpeningRound = state.roundIndex === 0;
-  const openingCandidates = isOpeningRound
+  const auctionMode = state.coreAuctionMode;
+  const openingCandidates = state.roundIndex === 0
     ? buildBidKingOpeningCandidates(state, container.publicInfo, now)
     : undefined;
-  const startingPhase: RuntimeRound['phase'] = isOpeningRound ? 'warehouse_roll' : 'intel';
-  const startingDurationMs = isOpeningRound ? CORE_WAREHOUSE_ROLL_DURATION_MS : CORE_ROUND_INTEL_DURATION_MS;
-  const preAuctionDurationMs = isOpeningRound
-    ? CORE_WAREHOUSE_ROLL_DURATION_MS
-      + CORE_WAREHOUSE_SELECTED_DURATION_MS
-      + CORE_AUCTIONEER_REVEAL_DURATION_MS
-      + CORE_ROUND_INTEL_DURATION_MS
-    : CORE_ROUND_INTEL_DURATION_MS;
   const round: RuntimeRound = {
     id: `${state.id}_round_${state.roundIndex + 1}`,
     index: state.roundIndex,
-    phase: startingPhase,
+    phase: 'intel',
     auctionMode,
     container,
     openingCandidates,
@@ -186,8 +173,8 @@ export function startNextRound(state: MatchRuntimeState, now = Date.now()): Matc
     warehouseSlots: buildHiddenWarehouseSlotViews(container.warehouseSlots),
     revealedItems: [],
     skillFeed: [],
-    phaseEndsAt: now + startingDurationMs,
-    auctionEndsAt: now + preAuctionDurationMs + auctionDurationForRound(container)
+    phaseEndsAt: now + CORE_ROUND_INTEL_DURATION_MS,
+    auctionEndsAt: now + CORE_ROUND_INTEL_DURATION_MS + auctionDurationForRound(container)
   };
 
   for (const player of state.players) {
@@ -195,15 +182,7 @@ export function startNextRound(state: MatchRuntimeState, now = Date.now()): Matc
     player.privateClues = privateClues;
   }
   round.skillFeed = buildBidKingRoundStartSkillFeed(state, round, now);
-  prepareAuctioneerIntelCards(state, round);
-  if (!isOpeningRound && hasCurrentRoundMapIntel(round)) {
-    round.phase = 'auctioneer_reveal';
-    round.phaseEndsAt = now + CORE_AUCTIONEER_REVEAL_DURATION_MS;
-    round.auctionEndsAt = now
-      + CORE_AUCTIONEER_REVEAL_DURATION_MS
-      + CORE_ROUND_INTEL_DURATION_MS
-      + auctionDurationForRound(container);
-  }
+  prepareIntelligencePanelCards(state, round);
 
   state.currentRound = round;
   state.updatedAt = now;
@@ -227,37 +206,37 @@ function decrementRoundCooldowns(cooldowns: Record<string, number>): Record<stri
 }
 
 function auctionDurationForRound(container: ContainerInstance): number {
-  return Math.max(1000, container.auctionDurationMs ?? bidKingDefaultAuctionDurationMs());
+  const durationMs = container.auctionDurationMs;
+  if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs <= 0) {
+    throw new Error(`Container ${container.id} is missing a valid BidMap auction duration`);
+  }
+  return durationMs;
 }
 
-function prepareAuctioneerIntelCards(state: MatchRuntimeState, round: RuntimeRound): void {
+function prepareIntelligencePanelCards(state: MatchRuntimeState, round: RuntimeRound): void {
   const mapEntry = currentRoundMapIntel(round);
   if (!mapEntry) {
-    round.auctioneerClue = undefined;
-    round.auctioneerChoices = undefined;
+    round.intelligenceClue = undefined;
+    round.intelligenceChoices = undefined;
     return;
   }
   const selectedIndex = state.rng.int(0, 3);
-  const selectedClue = mapEntryToAuctioneerClue(round, mapEntry, selectedIndex);
-  round.auctioneerClue = selectedClue;
-  round.auctioneerChoices = Array.from({ length: 4 }, (_, index) => (
-    index === selectedIndex ? selectedClue : hiddenAuctioneerClue(round, index)
+  const selectedClue = mapEntryToIntelligenceClue(round, mapEntry, selectedIndex);
+  round.intelligenceClue = selectedClue;
+  round.intelligenceChoices = Array.from({ length: 4 }, (_, index) => (
+    index === selectedIndex ? selectedClue : hiddenIntelligenceClue(round, index)
   ));
-}
-
-function hasCurrentRoundMapIntel(round: RuntimeRound): boolean {
-  return Boolean(currentRoundMapIntel(round));
 }
 
 function currentRoundMapIntel(round: RuntimeRound): SkillFeedEntry | undefined {
   return round.skillFeed.find((entry) => entry.source === 'map' && entry.round === round.index + 1);
 }
 
-function mapEntryToAuctioneerClue(round: RuntimeRound, entry: SkillFeedEntry, slotIndex: number): Clue {
+function mapEntryToIntelligenceClue(round: RuntimeRound, entry: SkillFeedEntry, slotIndex: number): Clue {
   const categories = new Set(entry.effectCategories ?? (entry.effectCategory ? [entry.effectCategory] : []));
   return {
-    id: `${round.id}_auctioneer_intel_slot_${slotIndex}`,
-    kind: categories.has(5) || categories.has(8) || categories.has(9) || categories.has(10) || categories.has(14)
+    id: `${round.id}_intelligence_panel_slot_${slotIndex}`,
+    kind: categories.has(5) || categories.has(8) || categories.has(9) || categories.has(10) || categories.has(14) || categories.has(15)
       ? 'value'
       : 'category',
     text: entry.text,
@@ -268,9 +247,9 @@ function mapEntryToAuctioneerClue(round: RuntimeRound, entry: SkillFeedEntry, sl
   };
 }
 
-function hiddenAuctioneerClue(round: RuntimeRound, slotIndex: number): Clue {
+function hiddenIntelligenceClue(round: RuntimeRound, slotIndex: number): Clue {
   return {
-    id: `${round.id}_auctioneer_intel_slot_${slotIndex}`,
+    id: `${round.id}_intelligence_panel_slot_${slotIndex}`,
     kind: 'category',
     text: '',
     accuracy: 0,
@@ -433,8 +412,8 @@ export function toRoomSnapshot(params: {
   botCount: number;
   totalRounds: number;
   initialCash?: number;
-  coreAuctionMode?: CoreAuctionMode;
-  selectedBidMapId?: number;
+  coreAuctionMode: CoreAuctionMode;
+  selectedBidMapId: number;
   status: RoomSnapshot['status'];
   players: RuntimePlayer[];
   config?: GameConfig;
@@ -445,10 +424,10 @@ export function toRoomSnapshot(params: {
     code: params.code,
     hostId: params.hostId,
     botCount: params.botCount,
-    maxPlayers: bidKingBidMapPlayerCount(params.selectedBidMapId, params.players.length),
+    maxPlayers: bidKingBidMapPlayerCount(params.selectedBidMapId),
     totalRounds: params.totalRounds,
     initialCash: params.initialCash ?? config.rules.initialCash,
-    coreAuctionMode: params.coreAuctionMode ?? 'sealed',
+    coreAuctionMode: params.coreAuctionMode,
     selectedBidMapId: params.selectedBidMapId,
     status: params.status,
     players: params.players.map((player) => publicPlayer(player, config))
@@ -734,7 +713,8 @@ function publicRound(
   playerId?: string
 ): PublicMatchState['currentRound'] {
   const exposeBidAmounts = shouldRevealRoundBidAmounts(round);
-  const exposeAuctioneerClue = Boolean(round.auctioneerClue && !['warehouse_roll', 'warehouse_selected'].includes(round.phase));
+  const exposeIntelligenceClue = Boolean(round.intelligenceClue);
+  const exposeIntelligenceChoices = Boolean(round.intelligenceChoices && round.phase === 'intel');
   const cumulativeSkillFeed = cumulativeSkillFeedForRound(state, round);
   const visibleSkillFeed = visibleSkillFeedForRound(round, playerId, cumulativeSkillFeed);
   return {
@@ -745,9 +725,9 @@ function publicRound(
     isFinalAuction: round.isFinalAuction,
     container: publicContainerInfoForClient(round.container.publicInfo),
     openingCandidates: round.openingCandidates?.map(publicContainerInfoForClient),
-    auctioneerClue: exposeAuctioneerClue && round.auctioneerClue ? cloneClue(round.auctioneerClue) : undefined,
-    auctioneerChoices: round.phase === 'auctioneer_reveal'
-      ? round.auctioneerChoices?.map(cloneClue)
+    intelligenceClue: exposeIntelligenceClue && round.intelligenceClue ? cloneClue(round.intelligenceClue) : undefined,
+    intelligenceChoices: exposeIntelligenceChoices
+      ? round.intelligenceChoices?.map(cloneClue)
       : undefined,
     publicClues: publicCluesForRound(round),
     warehouseSlots: publicWarehouseSlots(round, playerId, visibleSkillFeed),
@@ -801,7 +781,11 @@ function skillFeedEntryVisibleInPhase(round: RuntimeRound, entry: SkillFeedEntry
   if (!isCurrentMapIntel) {
     return true;
   }
-  return !['warehouse_roll', 'warehouse_selected'].includes(round.phase);
+  return round.phase === 'intel'
+    || round.phase === 'auction'
+    || round.phase === 'reveal'
+    || round.phase === 'settlement'
+    || round.phase === 'ended';
 }
 
 function publicContainerInfoForClient(info: PublicContainerInfo): PublicContainerInfo {
@@ -863,10 +847,10 @@ function publicSourceHitBox(entry: SkillFeedEntry, box: BidKingBoxInfoDataSnapsh
 }
 
 function publicCluesForRound(round: RuntimeRound): Clue[] {
-  const auctioneerClues = round.auctioneerClue && !['warehouse_roll', 'warehouse_selected'].includes(round.phase)
-    ? [round.auctioneerClue]
+  const intelligenceClues = round.intelligenceClue
+    ? [round.intelligenceClue]
     : [];
-  return [...round.container.publicClues, ...auctioneerClues].map(cloneClue);
+  return [...round.container.publicClues, ...intelligenceClues].map(cloneClue);
 }
 
 function cloneClue(clue: Clue): Clue {
@@ -1192,12 +1176,14 @@ function hasPositiveBid(state: MatchRuntimeState, playerId: string): boolean {
 function collectionExperienceValue(item: RevealedItem): number {
   const sourceId = Number(/^compat_(\d+)/.exec(item.id)?.[1]);
   const sourceItem = Number.isFinite(sourceId) ? Item.find((candidate) => candidate.id === sourceId) : undefined;
-  const fallbackValue = item.displayValue > 0 ? item.displayValue : item.value;
-  return Math.max(0, Math.floor(sourceItem?.base_value ?? fallbackValue));
+  if (!sourceItem) {
+    throw new Error(`RevealedItem ${item.id} is not backed by a source Item row`);
+  }
+  return Math.max(0, Math.floor(sourceItem.base_value));
 }
 
 function buildAuctionStats(state: MatchRuntimeState): FinalPlayerAuctionStats[] {
-  const bidMapId = state.coreBidMapId;
+  const bidMapId = state.coreResolvedBidMapId ?? state.coreBidMapId;
   const parentMapId = bidMapId !== undefined ? BidMap.find((row) => row.id === bidMapId)?.parent_map_id : undefined;
   return state.players.map((player) => {
     const wonRounds = state.roundHistory.filter((round) => round.winnerId === player.id);

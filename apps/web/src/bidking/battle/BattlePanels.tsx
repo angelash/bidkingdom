@@ -15,10 +15,10 @@ import { bidKingLiveIntelItems } from '../catalog/codexRuntime';
 
 export function CloseRuleLadder({ currentRound }: { currentRound: number }): JSX.Element {
   const rules = [
-    '第1轮 超过第二名200%',
-    '第2轮 超过第二名160%',
-    '第3轮 超过第二名130%',
-    '第4轮 超过第二名110%',
+    '第1轮 高出第二名100%',
+    '第2轮 高出第二名60%',
+    '第3轮 高出第二名30%',
+    '第4轮 高出第二名10%',
     '第5轮 高于第二名成交，同价加赛'
   ];
   return (
@@ -93,7 +93,7 @@ export function PlayerGrid({
   );
 }
 
-export function MapIntroOverlay({
+export function BattleRandomOverlay({
   round
 }: {
   round: NonNullable<PlayerSnapshot['public']['currentRound']>;
@@ -105,12 +105,12 @@ export function MapIntroOverlay({
       <div className="map-intro-panel">
         <div className="map-intro-title">
           <Sparkles size={18} />
-          <span>{round.phase === 'warehouse_selected' ? '仓型确认' : '场景轮选'}</span>
-          <strong>{round.phase === 'warehouse_selected' ? selected.name : '正在抽取本局仓型'}</strong>
+          <span>场景轮选</span>
+          <strong>正在抽取本局拍场</strong>
         </div>
         <div className="map-carousel-window">
           <div className="map-selection-frame" />
-          <div className={`map-track ${round.phase === 'warehouse_selected' ? 'locked' : ''}`}>
+          <div className="map-track">
             {candidates.map((candidate, index) => (
               <div
                 className={`map-card ${index === candidates.length - 1 ? 'selected' : ''}`}
@@ -137,27 +137,27 @@ export function MapIntroOverlay({
   );
 }
 
-export function AuctioneerRevealOverlay({
+export function IntelligencePanelOverlay({
   round
 }: {
   round: NonNullable<PlayerSnapshot['public']['currentRound']>;
 }): JSX.Element {
-  const selected = round.auctioneerClue ?? round.publicClues.at(-1);
-  const choices = auctioneerChoiceReel(round, selected);
+  const selected = round.intelligenceClue ?? round.publicClues.at(-1);
+  const choices = intelligenceChoiceReel(round, selected);
   return (
-    <section className="auctioneer-overlay" aria-live="polite">
-      <div className="auctioneer-panel" style={{ '--auctioneer-map-art': `url(${containerArtForKey(round.container.artKey)})` } as React.CSSProperties}>
-        <div className="auctioneer-heading">
+    <section className="intelligence-overlay" aria-live="polite">
+      <div className="intelligence-panel" style={{ '--intelligence-map-art': `url(${containerArtForKey(round.container.artKey)})` } as React.CSSProperties}>
+        <div className="intelligence-heading">
           <Info size={18} />
           <strong>即将揭示情报</strong>
-          <span>拍卖师将在四张暗牌中随机披露一条</span>
+          <span>四张暗牌中随机披露一条拍场情报</span>
         </div>
-        <div className="auctioneer-card-row">
+        <div className="intelligence-card-row">
           {choices.map((choice, index) => {
             const revealed = Boolean(selected?.id === choice.id && choice.text);
             return (
               <div
-                className={`auctioneer-card ${revealed ? 'selected revealed' : 'hidden'}`}
+                className={`intelligence-card ${revealed ? 'selected revealed' : 'hidden'}`}
                 key={`${choice.id}_${index}`}
                 style={{ '--card-delay': `${index * 120}ms` } as React.CSSProperties}
               >
@@ -176,7 +176,7 @@ export function AuctioneerRevealOverlay({
             );
           })}
         </div>
-        <div className="auctioneer-clue">
+        <div className="intelligence-clue">
           <small>本轮公开情报</small>
           <p>{selected?.text || '正在整理拍场情报...'}</p>
         </div>
@@ -475,9 +475,6 @@ export function useNow(): number {
 function phaseName(phase: string): string {
   const names: Record<string, string> = {
     container: '看货',
-    warehouse_roll: '场景轮选',
-    warehouse_selected: '仓型确认',
-    auctioneer_reveal: '竞拍信息',
     intel: '情报',
     auction: '竞价',
     reveal: '开箱',
@@ -498,12 +495,12 @@ function mapCandidateReel(round: NonNullable<PlayerSnapshot['public']['currentRo
   return [...reel, selected];
 }
 
-function auctioneerChoiceReel(
+function intelligenceChoiceReel(
   round: NonNullable<PlayerSnapshot['public']['currentRound']>,
   selected?: Clue
 ): Clue[] {
-  const choices = round.auctioneerChoices && round.auctioneerChoices.length > 0
-    ? round.auctioneerChoices
+  const choices = round.intelligenceChoices && round.intelligenceChoices.length > 0
+    ? round.intelligenceChoices
     : selected
       ? [selected]
       : [];
@@ -557,14 +554,14 @@ export function auctionRuleText(mode: string): string {
 }
 
 function bidRuleNotice(round: NonNullable<PlayerSnapshot['public']['currentRound']>): string {
-  const multiplier = closeRuleMultiplier(round.index);
+  const marginPercent = closeRuleMarginPercent(round.index);
   if (round.auctionMode === 'open') {
-    return multiplier > 0
-      ? `本轮不会公开当前价；轮后最高价需超过第二名 ${multiplier}% 才会直接成交。`
+    return marginPercent > 0
+      ? `本轮不会公开当前价；轮后最高价需高出第二名 ${marginPercent}% 才会直接成交。`
       : '本轮不会公开当前价；轮后最高价高于第二名即可成交，同价追加回合。';
   }
-  return multiplier > 0
-    ? `暗拍只公开排名，最高价需超过第二名 ${multiplier}% 才会直接成交。`
+  return marginPercent > 0
+    ? `暗拍只公开排名，最高价需高出第二名 ${marginPercent}% 才会直接成交。`
     : '暗拍只公开排名，最高价高于第二名即可成交；同价追加回合。';
 }
 
@@ -586,8 +583,8 @@ export function lastSubmittedBidAmount(snapshot: PlayerSnapshot, playerId: strin
   return undefined;
 }
 
-function closeRuleMultiplier(roundIndex: number): number {
-  return [200, 160, 130, 110, 0][Math.min(roundIndex, 4)] ?? 0;
+function closeRuleMarginPercent(roundIndex: number): number {
+  return [100, 60, 30, 10, 0][Math.min(roundIndex, 4)] ?? 0;
 }
 
 export function playerNameById(players: PublicPlayer[], playerId: string): string {

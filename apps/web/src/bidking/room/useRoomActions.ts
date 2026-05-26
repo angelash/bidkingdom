@@ -8,7 +8,6 @@ import type {
 } from '@bitkingdom/shared';
 import { gameConfig } from '@bitkingdom/config';
 import {
-  bidKingBestAvailableBidMapId,
   bidKingBidMapAccess,
   bidKingHeroIdForRoleId,
   bidKingInitialCashForBidMap
@@ -78,10 +77,9 @@ export function useRoomActions({
       setToast('正在连接拍场，请稍候');
       return false;
     }
-    const requestedBidMapId = nextBidMapId ?? selectedBidMapId;
-    const bidMapId = bidKingBestAvailableBidMapId(profile, requestedBidMapId);
+    const bidMapId = nextBidMapId ?? selectedBidMapId;
     if (!bidMapId) {
-      setToast('当前余额未满足任何拍场入场条件');
+      setToast('请选择拍场');
       return false;
     }
     const access = bidKingBidMapAccess(profile, bidMapId);
@@ -99,9 +97,7 @@ export function useRoomActions({
     const sceneMode = modeForBidMapId(bidMapId) ?? coreAuctionMode;
     localStorage.setItem('bk_player_name', playerName);
     saveCoreAuctionMode(sceneMode);
-    if (bidMapId) {
-      localStorage.setItem(SELECTED_BID_MAP_KEY, String(bidMapId));
-    }
+    localStorage.setItem(SELECTED_BID_MAP_KEY, String(bidMapId));
     setCoreAuctionMode(sceneMode);
     socket.emit('createRoom', {
       playerName,
@@ -111,7 +107,7 @@ export function useRoomActions({
       botCount,
       coreAuctionMode: sceneMode,
       selectedBidMapId: bidMapId,
-      initialCash: bidKingInitialCashForBidMap(bidMapId, gameConfig.rules.initialCash)
+      initialCash: bidKingInitialCashForBidMap(bidMapId)
     }, (ack: RoomAck) => {
       activeRoomCodeRef.current = ack.room.code;
       setSelfPlayerId(ack.selfPlayerId);

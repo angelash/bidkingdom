@@ -103,8 +103,8 @@ export interface RuntimeRound {
   auctionMode: AuctionMode;
   container: ContainerInstance;
   openingCandidates?: PublicContainerInfo[];
-  auctioneerClue?: Clue;
-  auctioneerChoices?: Clue[];
+  intelligenceClue?: Clue;
+  intelligenceChoices?: Clue[];
   bids: PublicRoundState['bids'];
   currentBid: number;
   currentLeaderId?: string;
@@ -124,11 +124,11 @@ export interface MatchRuntimeState {
   status: PublicMatchState['status'];
   seed: number;
   coreMode: boolean;
-  coreAuctionMode?: CoreAuctionMode;
-  coreBidMapId?: number;
+  coreAuctionMode: CoreAuctionMode;
+  coreBidMapId: number;
+  coreSourceBidMapId?: number;
+  coreResolvedBidMapId?: number;
   bidKingActiveSystemSkillIds?: number[];
-  coreAuctioneerClue?: Clue;
-  coreAuctioneerChoices?: Clue[];
   roundIndex: number;
   totalRounds: number;
   players: RuntimePlayer[];

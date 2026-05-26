@@ -109,31 +109,19 @@ function marketOrderTax(refId: string, unitPrice: number, quantity: number): num
   return Math.floor(totalTaxValue) * quantity;
 }
 
-export function legacyMarketOrderFee(refId: string, price: number): number {
-  const item = Item.find((row) => String(row.id) === String(refId));
-  const brackets = item?.transaction_tax_rate ?? [];
-  for (const [limit = 0, fee = 0] of brackets) {
-    if (limit <= 0 && fee <= 0) {
-      continue;
-    }
-    if (limit <= 0 || price <= limit) {
-      return Math.max(0, Math.floor(fee));
-    }
-  }
-  const fallback = brackets.at(-1);
-  return Math.max(0, Math.floor(fallback?.[1] ?? 0));
-}
-
 export function marketOrderQuantityLimit(refId: string): number {
   const item = Item.find((row) => String(row.id) === String(refId));
   if (!item) {
-    return Number.MAX_SAFE_INTEGER;
+    throw new Error(`Market item ${refId} is missing from Item`);
   }
-  const globalLimit = constantNumber('listed_quantity', Number.MAX_SAFE_INTEGER);
+  const globalLimit = constantNumber('listed_quantity');
   const limits = [item.max_stack_size, item.max_per_listing, globalLimit]
     .map((value) => Math.floor(Number(value) || 0))
     .filter((value) => value > 0);
-  return limits.length > 0 ? Math.min(...limits) : Number.MAX_SAFE_INTEGER;
+  if (limits.length === 0) {
+    throw new Error(`Market item ${refId} has no positive listing limit`);
+  }
+  return Math.min(...limits);
 }
 
 export function refreshShopRestock(profile: PlayerProfile, shop: ShopRow, now = Date.now()) {

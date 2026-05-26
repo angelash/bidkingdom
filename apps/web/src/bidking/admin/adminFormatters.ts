@@ -196,9 +196,6 @@ function targetModeName(mode: string): string {
 export function phaseName(phase: string): string {
   const names: Record<string, string> = {
     container: '看货',
-    warehouse_roll: '场景轮选',
-    warehouse_selected: '仓型确认',
-    auctioneer_reveal: '竞拍信息',
     intel: '情报',
     auction: '竞价',
     reveal: '开箱',

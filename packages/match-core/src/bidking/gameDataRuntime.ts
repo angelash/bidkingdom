@@ -1,4 +1,4 @@
-import { BidMap, Hero, itemById } from '@bitkingdom/bidking-compat';
+import { Hero, itemById } from '@bitkingdom/bidking-compat';
 import type {
   BidKingBoxInfoDataSnapshot,
   BidKingBoxPositionDataSnapshot,
@@ -73,7 +73,10 @@ function bidKingRoundBidDeadlineMs(round: RuntimeRound): number {
   if (round.auctionEndsAt) {
     return round.auctionEndsAt;
   }
-  const auctionDurationMs = Math.max(1000, round.container.auctionDurationMs ?? 60_000);
+  const auctionDurationMs = round.container.auctionDurationMs;
+  if (typeof auctionDurationMs !== 'number' || !Number.isFinite(auctionDurationMs) || auctionDurationMs <= 0) {
+    throw new Error(`Round ${round.id} has no auction duration`);
+  }
   return round.phase === 'intel'
     ? round.phaseEndsAt + auctionDurationMs
     : round.phaseEndsAt;
@@ -107,7 +110,7 @@ function buildGameUserLog(
     userUid: stableNumericId(player.id),
     playerId: player.id,
     name: player.name,
-    heroCid: hero?.id ?? 0,
+    heroCid: hero.id,
     useItemLog,
     priceLog,
     isStandDown: player.passed,
@@ -238,13 +241,19 @@ function skillFeedToGameSkillLog(
 ): { kind: 'hero' | 'item' | 'map'; log: BidKingGameSkillDataSnapshotWithMetadata } {
   const player = entry.playerId ? state.players.find((candidate) => candidate.id === entry.playerId) : undefined;
   const hero = player ? heroForPlayer(state, player) : undefined;
+  if (entry.source !== 'map' && !hero) {
+    throw new Error(`SkillFeed ${entry.id} has no source Hero`);
+  }
+  if (typeof entry.skillCid !== 'number' || entry.skillCid <= 0) {
+    throw new Error(`SkillFeed ${entry.id} has no source Skill id`);
+  }
   const hitSlots = hitSlotsForEntry(round, entry);
   const hitBoxList = entry.hitBoxList?.map(cloneBoxInfo)
     ?? hitSlots.map((slot, index) => boxInfoForSlot(slot, round, index));
   const hitStats = skillLogHitStatsForSlots(hitSlots);
 
   const log: BidKingGameSkillDataSnapshotWithMetadata = {
-    skillCid: entry.skillCid ?? stableNumericId(entry.skillName) % 1_000_000,
+    skillCid: entry.skillCid,
     heroCid: hero?.id ?? 0,
     mapCid: entry.source === 'map' ? bidMapIdForState(state, round) : 0,
     itemCid: entry.source === 'item' ? stableNumericId(entry.sourceName) % 1_000_000 : 0,
@@ -273,7 +282,16 @@ function battleItemEventSkillLogs(state: MatchRuntimeState, round: RuntimeRound)
       }
       const player = event.actorId ? state.players.find((candidate) => candidate.id === event.actorId) : undefined;
       const hero = player ? heroForPlayer(state, player) : undefined;
-      const targetCount = typeof payload?.effectPlan?.targetCount === 'number' ? payload.effectPlan.targetCount : 1;
+      if (!hero) {
+        throw new Error(`Battle item event ${event.id} has no source Hero`);
+      }
+      if (typeof payload?.effectPlan?.skillId !== 'number' || payload.effectPlan.skillId <= 0) {
+        throw new Error(`Battle item event ${event.id} has no source Skill id`);
+      }
+      if (typeof payload.effectPlan.targetCount !== 'number') {
+        throw new Error(`Battle item event ${event.id} has no target count`);
+      }
+      const targetCount = payload.effectPlan.targetCount;
       const targetItemIds = eventTargetItemIds(payload?.entry);
       const hitSlots = targetItemIds.length > 0
         ? slotsForTargetItemIds(round, targetItemIds)
@@ -284,8 +302,8 @@ function battleItemEventSkillLogs(state: MatchRuntimeState, round: RuntimeRound)
         ?? hitSlots.map((slot, slotIndex) => boxInfoForSlot(slot, round, slotIndex));
       const hitStats = skillLogHitStatsForSlots(hitSlots);
       return {
-        skillCid: typeof payload?.effectPlan?.skillId === 'number' ? payload.effectPlan.skillId : 0,
-        heroCid: hero?.id ?? 0,
+        skillCid: payload.effectPlan.skillId,
+        heroCid: hero.id,
         mapCid: 0,
         itemCid: itemId,
         castTime: event.createdAt,
@@ -371,21 +389,28 @@ function eventHitBoxList(entry: { hitBoxList?: unknown } | undefined): BidKingBo
 
 function heroForPlayer(state: MatchRuntimeState, player: RuntimePlayer) {
   const mappedHeroId = player.heroCid ?? bidKingHeroIdForRoleId(player.roleId, state.config.roles);
-  return Hero.find((candidate) => candidate.id === mappedHeroId) ?? Hero[player.seat % Hero.length];
+  const hero = Hero.find((candidate) => candidate.id === mappedHeroId);
+  if (!hero) {
+    throw new Error(`Player ${player.id} references missing Hero ${mappedHeroId}`);
+  }
+  return hero;
 }
 
 function boxInfoForSlot(slot: WarehouseSlot, round: RuntimeRound, _index: number): BidKingBoxInfoDataSnapshot {
   const itemCid = itemCidFromRevealedItem(slot.item);
   const item = itemById(itemCid);
+  if (!item) {
+    throw new Error(`Slot item ${slot.item.id} references missing Item ${itemCid}`);
+  }
   return {
     boxId: bidKingSourceBoxIdForSlot(slot),
     itemUid: stableNumericId(`${round.id}:${slot.item.id}`),
     itemCid,
-    itemSlotType: item?.slot_type ?? Math.max(1, slot.w * 10 + slot.h),
+    itemSlotType: item.slot_type,
     itemType: itemTypeIdsFromItem(slot.item),
     itemQuility: qualityFromItem(slot.item),
     itemPrice: slot.item.value,
-    itemBoxIndex: Math.max(1, (item?.slot_type ? Math.floor(item.slot_type / 10) * (item.slot_type % 10) : slot.w * slot.h))
+    itemBoxIndex: Math.max(1, Math.floor(item.slot_type / 10) * (item.slot_type % 10))
   };
 }
 
@@ -396,8 +421,11 @@ export function bidKingSourceBoxInfoForSlot(
 ): BidKingBoxInfoDataSnapshot {
   const itemCid = itemCidFromRevealedItem(slot.item);
   const item = itemById(itemCid);
-  const itemSlotType = item?.slot_type ?? Math.max(1, slot.w * 10 + slot.h);
-  const itemBoxIndex = Math.max(1, item ? Math.floor(item.slot_type / 10) * (item.slot_type % 10) : slot.w * slot.h);
+  if (!item) {
+    throw new Error(`Slot item ${slot.item.id} references missing Item ${itemCid}`);
+  }
+  const itemSlotType = item.slot_type;
+  const itemBoxIndex = Math.max(1, Math.floor(item.slot_type / 10) * (item.slot_type % 10));
   const base: BidKingBoxInfoDataSnapshot = {
     boxId: bidKingSourceBoxIdForSlot(slot),
     itemUid: stableNumericId(`${roundId}:${slot.item.id}`),
@@ -427,7 +455,7 @@ export function bidKingSourceBoxInfoForSlot(
   if (effectCategory === 13) {
     return { ...base, itemType: itemTypeIdsFromItem(slot.item) };
   }
-  if (effectCategory === 14) {
+  if (effectCategory === 14 || effectCategory === 15) {
     return { ...base, itemPrice: slot.item.value };
   }
   return base;
@@ -478,15 +506,14 @@ function roundNumberForEvent(state: MatchRuntimeState, roundId: string | undefin
 }
 
 function bidMapIdForState(state: MatchRuntimeState, round: RuntimeRound): number {
-  if (state.coreBidMapId !== undefined) {
-    return state.coreBidMapId;
-  }
   const templateMatch = /bidmap_(\d+)/.exec(round.container.templateId);
   if (templateMatch?.[1]) {
     return Number(templateMatch[1]);
   }
-  const firstBidMap = BidMap[0]?.id;
-  return firstBidMap ?? stableNumericId(round.container.templateId);
+  if (state.coreResolvedBidMapId !== undefined) {
+    return state.coreResolvedBidMapId;
+  }
+  return state.coreBidMapId;
 }
 
 function itemCidFromRevealedItem(item: RevealedItem): number {
@@ -494,8 +521,7 @@ function itemCidFromRevealedItem(item: RevealedItem): number {
   if (compatMatch?.[1]) {
     return Number(compatMatch[1]);
   }
-  const numericMatch = /(\d+)/.exec(item.id);
-  return numericMatch?.[1] ? Number(numericMatch[1]) : stableNumericId(item.id);
+  throw new Error(`Revealed item ${item.id} is not backed by Item`);
 }
 
 function qualityFromItem(item: RevealedItem): number {

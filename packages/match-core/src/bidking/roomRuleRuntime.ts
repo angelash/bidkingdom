@@ -10,34 +10,38 @@ export function bidKingBidGameCountChoices(): number[] {
   return positiveSortedChoices('bid_game_count_chooses');
 }
 
-export function bidKingDefaultBidGameCount(fallback = 5): number {
-  return bidKingBidGameCountChoices()[0] ?? fallback;
+export function bidKingDefaultBidGameCount(): number {
+  return requireFirstChoice('bid_game_count_chooses', bidKingBidGameCountChoices());
 }
 
 export function bidKingRoundTimeChoicesSeconds(): number[] {
   return positiveSortedChoices('round_time_chooses');
 }
 
-export function bidKingDefaultRoundTimeSeconds(fallback = 60): number {
+export function bidKingDefaultRoundTimeSeconds(): number {
   const choices = bidKingRoundTimeChoicesSeconds();
-  return choices.find((choice) => choice >= fallback) ?? choices[Math.floor(choices.length / 2)] ?? fallback;
+  return requireFirstChoice('round_time_chooses', choices);
 }
 
-export function bidKingDefaultAuctionDurationMs(fallbackMs = 60_000): number {
-  return bidKingDefaultRoundTimeSeconds(Math.max(1, Math.round(fallbackMs / 1000))) * 1000;
+export function bidKingDefaultAuctionDurationMs(): number {
+  return bidKingDefaultRoundTimeSeconds() * 1000;
 }
 
 export function bidKingRoomPlayerCountChoices(): number[] {
   return positiveSortedChoices('room_playernum_chooses');
 }
 
-export function bidKingDefaultRoomPlayerCount(fallback = 4): number {
+export function bidKingDefaultRoomPlayerCount(): number {
   const choices = bidKingRoomPlayerCountChoices();
-  return choices[choices.length - 1] ?? fallback;
+  const choice = choices[choices.length - 1];
+  if (choice === undefined) {
+    throw new Error('Missing positive BidKing Constant.room_playernum_chooses');
+  }
+  return choice;
 }
 
-export function bidKingMaxBotCount(fallback = 3): number {
-  return Math.max(0, bidKingDefaultRoomPlayerCount(fallback + 1) - 1);
+export function bidKingMaxBotCount(): number {
+  return Math.max(0, bidKingDefaultRoomPlayerCount() - 1);
 }
 
 export function bidKingRoomModeChoices(): number[] {
@@ -58,20 +62,18 @@ export function bidKingBattleItemChoiceIds(): number[] {
   return positiveSortedChoices('items_chooses');
 }
 
-export function bidKingInitialWarehouseCapacity(fallback = 50): number {
-  const capacity = constantNumber('initial_warehouse_capacity', fallback);
-  return capacity > 0 ? capacity : fallback;
+export function bidKingInitialWarehouseCapacity(): number {
+  return positiveConstant('initial_warehouse_capacity');
 }
 
-export function bidKingEntrustSlotBase(fallback = 3): number {
-  const slotBase = constantNumber('entrust_slot_base', fallback);
-  return slotBase > 0 ? slotBase : fallback;
+export function bidKingEntrustSlotBase(): number {
+  return positiveConstant('entrust_slot_base');
 }
 
 export function bidKingReliefFundRuntime(): BidKingReliefFundRuntime {
   return {
-    times: constantNumber('relief_fund_times', 0),
-    limit: constantNumber('relief_fund_limit', 0),
+    times: nonNegativeConstant('relief_fund_times'),
+    limit: nonNegativeConstant('relief_fund_limit'),
     rewardRows: constantNumberRows('relief_fund_amount')
   };
 }
@@ -80,4 +82,28 @@ function positiveSortedChoices(id: string): number[] {
   return constantNumberArray(id)
     .filter((value) => value > 0)
     .sort((left, right) => left - right);
+}
+
+function requireFirstChoice(id: string, choices: readonly number[]): number {
+  const choice = choices[0];
+  if (choice === undefined) {
+    throw new Error(`Missing positive BidKing Constant.${id}`);
+  }
+  return choice;
+}
+
+function positiveConstant(id: string): number {
+  const value = constantNumber(id);
+  if (value <= 0) {
+    throw new Error(`BidKing Constant.${id} must be positive`);
+  }
+  return value;
+}
+
+function nonNegativeConstant(id: string): number {
+  const value = constantNumber(id);
+  if (value < 0) {
+    throw new Error(`BidKing Constant.${id} must be non-negative`);
+  }
+  return value;
 }

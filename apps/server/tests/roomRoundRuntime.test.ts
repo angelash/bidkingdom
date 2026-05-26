@@ -26,6 +26,7 @@ describe('room round runtime', () => {
       totalRounds: 5,
       coreMode: true,
       coreAuctionMode: 'open',
+      coreBidMapId: 2601,
       config: gameConfig,
       now: Date.now()
     });
@@ -42,6 +43,7 @@ describe('room round runtime', () => {
       totalRounds: 5,
       initialCash: gameConfig.rules.initialCash,
       coreAuctionMode: 'open',
+      selectedBidMapId: 2601,
       status: 'playing',
       players: [],
       botProfiles: new Map([

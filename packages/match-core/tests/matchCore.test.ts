@@ -8,7 +8,7 @@ import { bidKingSourceRoles } from '../src/bidking/heroRuntime';
 import { useSkill } from '../src/skills';
 
 function makeMatch() {
-  const roles = gameConfig.roles;
+  const roles = bidKingSourceRoles(gameConfig.roles);
   const match = createMatch({
     id: 'test_match',
     seed: 12345,
@@ -18,6 +18,8 @@ function makeMatch() {
       { id: 'b1', name: '丙', kind: 'bot', roleId: roles[2]!.id },
       { id: 'b2', name: '丁', kind: 'bot', roleId: roles[3]!.id }
     ],
+    coreAuctionMode: 'sealed',
+    coreBidMapId: 2601,
     config: gameConfig,
     now: 1000
   });
@@ -39,11 +41,12 @@ function makeCoreMatch() {
     totalRounds: 5,
     coreMode: true,
     coreAuctionMode: 'sealed',
+    coreBidMapId: 2601,
     config: gameConfig,
     now: 1000
   });
   for (const player of match.players) {
-    player.cash = 1_000_000;
+    player.cash = 10_000_000;
   }
   startNextRound(match, 2000);
   return match;
@@ -91,26 +94,21 @@ describe('match core', () => {
     const warehouseId = match.currentRound!.container.id;
     const hiddenItemCount = match.currentRound!.container.hiddenItems.length;
 
-    expect(match.currentRound!.phase).toBe('warehouse_roll');
+    expect(match.currentRound!.phase).toBe('intel');
     expect(match.currentRound!.container.publicClues).toEqual([]);
     expect(match.currentRound!.openingCandidates?.length).toBeGreaterThan(1);
-    expect(match.currentRound!.auctioneerClue).toBeTruthy();
+    expect(match.currentRound!.intelligenceClue).toBeTruthy();
     const firstSnapshotRound = buildSnapshot(match, 'p1').public.currentRound!;
     expect(firstSnapshotRound.container.estimateHidden).toBe(true);
     expect(firstSnapshotRound.container.estimateMin).toBe(0);
     expect(firstSnapshotRound.container.estimateMax).toBe(0);
-    expect(firstSnapshotRound.publicClues).toEqual([]);
-    expect(firstSnapshotRound.auctioneerClue).toBeUndefined();
-    expect(firstSnapshotRound.skillFeed?.some((entry) => entry.visibility === 'public')).toBe(false);
+    expect(firstSnapshotRound.publicClues.length).toBeGreaterThan(0);
+    expect(firstSnapshotRound.intelligenceClue?.source).toBe('public');
+    expect(firstSnapshotRound.intelligenceChoices).toHaveLength(4);
+    expect(firstSnapshotRound.intelligenceChoices?.filter((choice) => choice.text).length).toBe(1);
+    expect(firstSnapshotRound.skillFeed?.some((entry) => entry.visibility === 'public')).toBe(true);
     expect(firstSnapshotRound.skillFeed?.some((entry) => entry.playerId === 'p1' && entry.visibility === 'private')).toBe(true);
     expect(firstSnapshotRound.warehouseSlots?.some((slot) => slot.markedBySkill)).toBe(true);
-
-    setRoundPhase(match, 'auctioneer_reveal', 5000, 2600);
-    const auctioneerSnapshotRound = buildSnapshot(match, 'p1').public.currentRound!;
-    expect(auctioneerSnapshotRound.auctioneerClue?.source).toBe('public');
-    expect(auctioneerSnapshotRound.auctioneerChoices).toHaveLength(4);
-    expect(auctioneerSnapshotRound.auctioneerChoices?.filter((choice) => choice.text).length).toBe(1);
-    expect(auctioneerSnapshotRound.publicClues.length).toBeGreaterThan(0);
 
     for (let roundIndex = 0; roundIndex < 5; roundIndex += 1) {
       expect(match.currentRound!.container.id).toBe(warehouseId);
@@ -208,7 +206,7 @@ describe('match core', () => {
       }],
       createdAt: 3000
     }];
-    setRoundPhase(match, 'auctioneer_reveal', 5000, 3000);
+    setRoundPhase(match, 'intel', 5000, 3000);
 
     const qualityRound = buildSnapshot(match, 'p1').public.currentRound!;
     const qualityView = qualityRound.warehouseSlots?.find((slot) => slot.slotId === targetSlot.slotId);
@@ -258,7 +256,7 @@ describe('match core', () => {
     }));
   });
 
-  it('settles core open auction without legacy deposit bookkeeping', () => {
+  it('settles core open auction without deposit refund bookkeeping', () => {
     const match = makeMatch();
     match.roundIndex = 4;
     match.totalRounds = 5;
@@ -498,7 +496,9 @@ describe('match core', () => {
 
     expect(match.players[0]!.privateClues.length).toBe(before);
     expect(match.players[0]!.skillCooldown).toBe(0);
-    expect(match.players[0]!.skillUsesRemaining).toBe(gameConfig.roles[0]!.usesPerMatch);
+    expect(match.players[0]!.skillUsesRemaining).toBe(
+      gameConfig.roles.find((role) => role.id === match.players[0]!.roleId)?.usesPerMatch
+    );
     expect(match.players[0]!.skillUsedThisRound).toBe(false);
   });
 
@@ -556,6 +556,11 @@ describe('match core', () => {
     baselineBot.skillCooldown = 1;
     baselineBot.skillUsesRemaining = 0;
     const baselineAction = chooseBotAction(baseline, 'b1', 'clue_reader');
+    expect(baselineAction.audit).toEqual(expect.objectContaining({
+      publicEstimateHidden: true,
+      publicEstimateSource: 'protocol_inferred_hidden_range',
+      protocolInferredEstimate: true
+    }));
 
     const withHiddenBids = makeCoreMatch();
     setRoundPhase(withHiddenBids, 'auction', 30000, 3000);
@@ -724,11 +729,12 @@ describe('match core', () => {
       totalRounds: 5,
       coreMode: true,
       coreAuctionMode: 'open',
+      coreBidMapId: 2601,
       config: gameConfig,
       now: 1000
     });
     match.players.forEach((player) => {
-      player.cash = 1_000_000;
+      player.cash = 10_000_000;
     });
     startNextRound(match, 2000);
     const round = match.currentRound!;

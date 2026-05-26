@@ -275,11 +275,11 @@ function guildResourceName(row: BidKingRawTableRow): string {
   return guildResourceNameById(row.id) ?? `会馆资源 ${row.id}`;
 }
 
-function guildAreaResourceName(resourceId?: string, fallback?: string): string | undefined {
+function guildAreaResourceName(resourceId?: string, defaultName?: string): string | undefined {
   if (!resourceId) {
-    return fallback;
+    return defaultName;
   }
-  return guildResourceNameById(resourceId) ?? fallback;
+  return guildResourceNameById(resourceId) ?? defaultName;
 }
 
 function guildResourceNameById(id: string): string | undefined {
