@@ -11,6 +11,7 @@
 
 - 原版源码策划归档：`doc/竞拍之王源码策划归档`
 - BidKingdom 当前实现策划归档：`doc/BidKingdom当前实现策划归档`
+- AI 驱动复刻生产方法长期归档：`doc/AI驱动BidKing复刻开发心路与操作层技术方案归档.md`
 
 ## Code Roots
 
