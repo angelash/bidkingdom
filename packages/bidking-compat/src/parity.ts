@@ -1,4 +1,5 @@
 import { BIDKING_AUCTION_ROUNDS_RATE, BIDKING_PARITY_TARGETS } from './schema';
+export { getBidKingCloseRate, getBidKingCloseThreshold } from './closeRate';
 import { Access } from './tables/Access';
 import { Achievement } from './tables/Achievement';
 import { Activity } from './tables/Activity';
@@ -51,15 +52,6 @@ import { Sound } from './tables/Sound';
 import { Ticket } from './tables/Ticket';
 import { UIWnd } from './tables/UIWnd';
 import { WareHouse } from './tables/WareHouse';
-
-export function getBidKingCloseRate(roundIndex: number): number {
-  return BIDKING_AUCTION_ROUNDS_RATE[Math.min(Math.max(0, roundIndex), BIDKING_AUCTION_ROUNDS_RATE.length - 1)]!;
-}
-
-export function getBidKingCloseThreshold(roundIndex: number): number {
-  const rate = getBidKingCloseRate(roundIndex);
-  return rate <= 0 ? 0 : rate / 1000 - 1;
-}
 
 export function validateBidKingParity(): string[] {
   const failures: string[] = [];

@@ -26,6 +26,7 @@
     "validate:bidking-compat": "npm run validate -w @bitkingdom/bidking-compat",
     "art:validate:bidking-items": "python tools/validate-bidking-item-art.py --validation-set",
     "art:validate:bidking-items:all": "python tools/validate-bidking-item-art.py --all",
+    "art:optimize:web": "node tools/optimize-web-art.mjs",
     "start": "npm run start -w @bitkingdom/server"
   },
   "devDependencies": {

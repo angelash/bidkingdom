@@ -1,8 +1,6 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
-import {
-  bidKingSoundCueAssetUrls,
-  type BidKingSoundCue
-} from './bidKingSystemRuntime';
+import { bidKingSoundCueAssetUrls } from './bidKingSoundAssetUrls';
+import type { BidKingSoundCue } from './bidKingSystemRuntime';
 
 export function useBidKingSoundBridge(): void {
   const bgmRef = useRef<HTMLAudioElement>();

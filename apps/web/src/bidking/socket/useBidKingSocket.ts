@@ -13,6 +13,7 @@ import type { GameExceptionInput } from '../system/gameExceptionRuntime';
 export type BidKingSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 interface UseBidKingSocketArgs {
+  enabled?: boolean;
   serverUrl: string;
   onException?: (exception: GameExceptionInput) => void;
   onProfileUpdated: (profile: ProfileSnapshot) => void;
@@ -34,7 +35,7 @@ interface BidKingSocketRuntime {
   toast: string;
 }
 
-export function useBidKingSocket({ serverUrl, onException, onProfileUpdated, profileId, sessionToken }: UseBidKingSocketArgs): BidKingSocketRuntime {
+export function useBidKingSocket({ enabled = true, serverUrl, onException, onProfileUpdated, profileId, sessionToken }: UseBidKingSocketArgs): BidKingSocketRuntime {
   const [socket, setSocket] = useState<BidKingSocket | null>(null);
   const activeRoomCodeRef = useRef<string>();
   const [connected, setConnected] = useState(false);
@@ -54,6 +55,11 @@ export function useBidKingSocket({ serverUrl, onException, onProfileUpdated, pro
   }, [onProfileUpdated]);
 
   useEffect(() => {
+    if (!enabled) {
+      setConnected(false);
+      setSocket(null);
+      return;
+    }
     const clearActiveMatchState = (message?: string): void => {
       activeRoomCodeRef.current = undefined;
       setRoom(undefined);
@@ -160,7 +166,7 @@ export function useBidKingSocket({ serverUrl, onException, onProfileUpdated, pro
     return () => {
       nextSocket.close();
     };
-  }, [profileId, serverUrl, sessionToken]);
+  }, [enabled, profileId, serverUrl, sessionToken]);
 
   return {
     activeRoomCodeRef,

@@ -81,7 +81,7 @@ label {
   pointer-events: none;
   background:
     linear-gradient(180deg, rgba(12, 7, 5, 0.15), rgba(12, 7, 5, 0.84)),
-    url("/art/approved/backgrounds/background_auction_hall_v1.png") center / cover no-repeat;
+    url("/art/approved/backgrounds/background_auction_hall_v1.webp") center / cover no-repeat;
 }
 
 .topbar {
@@ -243,7 +243,7 @@ h1 {
   background:
     radial-gradient(circle at 24% 12%, rgba(208, 151, 79, 0.2), transparent 34%),
     linear-gradient(180deg, rgba(18, 9, 4, 0.04), rgba(18, 9, 4, 0.36)),
-    url("/art/approved/backgrounds/background_auction_hall_v1.png") center / cover no-repeat;
+    url("/art/approved/backgrounds/background_auction_hall_v1.webp") center / cover no-repeat;
 }
 
 .home-screen .toast-line {
@@ -554,7 +554,7 @@ h1 {
   inset: 6%;
   opacity: 0.12;
   background:
-    url("/art/approved/containers/container_palace_v1.png") center / min(54%, 680px) auto no-repeat;
+    url("/art/approved/containers/container_palace_v1.webp") center / min(54%, 680px) auto no-repeat;
   filter: sepia(0.35) saturate(0.7);
 }
 
@@ -922,7 +922,7 @@ h1 {
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(12, 8, 6, 0.86), rgba(32, 24, 18, 0.82)),
-    url("/art/approved/backgrounds/background_black_market_v1.png") center / cover no-repeat;
+    url("/art/approved/backgrounds/background_black_market_v1.webp") center / cover no-repeat;
 }
 
 .system-fullscreen-shell {
@@ -1888,7 +1888,7 @@ h1 {
   background:
     linear-gradient(90deg, rgba(0, 0, 0, 0.72), transparent 34%, rgba(0, 0, 0, 0.62) 94%),
     linear-gradient(135deg, color-mix(in srgb, var(--role-color) 22%, transparent), transparent 48%),
-    url("/art/approved/backgrounds/background_auction_hall_v1.png") center / cover no-repeat;
+    url("/art/approved/backgrounds/background_auction_hall_v1.webp") center / cover no-repeat;
 }
 
 .bidder-copy {
@@ -2297,7 +2297,7 @@ h1 {
   border-radius: 8px;
   background:
     linear-gradient(180deg, rgba(8, 5, 4, 0.28), rgba(8, 5, 4, 0.86)),
-    url("/art/approved/backgrounds/background_black_market_v1.png") center / cover no-repeat;
+    url("/art/approved/backgrounds/background_black_market_v1.webp") center / cover no-repeat;
 }
 
 .battle-prev-map-bg,
@@ -2870,7 +2870,7 @@ h1 {
   background:
     linear-gradient(90deg, rgba(3, 5, 6, 0.38), rgba(3, 5, 6, 0.12) 52%, rgba(3, 5, 6, 0.55)),
     linear-gradient(180deg, rgba(3, 5, 6, 0.2), rgba(3, 5, 6, 0.72)),
-    url("/art/approved/backgrounds/background_black_market_v1.png") center / cover no-repeat;
+    url("/art/approved/backgrounds/background_black_market_v1.webp") center / cover no-repeat;
 }
 
 .battle-scene-world-map .battle-prev-node {
@@ -3581,7 +3581,7 @@ h1 {
   background:
     linear-gradient(90deg, rgba(37, 16, 9, 0.36), rgba(5, 8, 7, 0.1) 52%, rgba(37, 16, 9, 0.42)),
     linear-gradient(180deg, rgba(86, 27, 22, 0.14), rgba(7, 5, 4, 0.72)),
-    url("/art/approved/backgrounds/background_black_market_v1.png") center / cover no-repeat;
+    url("/art/approved/backgrounds/background_black_market_v1.webp") center / cover no-repeat;
 }
 
 .battle-scene-world-map .battle-prev-map-bg {
@@ -4072,7 +4072,7 @@ h1 {
   background:
     linear-gradient(180deg, rgba(3, 7, 9, 0.42), rgba(3, 7, 9, 0.8)),
     radial-gradient(circle at 48% 45%, rgba(216, 173, 95, 0.18), transparent 32%),
-    url("/art/approved/backgrounds/background_black_market_v1.png") center / cover no-repeat;
+    url("/art/approved/backgrounds/background_black_market_v1.webp") center / cover no-repeat;
 }
 
 .hall-map-canvas::before {
@@ -7923,7 +7923,7 @@ button.cabinet-slot {
     linear-gradient(90deg, rgba(18, 10, 6, 0.82), rgba(32, 18, 10, 0.2) 46%, rgba(16, 9, 7, 0.78)),
     linear-gradient(180deg, rgba(82, 42, 18, 0.26), rgba(8, 5, 4, 0.74)),
     var(--room-art),
-    url("/art/approved/backgrounds/background_auction_hall_v1.png");
+    url("/art/approved/backgrounds/background_auction_hall_v1.webp");
   background-position: center;
   background-size: cover;
   filter: sepia(0.18) saturate(0.9) contrast(1.08);
@@ -8642,7 +8642,7 @@ button.cabinet-slot {
   padding: 0;
   background:
     linear-gradient(180deg, rgba(7, 5, 4, 0.08), rgba(7, 5, 4, 0.18)),
-    url("/art/approved/ui/itembox_pic_1.png") left top / calc(100% / 10) var(--warehouse-cell) repeat;
+    url("/art/approved/ui/itembox_pic_1.webp") left top / calc(100% / 10) var(--warehouse-cell) repeat;
   scrollbar-color: rgba(245, 216, 139, 0.82) rgba(255, 255, 255, 0.12);
   scrollbar-width: thin;
 }
@@ -8681,7 +8681,7 @@ button.cabinet-slot {
   border-radius: 0;
   color: #f8e7bd;
   background:
-    url("/art/approved/ui/rank0.png") center / 100% 100% no-repeat,
+    url("/art/approved/ui/rank0.webp") center / 100% 100% no-repeat,
     rgba(16, 10, 7, 0.05);
 }
 
@@ -8698,49 +8698,49 @@ button.cabinet-slot {
 .warehouse-side .warehouse-slot.known {
   --warehouse-slot-frame: rgba(239, 204, 134, 0.56);
   background:
-    url("/art/approved/ui/rank0.png") center / 100% 100% no-repeat,
+    url("/art/approved/ui/rank0.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-junk {
   --warehouse-slot-frame: rgba(155, 164, 171, 0.78);
   background:
-    url("/art/approved/ui/rank1.png") center / 100% 100% no-repeat,
+    url("/art/approved/ui/rank1.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-common {
   --warehouse-slot-frame: rgba(185, 133, 54, 0.86);
   background:
-    url("/art/approved/ui/rank2.png") center / 100% 100% no-repeat,
+    url("/art/approved/ui/rank2.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-fine {
   --warehouse-slot-frame: rgba(216, 173, 95, 0.88);
   background:
-    url("/art/approved/ui/rank3.png") center / 100% 100% no-repeat,
+    url("/art/approved/ui/rank3.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-rare {
   --warehouse-slot-frame: rgba(168, 85, 247, 0.94);
   background:
-    url("/art/approved/ui/rank4.png") center / 100% 100% no-repeat,
+    url("/art/approved/ui/rank4.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-legendary {
   --warehouse-slot-frame: rgba(255, 214, 83, 0.96);
   background:
-    url("/art/approved/ui/rank5.png") center / 100% 100% no-repeat,
+    url("/art/approved/ui/rank5.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-mythic {
   --warehouse-slot-frame: rgba(212, 91, 91, 0.96);
   background:
-    url("/art/approved/ui/rank6.png") center / 100% 100% no-repeat,
+    url("/art/approved/ui/rank6.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
@@ -9913,7 +9913,7 @@ button.danger {
     linear-gradient(90deg, rgba(18, 10, 6, 0.96), rgba(35, 19, 10, 0.72) 46%, rgba(12, 7, 5, 0.96)),
     linear-gradient(180deg, rgba(103, 45, 19, 0.36), rgba(7, 5, 4, 0.92)),
     var(--ceremony-room-art),
-    url("/art/approved/backgrounds/background_auction_hall_v1.png");
+    url("/art/approved/backgrounds/background_auction_hall_v1.webp");
   background-position: center;
   background-size: cover;
 }
@@ -10373,7 +10373,7 @@ button.danger {
   width: min(38%, 34px);
   aspect-ratio: 1;
   display: block;
-  background: url("/art/approved/ui/img_loading_1.png") center / contain no-repeat;
+  background: url("/art/approved/ui/img_loading_1.webp") center / contain no-repeat;
   filter: drop-shadow(0 0 10px rgba(245, 216, 139, 0.58));
   animation: ceremonySourceLoadingSpin 660ms linear infinite;
 }
@@ -10555,7 +10555,7 @@ button.danger {
   padding: 24px;
   background:
     linear-gradient(90deg, rgba(0, 0, 0, 0.92), rgba(12, 7, 5, 0.74), rgba(0, 0, 0, 0.92)),
-    url("/art/approved/backgrounds/background_auction_hall_v1.png") center / cover no-repeat;
+    url("/art/approved/backgrounds/background_auction_hall_v1.webp") center / cover no-repeat;
 }
 
 .battle-end-preview-panel {
@@ -10793,7 +10793,7 @@ button.danger {
   inset: 0;
   z-index: 0;
   opacity: 0.12;
-  background: url("/art/approved/ui/ui_settlement_plate_v1.png") center / cover no-repeat;
+  background: url("/art/approved/ui/ui_settlement_plate_v1.webp") center / cover no-repeat;
 }
 
 .texture-panel > * {

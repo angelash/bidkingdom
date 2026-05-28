@@ -21,8 +21,8 @@ import {
   itemById,
   skillById,
   skillEffectById,
-  validateBidKingParity
 } from '@bitkingdom/bidking-compat';
+import { validateBidKingParity } from '@bitkingdom/bidking-compat/parity';
 import type {
   BidKingGameDataSnapshot,
   BidKingGameSkillDataSnapshot,

@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AdminDashboard } from '../admin/AdminDashboard';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { AccountGate } from './AccountGate';
 import { AppTopBar } from './AppTopBar';
 import { useGameKeyboardLayer } from './useGameKeyboardLayer';
@@ -11,17 +10,11 @@ import {
   SERVER_URL,
   useBidKingAppState
 } from './useBidKingAppState';
-import {
-  useNow
-} from '../battle/BattlePanels';
-import { MatchRoute } from '../battle/MatchRoute';
 import { useBidComposerActions } from '../battle/useBidComposerActions';
 import { useMatchDerivedState } from '../battle/useMatchDerivedState';
-import { MainHallRoute } from '../home/MainHallRoute';
 import { useLiveIntelActions } from '../intel/useLiveIntelActions';
 import { useProfileActions } from '../profile/useProfileActions';
 import { saveSession } from '../profile/profileSession';
-import { RoomLobbyRoute } from '../room/RoomLobbyRoute';
 import { useRoomActions } from '../room/useRoomActions';
 import { useReplayActions } from '../settlement/useReplayActions';
 import { useBidKingSocket } from '../socket/useBidKingSocket';
@@ -29,6 +22,11 @@ import { GameExceptionCenter } from '../system/GameExceptionCenter';
 import { bidKingToastErrorStyle } from '../system/errorCodeStyleRuntime';
 import { useBidKingSoundBridge } from '../system/useBidKingSoundBridge';
 import { useGameExceptionCenter } from '../system/useGameExceptionCenter';
+
+const AdminDashboard = lazy(() => import('../admin/AdminDashboard').then((module) => ({ default: module.AdminDashboard })));
+const MainHallRoute = lazy(() => import('../home/MainHallRoute').then((module) => ({ default: module.MainHallRoute })));
+const MatchRoute = lazy(() => import('../battle/MatchRoute').then((module) => ({ default: module.MatchRoute })));
+const RoomLobbyRoute = lazy(() => import('../room/RoomLobbyRoute').then((module) => ({ default: module.RoomLobbyRoute })));
 
 export function BidKingApp(): JSX.Element {
   const exceptions = useGameExceptionCenter();
@@ -97,6 +95,7 @@ export function BidKingApp(): JSX.Element {
     socket,
     toast
   } = useBidKingSocket({
+    enabled: authStatus === 'ready',
     serverUrl: SERVER_URL,
     onException: reportException,
     onProfileUpdated: applyProfileSnapshot,
@@ -331,65 +330,67 @@ export function BidKingApp(): JSX.Element {
         onSwitchView={switchView}
       />
 
-      {view === 'admin' && <AdminDashboard serverUrl={SERVER_URL} />}
+      <Suspense fallback={null}>
+        {view === 'admin' && <AdminDashboard serverUrl={SERVER_URL} />}
 
-      {view === 'play' && (!room || isMatchingView) && (
-        <MainHallRoute
-          defaultBidMapId={defaultBidMapId}
-          mapGroups={bidKingBattleMapGroups}
-          playerName={playerName}
-          profile={profile}
-          account={account}
-          profileActions={profileActions}
-          roomActions={roomActions}
-          selectedBidMapId={selectedBidMapId}
-          selectedRoleId={selectedRoleId}
-          serverUrl={SERVER_URL}
-          sessionToken={sessionToken}
-          authError={authError}
-          matchmaking={battlePrevMatchmaking}
-          onCancelMatchmaking={() => {
-            roomActions.cancelMatchmaking();
-            setMatchmakingState(undefined);
-            navigation.returnHome();
-          }}
-          onChangeAccountPassword={changeAccountPassword}
-          onReportException={reportException}
-          onSetBotCount={setBotCount}
-          onLogoutAllAccounts={logoutAllAccounts}
-          onLogoutAccount={logoutAccount}
-          onSetPlayerName={setPlayerName}
-          onUpgradeGuestAccount={upgradeGuestAccount}
-        />
-      )}
+        {view === 'play' && (!room || isMatchingView) && (
+          <MainHallRoute
+            defaultBidMapId={defaultBidMapId}
+            mapGroups={bidKingBattleMapGroups}
+            playerName={playerName}
+            profile={profile}
+            account={account}
+            profileActions={profileActions}
+            roomActions={roomActions}
+            selectedBidMapId={selectedBidMapId}
+            selectedRoleId={selectedRoleId}
+            serverUrl={SERVER_URL}
+            sessionToken={sessionToken}
+            authError={authError}
+            matchmaking={battlePrevMatchmaking}
+            onCancelMatchmaking={() => {
+              roomActions.cancelMatchmaking();
+              setMatchmakingState(undefined);
+              navigation.returnHome();
+            }}
+            onChangeAccountPassword={changeAccountPassword}
+            onReportException={reportException}
+            onSetBotCount={setBotCount}
+            onLogoutAllAccounts={logoutAllAccounts}
+            onLogoutAccount={logoutAccount}
+            onSetPlayerName={setPlayerName}
+            onUpgradeGuestAccount={upgradeGuestAccount}
+          />
+        )}
 
-      {view === 'play' && room && !snapshot && !matchmakingState && (
-        <RoomLobbyRoute
-          isHost={matchState.isHost}
-          mapGroups={bidKingBattleMapGroups}
-          profile={profile}
-          room={room}
-          roomActions={roomActions}
-          selectedRoleId={selectedRoleId}
-          selfPlayerId={selfPlayerId}
-          onReady={() => socket?.emit('setReady', { ready: true })}
-          onReturnHome={navigation.returnHome}
-        />
-      )}
+        {view === 'play' && room && !snapshot && !matchmakingState && (
+          <RoomLobbyRoute
+            isHost={matchState.isHost}
+            mapGroups={bidKingBattleMapGroups}
+            profile={profile}
+            room={room}
+            roomActions={roomActions}
+            selectedRoleId={selectedRoleId}
+            selfPlayerId={selfPlayerId}
+            onReady={() => socket?.emit('setReady', { ready: true })}
+            onReturnHome={navigation.returnHome}
+          />
+        )}
 
-      {view === 'play' && (
-        <MatchRoute
-          bidComposer={bidComposer}
-          liveIntel={liveIntel}
-          matchState={matchState}
-          snapshot={snapshot}
-          onContinueFinalCeremony={navigation.returnHome}
-          onPassAuction={() => socket?.emit('passAuction')}
-          onSendEmote={(emote) => socket?.emit('sendEmote', { emote })}
-          onSelectSkillTarget={setSkillTargetId}
-          onUseBattleItem={navigation.useBattleItemClick}
-        />
-      )}
+        {view === 'play' && snapshot && (
+          <MatchRoute
+            bidComposer={bidComposer}
+            liveIntel={liveIntel}
+            matchState={matchState}
+            snapshot={snapshot}
+            onContinueFinalCeremony={navigation.returnHome}
+            onPassAuction={() => socket?.emit('passAuction')}
+            onSendEmote={(emote) => socket?.emit('sendEmote', { emote })}
+            onSelectSkillTarget={setSkillTargetId}
+            onUseBattleItem={navigation.useBattleItemClick}
+          />
+        )}
+      </Suspense>
 
       <footer className={`toast-line ${bidKingToastErrorStyle(toast).className}`}>{toast}</footer>
       <GameExceptionCenter
@@ -411,6 +412,15 @@ export function BidKingApp(): JSX.Element {
       />
     </main>
   );
+}
+
+function useNow(): number {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, []);
+  return now;
 }
 
 function roundPhaseLabel(phase: string): string {

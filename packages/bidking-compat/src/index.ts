@@ -1,5 +1,5 @@
 export * from './schema';
-export * from './parity';
+export * from './closeRate';
 export * from './activityRuntime';
 export { Access } from './tables/Access';
 export { Achievement } from './tables/Achievement';

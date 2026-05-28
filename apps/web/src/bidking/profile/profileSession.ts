@@ -12,7 +12,6 @@ import {
   bidKingStarterInventoryRewards
 } from '@bitkingdom/match-core';
 import type { AccountSessionSnapshot, CoreAuctionMode, PlayerInventoryEntry, PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
-import { codexCatalogItems } from '../catalog/codexRuntime';
 
 const PROFILE_KEY = 'bk_profile_v2';
 const PROFILE_ID_KEY = 'bk_profile_id_v1';
@@ -20,7 +19,6 @@ const SESSION_KEY = 'bk_session_v2';
 const ACCOUNT_SESSION_KEY = 'bk_account_session_v1';
 const DEVICE_ID_KEY = 'bk_device_id_v1';
 const CORE_AUCTION_MODE_KEY = 'bk_core_auction_mode';
-const UNLOCK_ALL_CODEX_FOR_REVIEW = true;
 const DEFAULT_PROFILE_COINS = bidKingStarterCoins();
 
 export interface StoredAccountSession {
@@ -197,10 +195,9 @@ export function normalizeProfileForReview(profile: PlayerProfile): PlayerProfile
   const now = Date.now();
   const profileCoins = profile.coins;
   const ticket = bidKingTickets.find((row) => row.id === profile.tickets?.id) ?? bidKingTickets[0];
-  const catalogIds = new Set(codexCatalogItems.map((item) => item.id));
   const retainedCodex = profile.codex
     .map(canonicalCodexItemId)
-    .filter((itemId) => catalogIds.has(itemId));
+    .filter(Boolean);
   const normalized: PlayerProfile = {
     ...profile,
     coins: profileCoins,
@@ -267,14 +264,9 @@ export function normalizeProfileForReview(profile: PlayerProfile): PlayerProfile
     normalized.selectedHeroId = normalized.heroStates.find((state) => state.state !== 'locked')?.heroId ?? bidKingDefaultHeroId();
   }
   ensureStarterRewards(normalized, now);
-  if (!UNLOCK_ALL_CODEX_FOR_REVIEW) {
-    return { ...normalized, codex: [...new Set(retainedCodex)] };
-  }
-  const allItemIds = [...catalogIds];
-  const mergedCodex = [...new Set([...retainedCodex, ...allItemIds])];
   return {
     ...normalized,
-    codex: mergedCodex
+    codex: [...new Set(retainedCodex)]
   };
 }
 

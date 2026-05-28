@@ -1,4 +1,5 @@
 import * as BidKingCompat from '@bitkingdom/bidking-compat';
+import { validateBidKingParity } from '@bitkingdom/bidking-compat/parity';
 import type { AdminConfigParitySnapshot } from '@bitkingdom/shared';
 
 const bidKingConfigTableRows: Record<keyof typeof BidKingCompat.BIDKING_PARITY_TARGETS, readonly unknown[]> = {
@@ -57,7 +58,7 @@ const bidKingConfigTableRows: Record<keyof typeof BidKingCompat.BIDKING_PARITY_T
 };
 
 export function buildAdminConfigParity(): AdminConfigParitySnapshot {
-  const failures = BidKingCompat.validateBidKingParity();
+  const failures = validateBidKingParity();
   const rows = (Object.entries(BidKingCompat.BIDKING_PARITY_TARGETS) as Array<[keyof typeof BidKingCompat.BIDKING_PARITY_TARGETS, number]>)
     .map(([table, expectedRows]) => {
       const actualRows = bidKingConfigTableRows[table].length;

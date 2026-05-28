@@ -1,20 +1,20 @@
 export const artAssets = {
-  backgroundAuctionHall: '/art/approved/backgrounds/background_auction_hall_v1.png',
-  backgroundBlackMarket: '/art/approved/backgrounds/background_black_market_v1.png',
-  roleLineup: '/art/approved/roles/role_lineup_v1.png',
-  containerPalace: '/art/approved/containers/container_palace_v1.png',
-  containerBattlefield: '/art/approved/containers/container_battlefield_v1.png',
-  containerShip: '/art/approved/containers/container_ship_v1.png',
-  containerArmory: '/art/approved/containers/container_armory_v1.png',
-  containerAcademy: '/art/approved/containers/container_academy_v1.png',
-  containerBlackMarket: '/art/approved/containers/container_black_market_v1.png',
-  settlementPlate: '/art/approved/ui/ui_settlement_plate_v1.png'
+  backgroundAuctionHall: '/art/approved/backgrounds/background_auction_hall_v1.webp',
+  backgroundBlackMarket: '/art/approved/backgrounds/background_black_market_v1.webp',
+  roleLineup: '/art/approved/roles/role_lineup_v1.webp',
+  containerPalace: '/art/approved/containers/container_palace_v1.webp',
+  containerBattlefield: '/art/approved/containers/container_battlefield_v1.webp',
+  containerShip: '/art/approved/containers/container_ship_v1.webp',
+  containerArmory: '/art/approved/containers/container_armory_v1.webp',
+  containerAcademy: '/art/approved/containers/container_academy_v1.webp',
+  containerBlackMarket: '/art/approved/containers/container_black_market_v1.webp',
+  settlementPlate: '/art/approved/ui/ui_settlement_plate_v1.webp'
 } as const;
 
 function roleArt(roleId: string): { avatar: string; portrait: string } {
   return {
-    avatar: `/art/approved/roles/role_${roleId}_avatar_v1.png`,
-    portrait: `/art/approved/roles/role_${roleId}_portrait_v1.png`
+    avatar: `/art/approved/roles/role_${roleId}_avatar_v1.webp`,
+    portrait: `/art/approved/roles/role_${roleId}_portrait_v1.webp`
   };
 }
 
@@ -75,7 +75,7 @@ export function itemIconForKey(iconKey?: string): string | undefined {
 
   const bidKingItemMatch = /^bidking_item_(\d+)$/.exec(iconKey);
   if (bidKingItemMatch?.[1]) {
-    return `/art/generated/bidking/items/bidking_item_${bidKingItemMatch[1]}.png`;
+    return `/art/generated/bidking/items/bidking_item_${bidKingItemMatch[1]}.webp`;
   }
   return undefined;
 }

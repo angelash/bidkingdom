@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import {
   Archive,
   Award,
@@ -10,7 +10,6 @@ import {
   Gavel,
   Info,
   KeyRound,
-  ListChecks,
   LogOut,
   Shield,
   Trophy,
@@ -23,44 +22,35 @@ import { bidKingBestAvailableBidMapId, bidKingSourceRoles } from '@bitkingdom/ma
 import type { CoreAuctionMode, PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
 import { containerArtForKey } from '../../artAssets';
 import { sourcePathForOutgameHub, titleForOutgameHub, type BidKingOutgameHubWindowKey } from '../app/windowRegistry';
-import { RechargePanelView, PassPanelView, type ActivityTargetView, type SimPlanView } from '../activity/ActivityPanels';
-import {
-  BattlePrevPanelView,
-  type BattlePrevMatchmakingState,
-  type BidKingBattleMapGroup
-} from '../battlePrev/BattlePrevPanelView';
-import { BidderPanelView } from '../bidder/BidderPanelView';
-import { CabinetBrowser } from '../cabinet/CabinetBrowser';
-import { HandBookPanel } from '../catalog/HandBookPanel';
+import type { ActivityTargetView, SimPlanView } from '../activity/ActivityPanels';
+import type { BattlePrevMatchmakingState, BidKingBattleMapGroup } from '../battlePrev/BattlePrevPanelView';
 import { formatChineseCompactCurrency } from '../currencyFormat';
-import { FriendPanelView } from '../friend/FriendPanelView';
-import { ClubPanelView } from '../guild/ClubPanelView';
-import { MailPanelView } from '../mail/MailPanelView';
-import { AuctionHousePanelView, TradePanelView } from '../market/MarketPanels';
-import { PackagePanelView } from '../package/PackagePanelView';
-import { RankDetailPanel } from '../rank/RankDetailPanel';
-import { ShopPanelView } from '../shop/ShopPanelView';
-import { FeedbackPanelView, SettingsPanelView } from '../system/SystemPanels';
-import {
-  bidKingStartupNoticeQueue,
-  nextBidKingGuideStep,
-  safeBidKingDisplayText,
-  translateBidKingLanguage,
-  type BidKingStartupNotice
-} from '../system/bidKingSystemRuntime';
+import type { BidKingStartupNotice } from '../system/bidKingSystemRuntime';
 import type { GameExceptionInput } from '../system/gameExceptionRuntime';
-import { TaskDetailPanel } from '../task/TaskDetailPanel';
-import { taskBoardDefinitions } from '../task/taskDefinitions';
 
-type HallCatalogItem = (typeof gameConfig.items)[number] & {
-  bidKingQuality?: number;
-  collectionCoinPerHour?: number;
-};
+const AuctionHousePanelView = lazy(() => import('../market/MarketPanels').then((module) => ({ default: module.AuctionHousePanelView })));
+const BattlePrevPanelView = lazy(() => import('../battlePrev/BattlePrevPanelView').then((module) => ({ default: module.BattlePrevPanelView })));
+const BidderPanelView = lazy(() => import('../bidder/BidderPanelView').then((module) => ({ default: module.BidderPanelView })));
+const CabinetBrowserRoute = lazy(() => import('../cabinet/CabinetBrowserRoute'));
+const ClubPanelView = lazy(() => import('../guild/ClubPanelView').then((module) => ({ default: module.ClubPanelView })));
+const FeedbackPanelView = lazy(() => import('../system/SystemPanels').then((module) => ({ default: module.FeedbackPanelView })));
+const FriendPanelView = lazy(() => import('../friend/FriendPanelView').then((module) => ({ default: module.FriendPanelView })));
+const HandBookPanelRoute = lazy(() => import('../catalog/HandBookPanelRoute'));
+const MailPanelView = lazy(() => import('../mail/MailPanelView').then((module) => ({ default: module.MailPanelView })));
+const PackagePanelView = lazy(() => import('../package/PackagePanelView').then((module) => ({ default: module.PackagePanelView })));
+const PassPanelView = lazy(() => import('../activity/ActivityPanels').then((module) => ({ default: module.PassPanelView })));
+const RankDetailPanel = lazy(() => import('../rank/RankDetailPanel').then((module) => ({ default: module.RankDetailPanel })));
+const RechargePanelView = lazy(() => import('../activity/ActivityPanels').then((module) => ({ default: module.RechargePanelView })));
+const SettingsPanelView = lazy(() => import('../system/SystemPanels').then((module) => ({ default: module.SettingsPanelView })));
+const ShopPanelView = lazy(() => import('../shop/ShopPanelView').then((module) => ({ default: module.ShopPanelView })));
+const TaskHubPanel = lazy(() => import('../task/TaskHubPanel'));
+const TradePanelView = lazy(() => import('../market/MarketPanels').then((module) => ({ default: module.TradePanelView })));
+
+type BidKingSystemRuntimeModule = typeof import('../system/bidKingSystemRuntime');
 
 type OutgameHub = BidKingOutgameHubWindowKey;
 
 export function MainHallView({
-  catalogItems,
   defaultBidMapId,
   mapGroups,
   playerName,
@@ -122,7 +112,6 @@ export function MainHallView({
   onSetPlayerName,
   onUpgradeGuestAccount
 }: {
-  catalogItems: HallCatalogItem[];
   defaultBidMapId?: number;
   mapGroups: BidKingBattleMapGroup[];
   playerName: string;
@@ -187,15 +176,30 @@ export function MainHallView({
   const [activeHub, setActiveHub] = useState<OutgameHub>();
   const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const [battlePrevOpen, setBattlePrevOpen] = useState(false);
+  const [systemRuntime, setSystemRuntime] = useState<BidKingSystemRuntimeModule>();
   const [selectedBattleBidMapId, setSelectedBattleBidMapId] = useState(
     bidKingBestAvailableBidMapId(profile, selectedBidMapId) ?? selectedBidMapId ?? defaultBidMapId
   );
   const [dismissedStartupNoticeIds, setDismissedStartupNoticeIds] = useState<string[]>([]);
   const sourceRoles = bidKingSourceRoles(gameConfig.roles);
   const selectedRole = sourceRoles.find((role) => role.id === selectedRoleId) ?? sourceRoles[0] ?? gameConfig.roles[0]!;
-  const startupNotice = bidKingStartupNoticeQueue([...(profile.readNotices ?? []), ...dismissedStartupNoticeIds], 1)[0];
+  const startupNotice = systemRuntime?.bidKingStartupNoticeQueue([...(profile.readNotices ?? []), ...dismissedStartupNoticeIds], 1)[0];
   const guideTargetWindow = !battlePrevOpen && activeHub ? sourcePathForOutgameHub(activeHub) : undefined;
-  const guideStep = guideTargetWindow ? nextBidKingGuideStep(profile.completedGuides ?? [], guideTargetWindow) : undefined;
+  const guideStep = systemRuntime && guideTargetWindow ? systemRuntime.nextBidKingGuideStep(profile.completedGuides ?? [], guideTargetWindow) : undefined;
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void import('../system/bidKingSystemRuntime').then((module) => {
+        if (!cancelled) {
+          setSystemRuntime(module);
+        }
+      });
+    }, 800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
   useEffect(() => {
     if (selectedBidMapId) {
       setSelectedBattleBidMapId(selectedBidMapId);
@@ -398,11 +402,11 @@ export function MainHallView({
           {startupNotice.actionTarget && <em>{titleForOutgameHub(startupNotice.actionTarget)}</em>}
           {startupNotice.hasCancel && (
             <button type="button" onClick={() => markStartupNoticeRead(startupNotice.id)}>
-              {translateBidKingLanguage(startupNotice.cancelLabelKey, profile.settings.languageColumn ?? 1, startupNotice.cancelLabelKey)}
+              {systemRuntime?.translateBidKingLanguage(startupNotice.cancelLabelKey, profile.settings.languageColumn ?? 1, startupNotice.cancelLabelKey) ?? startupNotice.cancelLabelKey}
             </button>
           )}
           <button type="button" onClick={() => confirmStartupNotice(startupNotice)}>
-            {translateBidKingLanguage(startupNotice.okLabelKey, profile.settings.languageColumn ?? 1, startupNotice.okLabelKey)}
+            {systemRuntime?.translateBidKingLanguage(startupNotice.okLabelKey, profile.settings.languageColumn ?? 1, startupNotice.okLabelKey) ?? startupNotice.okLabelKey}
           </button>
         </aside>
       )}
@@ -416,8 +420,8 @@ export function MainHallView({
           role="note"
           aria-label="引导目标"
         >
-          <strong>{safeBidKingDisplayText(guideStep.title, '引导目标') || '引导目标'}</strong>
-          <p>{guideWindowDisplayLabel(guideStep.targetWindow)} · {guideStepDisplayText(guideStep.textKey, guideStep.targetNode, Number(profile.settings.languageColumn ?? 1))}</p>
+          <strong>{safeDisplayText(systemRuntime, guideStep.title, '引导目标') || '引导目标'}</strong>
+          <p>{guideWindowDisplayLabel(guideStep.targetWindow)} · {guideStepDisplayText(systemRuntime, guideStep.textKey, guideStep.targetNode, Number(profile.settings.languageColumn ?? 1))}</p>
           <em>{guideStep.anchor ? `(${guideStep.anchor.x}, ${guideStep.anchor.y})` : '等待触发'}</em>
           <button type="button" onClick={() => onCompleteGuide(guideStep.id)}>完成</button>
         </aside>
@@ -437,32 +441,35 @@ export function MainHallView({
       )}
 
       {activeHub === 'codex' && (
-        <HandBookPanel
-          items={catalogItems}
-          onClose={() => setActiveHub(undefined)}
-        />
+        <Suspense fallback={null}>
+          <HandBookPanelRoute onClose={() => setActiveHub(undefined)} />
+        </Suspense>
       )}
       {activeHub === 'package' && (
-        <PackagePanelView
-          profile={profile}
-          roles={gameConfig.roles}
-          serverUrl={serverUrl}
-          sessionToken={sessionToken}
-          onClose={() => setActiveHub(undefined)}
-          onClaimCollectionIncome={onClaimCollectionIncome}
-          onClaimReliefFund={onClaimReliefFund}
-        />
+        <Suspense fallback={null}>
+          <PackagePanelView
+            profile={profile}
+            roles={gameConfig.roles}
+            serverUrl={serverUrl}
+            sessionToken={sessionToken}
+            onClose={() => setActiveHub(undefined)}
+            onClaimCollectionIncome={onClaimCollectionIncome}
+            onClaimReliefFund={onClaimReliefFund}
+          />
+        </Suspense>
       )}
       {activeHub === 'bidder' && (
-        <BidderPanelView
-          profile={profile}
-          roles={gameConfig.roles}
-          selectedRoleId={selectedRoleId}
-          onClose={() => setActiveHub(undefined)}
-          onUnlockHero={onUnlockHero}
-          onSelectHeroSkin={onSelectHeroSkin}
-          onSelectRole={onSelectRole}
-        />
+        <Suspense fallback={null}>
+          <BidderPanelView
+            profile={profile}
+            roles={gameConfig.roles}
+            selectedRoleId={selectedRoleId}
+            onClose={() => setActiveHub(undefined)}
+            onUnlockHero={onUnlockHero}
+            onSelectHeroSkin={onSelectHeroSkin}
+            onSelectRole={onSelectRole}
+          />
+        </Suspense>
       )}
       {activeHub && !['codex', 'package', 'bidder'].includes(activeHub) && (
         <DetailModal
@@ -472,16 +479,14 @@ export function MainHallView({
           title={titleForOutgameHub(activeHub)}
           onClose={() => setActiveHub(undefined)}
         >
+          <Suspense fallback={null}>
           {activeHub === 'tasks' && (
-            <div className="task-modal-combo">
-              <TaskDetailPanel
-                profile={profile}
-                onClaimMissionReward={onClaimMissionReward}
-                onClaimAchievementReward={onClaimAchievementReward}
-                onClaimLevelReward={onClaimLevelReward}
-              />
-              <TaskBoard profile={profile} />
-            </div>
+            <TaskHubPanel
+              profile={profile}
+              onClaimMissionReward={onClaimMissionReward}
+              onClaimAchievementReward={onClaimAchievementReward}
+              onClaimLevelReward={onClaimLevelReward}
+            />
           )}
           {activeHub === 'rank' && <RankDetailPanel profile={profile} serverUrl={serverUrl} onClaimRankReward={onClaimRankReward} />}
           {activeHub === 'mail' && (
@@ -539,8 +544,7 @@ export function MainHallView({
             />
           )}
           {activeHub === 'cabinet' && (
-            <CabinetBrowser
-              items={catalogItems}
+            <CabinetBrowserRoute
               profile={profile}
               onSellAllCabinetItems={onSellAllCabinetItems}
             />
@@ -553,24 +557,27 @@ export function MainHallView({
               onSetShopItemCollection={onSetShopItemCollection}
             />
           )}
+          </Suspense>
         </DetailModal>
       )}
       {battlePrevOpen && (
-        <BattlePrevPanelView
-          matchmaking={matchmaking}
-          mapGroups={mapGroups}
-          selectedBidMapId={selectedBattleBidMapId}
-          profile={profile}
-          selectedRole={selectedRole}
-          selectedRoleId={selectedRoleId}
-          onCancel={() => setBattlePrevOpen(false)}
-          onConfirm={confirmBattlePrev}
-          onSelectBidMap={selectBattleBidMap}
-          onSelectRole={onSelectRole}
-          onReportException={onReportException}
-          onEquipBattleItems={onEquipBattleItems}
-          onCancelMatchmaking={onCancelMatchmaking}
-        />
+        <Suspense fallback={null}>
+          <BattlePrevPanelView
+            matchmaking={matchmaking}
+            mapGroups={mapGroups}
+            selectedBidMapId={selectedBattleBidMapId}
+            profile={profile}
+            selectedRole={selectedRole}
+            selectedRoleId={selectedRoleId}
+            onCancel={() => setBattlePrevOpen(false)}
+            onConfirm={confirmBattlePrev}
+            onSelectBidMap={selectBattleBidMap}
+            onSelectRole={onSelectRole}
+            onReportException={onReportException}
+            onEquipBattleItems={onEquipBattleItems}
+            onCancelMatchmaking={onCancelMatchmaking}
+          />
+        </Suspense>
       )}
     </section>
   );
@@ -691,20 +698,24 @@ function guideWindowDisplayLabel(targetWindow: string): string {
   return labels[targetWindow] ?? '引导目标';
 }
 
-function guideStepDisplayText(textKey: string, targetNode: string, languageColumn: number): string {
-  const translated = safeBidKingDisplayText(translateBidKingLanguage(textKey, languageColumn, ''), '');
+function guideStepDisplayText(systemRuntime: BidKingSystemRuntimeModule | undefined, textKey: string, targetNode: string, languageColumn: number): string {
+  const translated = safeDisplayText(systemRuntime, systemRuntime?.translateBidKingLanguage(textKey, languageColumn, '') ?? '', '');
   if (translated && translated !== '文书条目') {
     return translated;
   }
-  return `前往${guideNodeDisplayLabel(targetNode)}`;
+  return `前往${guideNodeDisplayLabel(systemRuntime, targetNode)}`;
 }
 
-function guideNodeDisplayLabel(targetNode: string): string {
+function guideNodeDisplayLabel(systemRuntime: BidKingSystemRuntimeModule | undefined, targetNode: string): string {
   const lastSegment = targetNode.split('/').filter(Boolean).at(-1) ?? targetNode;
   if (!lastSegment || /^[A-Za-z]+[_A-Za-z0-9]*$/.test(lastSegment)) {
     return '界面目标';
   }
-  return safeBidKingDisplayText(lastSegment, '界面目标') || '界面目标';
+  return safeDisplayText(systemRuntime, lastSegment, '界面目标') || '界面目标';
+}
+
+function safeDisplayText(systemRuntime: BidKingSystemRuntimeModule | undefined, value: string, defaultText = ''): string {
+  return systemRuntime?.safeBidKingDisplayText(value, defaultText) ?? (value.trim() || defaultText);
 }
 
 function DetailModal({
@@ -747,27 +758,5 @@ function DetailModal({
         <div className={`detail-modal-body ${bodyClassName ?? ''}`}>{children}</div>
       </section>
     </div>
-  );
-}
-
-function TaskBoard({ profile }: { profile: PlayerProfile }): JSX.Element {
-  return (
-    <section className="task-board">
-      <div className="section-title small">
-        <ListChecks size={16} />
-        <h3>每日/名望委托</h3>
-      </div>
-      {taskBoardDefinitions(profile).map((task) => {
-        const progress = profile.missionProgress?.[task.id];
-        const done = progress?.completed ?? profile.completedTasks.includes(task.id);
-        const claimable = progress?.claimable ?? false;
-        return (
-          <div className={`task-row ${done ? 'done' : ''} ${claimable ? 'claimable' : ''}`} key={task.id}>
-            <span>{claimable ? '!' : done ? '✓' : '·'}</span>
-            <p>{task.label}</p>
-          </div>
-        );
-      })}
-    </section>
   );
 }

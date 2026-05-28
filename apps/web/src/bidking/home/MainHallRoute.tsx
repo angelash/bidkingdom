@@ -3,7 +3,6 @@ import { bidKingHeroIdForRoleId } from '@bitkingdom/match-core';
 import { gameConfig } from '@bitkingdom/config';
 import { modeForBidMapId } from '../battlePrev/bidMapRuntime';
 import type { BattlePrevMatchmakingState, BidKingBattleMapGroup } from '../battlePrev/BattlePrevPanelView';
-import { codexCatalogItems } from '../catalog/codexRuntime';
 import type { ProfileActions } from '../profile/useProfileActions';
 import type { RoomActions } from '../room/useRoomActions';
 import { MainHallView } from './MainHallView';
@@ -58,7 +57,6 @@ export function MainHallRoute({
 }: MainHallRouteProps): JSX.Element {
   return (
     <MainHallView
-      catalogItems={codexCatalogItems}
       defaultBidMapId={defaultBidMapId}
       mapGroups={mapGroups}
       playerName={playerName}
