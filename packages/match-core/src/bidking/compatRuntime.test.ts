@@ -45,9 +45,11 @@ import {
   bidKingMarketRuleRuntime
 } from './marketRuleRuntime';
 import { buildSnapshot, createMatch as createRuntimeMatch, setRoundPhase, startNextRound } from '../match';
+import { createRandom } from '../random';
 import { useSkill } from '../skills';
 import { battleItemCooldownRemaining, battleItemEffectPlanForItem, skillForBattleItem, useBattleItem } from '../items';
 import type { BattleItemEffectPlan } from '../items';
+import type { MatchRuntimeState, WarehouseSlot } from '../types';
 import { bidKingHeroIdForRoleId } from './heroRuntime';
 import { BID_KING_BIDDER_ROLE_BINDINGS } from './bidderCatalog';
 import { buildBidKingGameDataSnapshot } from './gameDataRuntime';
@@ -2298,10 +2300,14 @@ describe('BidKing compatible core runtime', () => {
     const noKnownQuality = selectBidKingSlotsBySkill(slots, match, skillById(1002082)!, {
       knownInfoByItemId: new globalThis.Map<string, BidKingKnownInfoState>()
     });
+    const unknownQualityCandidateIds = slots
+      .filter((slot) => ![rankOnly, fullKnown, shapeAndRank].includes(slot))
+      .map((slot) => slot.item.id);
 
     expect(fullyUnknown.every((slot) => ![shapeOnly, rankOnly, fullKnown, shapeAndRank].includes(slot))).toBe(true);
-    expect(unknownQuality.some((slot) => slot.item.id === shapeOnly.item.id)).toBe(true);
+    expect(unknownQuality).toHaveLength(2);
     expect(unknownQuality.every((slot) => ![rankOnly, fullKnown, shapeAndRank].includes(slot))).toBe(true);
+    expect(unknownQuality.map((slot) => slot.item.id)).not.toEqual(unknownQualityCandidateIds.slice(0, 2));
     expect(knownQuality.map((slot) => slot.item.id)).toEqual([
       rankOnly.item.id,
       fullKnown.item.id,
@@ -2312,6 +2318,59 @@ describe('BidKing compatible core runtime', () => {
       shapeAndRank.item.id
     ]);
     expect(noKnownQuality).toEqual([]);
+  });
+
+  it('uses source random sampling only for skills declared as random', () => {
+    const sourceSlot = (itemId: number, index: number): WarehouseSlot => {
+      const row = itemById(itemId)!;
+      return {
+        slotId: `source-${itemId}-${index}`,
+        x: index % 10,
+        y: Math.floor(index / 10),
+        w: 1,
+        h: 1,
+        item: {
+          id: `compat_${itemId}_${index}`,
+          name: row.packaged_name,
+          category: row.packaged_category,
+          rarity: 'common',
+          value: row.base_value,
+          displayValue: row.base_value,
+          iconKey: row.packaged_icon_key,
+          footprint: { w: 1, h: 1 }
+        }
+      };
+    };
+    const itemId = (typeId: number, index: number) => Item.filter((row) => row.item_type_id === typeId)[index]!.id;
+
+    const antiqueSlots = Array.from({ length: 9 }, (_, index) => sourceSlot(itemId(106, index), index));
+    const qilingSkill = skillById(10002073)!;
+    const qilingLimit = bidKingSourceTargetCountForCandidateCount(qilingSkill, antiqueSlots.length);
+    const qilingResult = selectBidKingSlotsBySkill(
+      antiqueSlots,
+      { rng: createRandom(3339) } as MatchRuntimeState,
+      qilingSkill
+    );
+
+    expect(qilingLimit).toBe(3);
+    expect(qilingResult.map((slot) => slot.item.id)).not.toEqual(
+      antiqueSlots.slice(0, qilingLimit).map((slot) => slot.item.id)
+    );
+
+    const medicalSlots = Array.from({ length: 5 }, (_, index) => sourceSlot(itemId(102, index), index));
+    const knownInfoByItemId = new globalThis.Map<string, BidKingKnownInfoState>(
+      medicalSlots.map((slot) => [slot.item.id, { shapeKnown: false, rankKnown: false, allKnown: false }])
+    );
+    const helenaResult = selectBidKingSlotsBySkill(
+      medicalSlots,
+      { rng: createRandom(3339) } as MatchRuntimeState,
+      skillById(1001091)!,
+      { knownInfoByItemId }
+    );
+
+    expect(helenaResult.map((slot) => slot.item.id)).toEqual(
+      medicalSlots.slice(0, 2).map((slot) => slot.item.id)
+    );
   });
 
   it('does not replace empty source skill targets with random warehouse slots', () => {

@@ -154,10 +154,11 @@ interface MatchmakingBucket {
 前端继续保留原版表现：
 
 1. 点击开始行动后关闭场景详情，回到大场景地图。
-2. 显示 `Match_Main` 式小悬浮窗，计时从 00:00 递增。
-3. 悬浮窗预计时间取服务端 `estimatedSeconds`。
-4. 取消按钮发送 `cancelMatchmaking`，不能只清本地 timer。
-5. 不显示 `RoomLobby`、准备按钮、房主开始按钮。
+2. 前端完成本地入场校验后立即进入匹配态，显示 `Match_Main` 式小悬浮窗，计时从 00:00 递增。
+3. 服务端 `matchGame` ack 成功后写入 `ticketId` 并用服务端 `estimatedSeconds` 修正悬浮窗预计时间；ack 失败则退出匹配态并显示错误。
+4. 后续 `matchmakingUpdated` 只修正排队状态，不负责首次打开悬浮窗。
+5. 取消按钮发送 `cancelMatchmaking`，不能只清本地 timer。
+6. 不显示 `RoomLobby`、准备按钮、房主开始按钮。
 
 ## 实现落点
 
@@ -190,3 +191,5 @@ interface MatchmakingBucket {
 当前实现已改为服务端权威匹配池：玩家先进入 Bucket，人数够则立即成局，最早玩家等待 10 秒仍不足则当前队列成局并补 Bot。前端只负责显示匹配状态和取消请求，不决定开局时间。
 
 私人房间仍保留 `createRoom / joinRoom / startMatch`。普通匹配使用 `matchGame / cancelMatchmaking`，匹配成功后服务端创建内部 Room 并直接生成 `MatchRuntimeState`，该 Room 不进入可见房间等待页。
+
+点击开始行动后，前端在本地校验通过时立即切到匹配悬浮窗，避免等待服务端 ack 期间没有反馈。服务端 ack 成功后补齐 `ticketId` 和预计时间；服务端拒绝时清除本地匹配态并显示拒绝原因。

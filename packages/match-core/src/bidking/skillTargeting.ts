@@ -12,6 +12,14 @@ import { bidKingSourceBoxInfoForSlot } from './gameDataRuntime';
 
 const ALL_ITEM_TYPES = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110] as const;
 const ALL_QUALITIES = [1, 2, 3, 4, 5, 6] as const;
+const SOURCE_RANDOM_SAMPLE_SKILL_IDS = new Set([
+  1001011, 1001012, 1001013, 1001014,
+  1001041, 1001042, 1001043, 1001044, 1001045,
+  1001071, 1001072, 1001073, 1001074,
+  1002021, 1002022, 1002023, 1002024,
+  1002062, 1002063, 1002064, 1002065,
+  10002073
+]);
 
 export interface BidKingKnownInfoState {
   shapeKnown: boolean;
@@ -62,7 +70,10 @@ export function selectBidKingSlotsBySkill(
   filtered = applyBidKingTarget(filtered, state, skill.skilltarget2, skill.skilltargetvalue2, targetCount, sourceSlots, true, options);
   filtered = applyBidKingTarget(filtered, state, skill.skilltarget3, skill.skilltargetvalue3, targetCount, sourceSlots, true, options);
   const limit = bidKingSourceTargetCountForCandidateCount(skill, filtered.length);
-  return filtered.slice(0, limit);
+  const ordered = shouldRandomizeSourceSample(skill, filtered.length, limit)
+    ? shuffleBidKingSlots(filtered, state)
+    : filtered;
+  return ordered.slice(0, limit);
 }
 
 export function bidKingKnowledgeByItemIdFromSkillFeed(
@@ -447,6 +458,18 @@ function bidKingNumericItemIdForSlot(slot: WarehouseSlot): number | undefined {
 function sourceItemUidOrder(slot: WarehouseSlot): number {
   const match = /^compat_\d+_(\d+)$/.exec(slot.item.id);
   return match?.[1] ? Number(match[1]) : slot.y * 10 + slot.x;
+}
+
+function shouldRandomizeSourceSample(
+  skill: BidKingSkillRow,
+  candidateCount: number,
+  limit: number
+): boolean {
+  if (limit <= 0 || limit >= candidateCount) {
+    return false;
+  }
+  const targetTypes = [skill.skilltarget, skill.skilltarget2, skill.skilltarget3];
+  return SOURCE_RANDOM_SAMPLE_SKILL_IDS.has(skill.id) && !targetTypes.includes(6) && !targetTypes.includes(8);
 }
 
 function shuffleBidKingSlots(slots: readonly WarehouseSlot[], state: MatchRuntimeState): WarehouseSlot[] {

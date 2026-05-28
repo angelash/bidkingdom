@@ -208,6 +208,7 @@ export function BidKingApp(): JSX.Element {
     setSelfPlayerId,
     setToast,
     onMatchmakingStarted: setMatchmakingState,
+    onMatchmakingStopped: () => setMatchmakingState(undefined),
     snapshot,
     socket
   });

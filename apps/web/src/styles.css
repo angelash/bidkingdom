@@ -10596,6 +10596,10 @@ button.danger {
   font-weight: 900;
 }
 
+.battle-end-preview-overlay.self-lose .battle-end-preview-title span {
+  color: #b9c9d6;
+}
+
 .battle-end-preview-title h2 {
   color: #fff7df;
   font-size: 48px;
@@ -10672,6 +10676,10 @@ button.danger {
 .battle-end-preview-items span.pending {
   color: #9bb4a4;
   border-style: dashed;
+}
+
+.battle-end-preview-items span svg {
+  color: #d8bd88;
 }
 
 .battle-end-preview-items img {

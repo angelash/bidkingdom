@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { PlayerSnapshot } from '@bitkingdom/shared';
 import { codexCatalogItems } from '../catalog/codexRuntime';
 import { HandBookPanel } from '../catalog/HandBookPanel';
+import { BattleEndPreview } from '../settlement/BattleEndPreview';
 import { BattleFinalCeremony } from '../settlement/BattleFinalCeremony';
 import type { LiveIntelActions } from '../intel/useLiveIntelActions';
 import { BattleOverlayLayer } from './BattleOverlayLayer';
@@ -33,6 +34,7 @@ export function MatchRoute({
   onUseBattleItem
 }: MatchRouteProps): JSX.Element {
   const [handBookOpen, setHandBookOpen] = useState(false);
+  const [completedEndPreviewRoundIds, setCompletedEndPreviewRoundIds] = useState<Set<string>>(() => new Set());
   const currentRound = matchState.currentRound;
   const showFinalCeremony = Boolean(
     snapshot &&
@@ -40,11 +42,41 @@ export function MatchRoute({
     currentRound.settlement?.isFinal &&
     (snapshot.public.status === 'ended' || currentRound.phase === 'reveal' || currentRound.phase === 'settlement')
   );
+  const showEndPreview = Boolean(
+    snapshot &&
+    currentRound &&
+    showFinalCeremony &&
+    currentRound.phase === 'reveal' &&
+    currentRound.revealedItems.length === 0 &&
+    currentRound.settlement?.winnerId &&
+    !completedEndPreviewRoundIds.has(currentRound.id)
+  );
+  const currentRoundId = currentRound?.id;
+  const completeEndPreview = useCallback(() => {
+    if (!currentRoundId) {
+      return;
+    }
+    setCompletedEndPreviewRoundIds((current) => {
+      if (current.has(currentRoundId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(currentRoundId);
+      return next;
+    });
+  }, [currentRoundId]);
 
   return (
     <>
       {snapshot && currentRound && (snapshot.public.status !== 'ended' || showFinalCeremony) && (
-        showFinalCeremony ? (
+        showEndPreview ? (
+          <BattleEndPreview
+            onComplete={completeEndPreview}
+            round={currentRound}
+            selfPlayerId={matchState.selfPlayer?.id}
+            snapshot={snapshot}
+          />
+        ) : showFinalCeremony ? (
           <BattleFinalCeremony
             onContinue={onContinueFinalCeremony}
             round={currentRound}

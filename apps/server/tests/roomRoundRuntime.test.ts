@@ -1,5 +1,6 @@
 import { gameConfig } from '@bitkingdom/config';
-import { createMatch, setRoundPhase, startNextRound } from '@bitkingdom/match-core';
+import { createMatch, passAuction, setRoundPhase, startNextRound, submitBid } from '@bitkingdom/match-core';
+import { SOURCE_BID_SUCCESS_PREVIEW_MS } from '@bitkingdom/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRoomRoundRuntime } from '../src/domain/battle/roomRoundRuntime';
 import type { Room } from '../src/domain/battle/roomLifecycleRuntime';
@@ -81,5 +82,67 @@ describe('room round runtime', () => {
     expect(match.currentRound?.phase).toBe('auction');
     expect(match.players.find((player) => player.id === 'p1')?.hasSubmittedBid).toBe(false);
     expect(match.players.find((player) => player.id === 'p1')?.passed).toBe(false);
+  });
+
+  it('waits on the bid success preview before starting final item reveal', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(20_000);
+    const match = createMatch({
+      id: 'bid-success-preview-delay',
+      seed: 52526,
+      players,
+      totalRounds: 5,
+      coreMode: true,
+      coreAuctionMode: 'sealed',
+      coreBidMapId: 2601,
+      config: gameConfig,
+      now: Date.now()
+    });
+    for (const player of match.players) {
+      player.cash = 1_000_000;
+    }
+    startNextRound(match, Date.now());
+    setRoundPhase(match, 'auction', 60_000, Date.now());
+
+    submitBid(match, 'p1', 300_000, Date.now() + 10);
+    submitBid(match, 'b1', 100_000, Date.now() + 20);
+    passAuction(match, 'b2', Date.now() + 30);
+    passAuction(match, 'b3', Date.now() + 40);
+
+    const room: Room = {
+      id: 'room-bid-success-preview-delay',
+      code: 'PREV',
+      hostId: 'p1',
+      botCount: 3,
+      totalRounds: 5,
+      initialCash: gameConfig.rules.initialCash,
+      coreAuctionMode: 'sealed',
+      selectedBidMapId: 2601,
+      status: 'playing',
+      players: [],
+      botProfiles: new Map(),
+      match,
+      timers: []
+    };
+    const runtime = createRoomRoundRuntime({
+      broadcastRoom: () => undefined,
+      broadcastMatch: () => undefined,
+      settleProfilesForEndedMatch: () => undefined,
+      logRoundEvent: () => undefined,
+      warnRoundIssue: () => undefined,
+      warnSettleFailed: () => undefined
+    });
+
+    runtime.maybeSettleEarly(room);
+
+    expect(match.currentRound?.phase).toBe('reveal');
+    expect(match.currentRound?.settlement?.isFinal).toBe(true);
+    expect(match.currentRound?.revealedItems).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(SOURCE_BID_SUCCESS_PREVIEW_MS - 1);
+    expect(match.currentRound?.revealedItems).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(match.currentRound?.revealedItems).toHaveLength(1);
   });
 });

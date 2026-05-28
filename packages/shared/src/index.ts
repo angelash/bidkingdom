@@ -38,6 +38,8 @@ export const SOURCE_FINAL_REVEAL_QUALITY_7_TIMING: SourceFinalRevealTiming = {
   delayMs: 4000
 };
 
+export const SOURCE_BID_SUCCESS_PREVIEW_MS = 3000;
+
 export function sourceFinalRevealDelayMs(rarity: Rarity): number {
   return SOURCE_FINAL_REVEAL_TIMING_BY_RARITY[rarity].delayMs;
 }

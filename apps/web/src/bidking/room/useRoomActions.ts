@@ -41,6 +41,7 @@ interface UseRoomActionsArgs {
   setSelfPlayerId: (playerId?: string) => void;
   setToast: (message: string) => void;
   onMatchmakingStarted: (state: { bidMapId: number; estimatedSeconds: number; startedAt: number; ticketId?: string }) => void;
+  onMatchmakingStopped: () => void;
   snapshot?: PlayerSnapshot;
   socket: BidKingSocket | null;
 }
@@ -73,6 +74,7 @@ export function useRoomActions({
   setSelfPlayerId,
   setToast,
   onMatchmakingStarted,
+  onMatchmakingStopped,
   snapshot,
   socket
 }: UseRoomActionsArgs): RoomActions {
@@ -177,6 +179,14 @@ export function useRoomActions({
     saveCoreAuctionMode(sceneMode);
     localStorage.setItem(SELECTED_BID_MAP_KEY, String(bidMapId));
     setCoreAuctionMode(sceneMode);
+    const startedAt = Date.now();
+    matchmakingTicketRef.current = undefined;
+    onMatchmakingStarted({
+      bidMapId,
+      estimatedSeconds: 10,
+      startedAt
+    });
+    setToast('正在匹配对局');
     socket.emit('matchGame', {
       playerName,
       profileId,
@@ -186,6 +196,8 @@ export function useRoomActions({
       selectedBidMapId: bidMapId
     }, (ack) => {
       if (!ack.ok) {
+        matchmakingTicketRef.current = undefined;
+        onMatchmakingStopped();
         setToast(ack.error);
         return;
       }
@@ -193,7 +205,7 @@ export function useRoomActions({
       onMatchmakingStarted({
         bidMapId,
         estimatedSeconds: ack.estimatedSeconds,
-        startedAt: Date.now(),
+        startedAt,
         ticketId: ack.ticketId
       });
       setToast('正在匹配对局');
@@ -202,6 +214,7 @@ export function useRoomActions({
   }, [
     coreAuctionMode,
     onMatchmakingStarted,
+    onMatchmakingStopped,
     playerName,
     profile,
     profileId,

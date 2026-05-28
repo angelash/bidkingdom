@@ -6,6 +6,7 @@ import {
   settleCurrentRound,
   startNextRound
 } from '@bitkingdom/match-core';
+import { SOURCE_BID_SUCCESS_PREVIEW_MS } from '@bitkingdom/shared';
 import { revealDelayForItem } from './roomActionRuntime';
 import { runBotAuctionForRoom } from './roomBotRuntime';
 import {
@@ -164,7 +165,7 @@ export function createRoomRoundRuntime(deps: RoomRoundRuntimeDeps): RoomRoundRun
       scheduleRoundTimer(room, feedbackDuration, 'finish_interim_round', () => finishAndContinue(room));
       return;
     }
-    scheduleRoundTimer(room, 700, 'reveal_tick', () => revealTick(room));
+    scheduleRoundTimer(room, SOURCE_BID_SUCCESS_PREVIEW_MS, 'bid_success_preview', () => revealTick(room));
   }
 
   function revealTick(room: Room): void {
