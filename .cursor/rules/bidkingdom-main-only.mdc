@@ -1,0 +1,24 @@
+---
+description: BidKingdom main-only Git workflow
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# BidKingdom main-only Git workflow
+
+本仓库采用单主干维护模式，只保留 `main` 作为长期维护分支。
+
+## 分支规则
+
+- 默认在 `main` 上直接维护代码、文档、资源和配置。
+- 不为常规开发、修复、文档整理或 agent 任务创建本地或远端功能分支。
+- 不推送 `codex/*`、`feature/*`、`fix/*`、`dev/*` 等非 `main` 分支。
+- 除非用户明确要求临时分支，否则 agent / Cursor / Codex 任务开始前应确认当前分支为 `main`。
+
+## 收尾检查
+
+- 涉及 Git 操作的任务完成前，应检查 `git status --short --branch` 和 `git branch --all`。
+- 如果发现非 `main` 分支，先确认其内容已经合入 `main`，再清理本地和远端分支。
+- 删除分支前必须避免丢失未合入提交；能快进合并时优先快进合并到 `main`。
+- 最终状态应保持本地只有 `main`，远端 `origin` 也只有 `main`。

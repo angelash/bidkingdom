@@ -5,6 +5,7 @@
 ## Rules
 
 - BidKingdom 原版复刻文档同步规则：`.cursor/rules/bidkingdom-doc-sync.mdc`
+- BidKingdom 单主干 Git 工作流规则：`.cursor/rules/bidkingdom-main-only.mdc`
 
 ## Documentation
 
