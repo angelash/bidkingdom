@@ -15,6 +15,33 @@ export type PlayerStatus = 'connected' | 'disconnected' | 'ready' | 'playing' | 
 
 export type Rarity = 'junk' | 'common' | 'fine' | 'rare' | 'legendary' | 'mythic';
 
+export interface SourceFinalRevealTiming {
+  sourceQuality: number;
+  animationName: string;
+  clipSeconds: number;
+  delayMs: number;
+}
+
+export const SOURCE_FINAL_REVEAL_TIMING_BY_RARITY: Record<Rarity, SourceFinalRevealTiming> = {
+  junk: { sourceQuality: 1, animationName: 'ani_bai', clipSeconds: 0.7, delayMs: 1000 },
+  common: { sourceQuality: 2, animationName: 'ani_lv', clipSeconds: 0.7, delayMs: 1000 },
+  fine: { sourceQuality: 3, animationName: 'ani_lan', clipSeconds: 1.1, delayMs: 1000 },
+  rare: { sourceQuality: 4, animationName: 'ani_zi', clipSeconds: 1.633, delayMs: 2000 },
+  legendary: { sourceQuality: 5, animationName: 'ani_jin', clipSeconds: 2.1, delayMs: 2000 },
+  mythic: { sourceQuality: 6, animationName: 'ani_hong', clipSeconds: 2.567, delayMs: 3000 }
+};
+
+export const SOURCE_FINAL_REVEAL_QUALITY_7_TIMING: SourceFinalRevealTiming = {
+  sourceQuality: 7,
+  animationName: 'ani_caise',
+  clipSeconds: 3.583,
+  delayMs: 4000
+};
+
+export function sourceFinalRevealDelayMs(rarity: Rarity): number {
+  return SOURCE_FINAL_REVEAL_TIMING_BY_RARITY[rarity].delayMs;
+}
+
 export type ClueKind = 'value' | 'risk' | 'category' | 'set' | 'opponent';
 
 export type SkillId =

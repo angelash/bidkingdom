@@ -52,6 +52,7 @@ type RoleDefinition = (typeof gameConfig.roles)[number];
 type ScenePopover = 'role' | 'items';
 
 interface BattlePrevPanelViewProps {
+  matchmaking?: BattlePrevMatchmakingState;
   mapGroups: BidKingBattleMapGroup[];
   selectedBidMapId?: number;
   profile: PlayerProfile;
@@ -63,10 +64,16 @@ interface BattlePrevPanelViewProps {
   onSelectRole: (roleId: string) => void;
   onReportException: (exception: GameExceptionInput) => void;
   onEquipBattleItems: (itemIds: number[]) => void;
+  onCancelMatchmaking?: () => void;
 }
 
 const SCENE_CONFIG_STORAGE_KEY = 'bk_scene_prepare_config_v1';
 const MAX_SCENE_ITEM_COUNT = 5;
+
+export interface BattlePrevMatchmakingState {
+  elapsedSeconds: number;
+  estimatedSeconds: number;
+}
 
 interface ScenePrepareConfig {
   roleId?: string;
@@ -77,6 +84,7 @@ interface ScenePrepareConfig {
 type ScenePrepareConfigStore = Record<string, ScenePrepareConfig>;
 
 export function BattlePrevPanelView({
+  matchmaking,
   mapGroups,
   selectedBidMapId,
   profile,
@@ -87,7 +95,8 @@ export function BattlePrevPanelView({
   onSelectBidMap,
   onSelectRole,
   onReportException,
-  onEquipBattleItems
+  onEquipBattleItems,
+  onCancelMatchmaking
 }: BattlePrevPanelViewProps): JSX.Element {
   const selectedGroup = mapGroups.find((group) => group.children.some((map) => map.id === selectedBidMapId)) ?? mapGroups[0]!;
   const selectedBidMap = selectedGroup.children.find((map) => map.id === selectedBidMapId) ?? sceneDefaultBidMap(selectedGroup) ?? selectedGroup.children[0]!;
@@ -95,6 +104,7 @@ export function BattlePrevPanelView({
   const selectedAccess = bidKingBidMapAccess(profile, selectedBidMap.id);
   const selectedInitialCash = bidKingInitialCashForBidMap(selectedBidMap.id);
   const selectedIsDefault = bidKingIsDefaultUnknownBidMap(selectedBidMap.id);
+  const closeScene = matchmaking ? onCancelMatchmaking ?? onCancel : onCancel;
   const sourceRoles = bidKingSourceRoles(gameConfig.roles);
   const [sceneEntered, setSceneEntered] = useState(false);
   const [activePopover, setActivePopover] = useState<ScenePopover>();
@@ -122,6 +132,12 @@ export function BattlePrevPanelView({
     setConfiguredItemIds(sanitizeItemIds(saved?.itemIds ?? []));
     setActivePopover(undefined);
   }, [selectedParentMap.id]);
+  useEffect(() => {
+    if (matchmaking) {
+      setSceneEntered(false);
+      setActivePopover(undefined);
+    }
+  }, [matchmaking]);
 
   function reportBlockedBidMap(bidMap: BidKingBidMapRow, reasons: string[]): void {
     onReportException({
@@ -217,7 +233,7 @@ export function BattlePrevPanelView({
   return (
     <div className="battle-scene-backdrop">
       <section
-        className={`battle-scene-shell ${sceneEntered ? 'scene-entered' : 'map-overview'} has-role`}
+        className={`battle-scene-shell ${sceneEntered && !matchmaking ? 'scene-entered' : 'map-overview'} ${matchmaking ? 'is-matching' : ''} has-role`}
         role="dialog"
         aria-modal="true"
         style={{
@@ -240,13 +256,13 @@ export function BattlePrevPanelView({
               <Coins size={28} />
               <strong>{formatWalletCoins(profile.coins)}</strong>
             </span>
-            <button className="battle-scene-close" type="button" onClick={onCancel} title="关闭">
+            <button className="battle-scene-close" type="button" onClick={closeScene} title={matchmaking ? '取消匹配' : '关闭'}>
               <X size={42} />
             </button>
           </div>
         </header>
 
-        {sceneEntered ? (
+        {sceneEntered && !matchmaking ? (
           <>
             <main className="battle-scene-main">
               {configuredRole ? (
@@ -391,6 +407,7 @@ export function BattlePrevPanelView({
                   className={`battle-prev-node risk-${defaultMap.risk} mode-${mapModeClass(group.parent)} ${active ? 'selected' : ''} ${access.canEnter ? '' : 'locked'}`}
                   key={group.parent.id}
                   onClick={() => selectScene(group)}
+                  disabled={Boolean(matchmaking)}
                   style={{
                     '--node-x': `${group.x}%`,
                     '--node-y': `${group.y}%`,
@@ -406,14 +423,31 @@ export function BattlePrevPanelView({
               );
             })}
             </section>
-            <button className="battle-scene-overview-back" type="button" onClick={onCancel} title="返回">
+            <button className="battle-scene-overview-back" type="button" onClick={closeScene} title={matchmaking ? '取消匹配' : '返回'}>
               <ArrowLeft size={54} />
             </button>
+            {matchmaking && (
+              <aside className="battle-scene-matchmaking-card" aria-label="匹配状态">
+                <span className="battle-scene-matchmaking-spinner" aria-hidden="true" />
+                <div>
+                  <small>经典大厅匹配中</small>
+                  <strong>{formatMatchmakingTimer(matchmaking.elapsedSeconds)}</strong>
+                  <em>预计匹配时间：{matchmaking.estimatedSeconds}秒</em>
+                </div>
+                <button type="button" onClick={onCancelMatchmaking}>取消</button>
+              </aside>
+            )}
           </main>
         )}
       </section>
     </div>
   );
+}
+
+function formatMatchmakingTimer(totalSeconds: number): string {
+  const minute = Math.floor(totalSeconds / 60);
+  const second = totalSeconds % 60;
+  return `${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
 }
 
 function RoleSelectPopover({

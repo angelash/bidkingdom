@@ -6,9 +6,11 @@ import { lastSubmittedBidAmount } from './BattlePanels';
 import type { EquippedBattleItemView } from './MatchShell';
 import { buildBattleItemActionState } from './battleItemUi';
 
-const INTEL_PRESENTATION_MS = 3200;
 const MAP_INTRO_PRESENTATION_MS = 1600;
-const INTELLIGENCE_PANEL_PRESENTATION_MS = 1600;
+const INTELLIGENCE_PANEL_REVEAL_MS = 1600;
+const INTELLIGENCE_PANEL_HOLD_MS = 3000;
+const INTELLIGENCE_PANEL_PRESENTATION_MS = INTELLIGENCE_PANEL_REVEAL_MS + INTELLIGENCE_PANEL_HOLD_MS;
+const INTEL_PRESENTATION_MS = MAP_INTRO_PRESENTATION_MS + INTELLIGENCE_PANEL_PRESENTATION_MS;
 
 interface UseMatchDerivedStateArgs {
   now: number;
@@ -46,8 +48,15 @@ export function roundPresentationOverlay(
   if (currentRound.phase !== 'intel') {
     return undefined;
   }
+  if (currentRound.index !== 0) {
+    return undefined;
+  }
 
-  const elapsedMs = Math.max(0, INTEL_PRESENTATION_MS - Math.max(0, currentRound.phaseEndsAt - now));
+  const currentRoundFeed = (currentRound.skillFeed ?? []).filter((entry) => entry.round === currentRound.index + 1);
+  const presentationStartedAt = currentRoundFeed.length > 0
+    ? Math.min(...currentRoundFeed.map((entry) => entry.createdAt))
+    : currentRound.phaseEndsAt - INTEL_PRESENTATION_MS;
+  const elapsedMs = Math.max(0, now - presentationStartedAt);
   const hasMapIntro = currentRound.index === 0 && (currentRound.openingCandidates?.length ?? 0) > 1;
   const intelligenceStartMs = hasMapIntro ? MAP_INTRO_PRESENTATION_MS : 0;
   const hasIntelligencePanel = Boolean(currentRound.intelligenceClue ?? currentRound.publicClues.at(-1));

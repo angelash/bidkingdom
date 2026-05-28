@@ -26,6 +26,7 @@ import { sourcePathForOutgameHub, titleForOutgameHub, type BidKingOutgameHubWind
 import { RechargePanelView, PassPanelView, type ActivityTargetView, type SimPlanView } from '../activity/ActivityPanels';
 import {
   BattlePrevPanelView,
+  type BattlePrevMatchmakingState,
   type BidKingBattleMapGroup
 } from '../battlePrev/BattlePrevPanelView';
 import { BidderPanelView } from '../bidder/BidderPanelView';
@@ -68,8 +69,10 @@ export function MainHallView({
   selectedRoleId,
   serverUrl,
   authError,
+  matchmaking,
   resolveModeForBidMapId,
-  onCreateRoom,
+  onStartMatchmaking,
+  onCancelMatchmaking,
   onSelectBidMap,
   onSelectCoreAuctionMode,
   onSelectRole,
@@ -127,8 +130,10 @@ export function MainHallView({
   selectedRoleId: string;
   serverUrl: string;
   authError?: string;
+  matchmaking?: BattlePrevMatchmakingState;
   resolveModeForBidMapId: (bidMapId?: number) => CoreAuctionMode | undefined;
-  onCreateRoom: (selectedBidMapId?: number, roleId?: string) => boolean;
+  onStartMatchmaking: (selectedBidMapId?: number, roleId?: string) => boolean;
+  onCancelMatchmaking: () => void;
   onSelectBidMap: (bidMapId: number) => void;
   onSelectCoreAuctionMode: (mode: CoreAuctionMode) => void;
   onSelectRole: (roleId: string) => void;
@@ -196,6 +201,12 @@ export function MainHallView({
   useEffect(() => {
     setDismissedStartupNoticeIds([]);
   }, [profile.playerId]);
+  useEffect(() => {
+    if (matchmaking) {
+      setActiveHub(undefined);
+      setBattlePrevOpen(true);
+    }
+  }, [matchmaking]);
   const topShortcuts = [
     { key: 'recharge', label: '钱庄', icon: <BadgeDollarSign size={23} />, onClick: () => openHub('recharge') },
     { key: 'bag', label: '行囊', icon: <Archive size={23} />, onClick: () => openHub('package') },
@@ -241,9 +252,7 @@ export function MainHallView({
         onSelectCoreAuctionMode(sceneMode);
       }
     }
-    if (onCreateRoom(selectedBattleBidMapId, config?.roleId)) {
-      setBattlePrevOpen(false);
-    }
+    onStartMatchmaking(selectedBattleBidMapId, config?.roleId);
   }
 
   function selectBattleBidMap(bidMapId: number): void {
@@ -544,6 +553,7 @@ export function MainHallView({
       )}
       {battlePrevOpen && (
         <BattlePrevPanelView
+          matchmaking={matchmaking}
           mapGroups={mapGroups}
           selectedBidMapId={selectedBattleBidMapId}
           profile={profile}
@@ -555,6 +565,7 @@ export function MainHallView({
           onSelectRole={onSelectRole}
           onReportException={onReportException}
           onEquipBattleItems={onEquipBattleItems}
+          onCancelMatchmaking={onCancelMatchmaking}
         />
       )}
     </section>

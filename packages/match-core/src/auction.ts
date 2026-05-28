@@ -199,26 +199,17 @@ export function revealNextItem(state: MatchRuntimeState, now = Date.now()): Matc
   return state;
 }
 
-const FINAL_REVEAL_RARITY_ORDER: Record<RevealedItem['rarity'], number> = {
-  junk: 1,
-  common: 2,
-  fine: 3,
-  rare: 4,
-  legendary: 5,
-  mythic: 6
-};
-
 function nextFinalRevealItem(round: ReturnType<typeof requireRound>): RevealedItem | undefined {
   const revealedIds = new Set(round.revealedItems.map((item) => item.id));
   const slotByItemId = new Map(round.container.warehouseSlots.map((slot) => [slot.item.id, slot]));
+  const sourceOrderByItemId = new Map(round.container.hiddenItems.map((item, index) => [item.id, index]));
   return [...round.container.hiddenItems]
     .sort((left, right) => {
       const leftSlot = slotByItemId.get(left.id);
       const rightSlot = slotByItemId.get(right.id);
-      return FINAL_REVEAL_RARITY_ORDER[left.rarity] - FINAL_REVEAL_RARITY_ORDER[right.rarity]
-        || (leftSlot?.y ?? 99) - (rightSlot?.y ?? 99)
+      return (leftSlot?.y ?? 99) - (rightSlot?.y ?? 99)
         || (leftSlot?.x ?? 99) - (rightSlot?.x ?? 99)
-        || left.value - right.value
+        || (sourceOrderByItemId.get(left.id) ?? 9999) - (sourceOrderByItemId.get(right.id) ?? 9999)
         || left.id.localeCompare(right.id);
     })
     .find((item) => !revealedIds.has(item.id));

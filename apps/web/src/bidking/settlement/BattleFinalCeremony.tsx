@@ -1,6 +1,7 @@
-import { useMemo, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Archive, BadgeDollarSign, Crown, Gem, Sparkles, Trophy } from 'lucide-react';
 import { gameConfig } from '@bitkingdom/config';
+import { sourceFinalRevealDelayMs } from '@bitkingdom/shared';
 import type {
   PlayerSnapshot,
   RevealedItem,
@@ -9,24 +10,95 @@ import type {
 import { containerArtForKey, itemIconForKey, roleAvatarForRoleId, rolePortraitForRoleId } from '../../artAssets';
 
 type CurrentRound = NonNullable<PlayerSnapshot['public']['currentRound']>;
+type RevealPresentationState = 'loading' | 'revealed';
+type RevealedItemPresentation = { item: RevealedItem; index: number; state: RevealPresentationState };
 
 interface BattleFinalCeremonyProps {
   round: CurrentRound;
   selfPlayerId?: string;
   snapshot: PlayerSnapshot;
+  onContinue: () => void;
 }
 
 export function BattleFinalCeremony({
+  onContinue,
   round,
   selfPlayerId,
   snapshot
 }: BattleFinalCeremonyProps): JSX.Element {
   const settlement = round.settlement;
+  const [presentedRevealIds, setPresentedRevealIds] = useState<Set<string>>(() => new Set());
+  const revealTimersRef = useRef(new Map<string, number>());
 
   const players = snapshot.public.players;
   const revealedById = useMemo(() => new Map(
-    round.revealedItems.map((item, index) => [item.id, { item, index }])
-  ), [round.revealedItems]);
+    round.revealedItems.map((item, index) => [
+      item.id,
+      {
+        item,
+        index,
+        state: presentedRevealIds.has(item.id) ? 'revealed' : 'loading'
+      } satisfies RevealedItemPresentation
+    ])
+  ), [presentedRevealIds, round.revealedItems]);
+  const slotRevealOrder = useMemo(() => new Map(
+    [...(round.warehouseSlots ?? [])]
+      .sort((left, right) => left.y - right.y || left.x - right.x || left.slotId.localeCompare(right.slotId))
+      .map((slot, index) => [slot.slotId, index])
+  ), [round.warehouseSlots]);
+  const presentedItems = useMemo(
+    () => round.revealedItems.filter((item) => presentedRevealIds.has(item.id)),
+    [presentedRevealIds, round.revealedItems]
+  );
+
+  useEffect(() => {
+    const currentIds = new Set(round.revealedItems.map((item) => item.id));
+
+    setPresentedRevealIds((previous) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of previous) {
+        if (currentIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed || next.size !== previous.size ? next : previous;
+    });
+
+    for (const [id, timer] of revealTimersRef.current) {
+      if (!currentIds.has(id)) {
+        window.clearTimeout(timer);
+        revealTimersRef.current.delete(id);
+      }
+    }
+
+    for (const item of round.revealedItems) {
+      if (presentedRevealIds.has(item.id) || revealTimersRef.current.has(item.id)) {
+        continue;
+      }
+      const timer = window.setTimeout(() => {
+        revealTimersRef.current.delete(item.id);
+        setPresentedRevealIds((previous) => {
+          if (previous.has(item.id)) {
+            return previous;
+          }
+          const next = new Set(previous);
+          next.add(item.id);
+          return next;
+        });
+      }, sourceFinalRevealDelayMs(item.rarity));
+      revealTimersRef.current.set(item.id, timer);
+    }
+  }, [presentedRevealIds, round.revealedItems]);
+
+  useEffect(() => () => {
+    for (const timer of revealTimersRef.current.values()) {
+      window.clearTimeout(timer);
+    }
+    revealTimersRef.current.clear();
+  }, []);
 
   if (!settlement || settlement.isFinal === false) {
     return <></>;
@@ -39,15 +111,17 @@ export function BattleFinalCeremony({
   const winnerAvatar = roleAvatarForRoleId(winnerRole?.id);
   const selfWon = Boolean(selfPlayerId && settlement.winnerId === selfPlayerId);
   const totalSlots = Math.max(round.warehouseSlots?.length ?? 0, round.revealedItems.length);
-  const revealedValue = round.revealedItems.reduce((sum, item) => sum + item.value, 0);
-  const allRevealed = totalSlots > 0 && round.revealedItems.length >= totalSlots;
+  const revealedValue = presentedItems.reduce((sum, item) => sum + item.value, 0);
+  const allRevealed = totalSlots > 0 && presentedItems.length >= totalSlots;
+  const matchEnded = snapshot.public.status === 'ended';
+  const canContinue = matchEnded && allRevealed;
   const progressiveProfit = allRevealed || round.phase === 'settlement'
     ? settlement.profit
     : revealedValue
       - settlement.payment
       + (settlement.lossRebateRefund ?? 0);
-  const latestItem = round.revealedItems.at(-1);
-  const progress = totalSlots > 0 ? Math.min(100, Math.round((round.revealedItems.length / totalSlots) * 100)) : 0;
+  const latestItem = presentedItems.at(-1);
+  const progress = totalSlots > 0 ? Math.min(100, Math.round((presentedItems.length / totalSlots) * 100)) : 0;
   const stageStyle = {
     '--ceremony-room-art': `url(${containerArtForKey(round.container.artKey)})`
   } as CSSProperties;
@@ -102,7 +176,7 @@ export function BattleFinalCeremony({
             <div>
               <Archive size={20} />
               <span>最终藏品揭露</span>
-              <strong>{round.revealedItems.length}/{Math.max(totalSlots, round.revealedItems.length)} 件</strong>
+              <strong>{presentedItems.length}/{Math.max(totalSlots, round.revealedItems.length)} 件</strong>
             </div>
             <div className="battle-final-progress" aria-label={`揭露进度 ${progress}%`}>
               <span style={{ width: `${progress}%` }} />
@@ -124,14 +198,19 @@ export function BattleFinalCeremony({
                 index={index}
                 key={slot.slotId}
                 revealed={slot.itemId ? revealedById.get(slot.itemId) : undefined}
+                revealOrder={slotRevealOrder.get(slot.slotId) ?? index}
                 slot={slot}
               />
             ))}
           </div>
 
           <footer className="battle-final-continue-hint">
-            <span>{allRevealed ? '藏品已全部揭露，正在完成收益与奖励入账' : '藏品逐件揭露中，估值和盈亏会随揭露更新'}</span>
-            <strong>点击这里继续</strong>
+            <span>{canContinue ? '收益与奖励已入账' : allRevealed ? '藏品已全部揭露，正在完成收益与奖励入账' : '藏品逐件揭露中，估值和盈亏会随揭露更新'}</span>
+            {canContinue ? (
+              <button className="battle-final-continue-button" type="button" onClick={onContinue}>继续</button>
+            ) : (
+              <em>{allRevealed ? '结算中' : '揭露中'}</em>
+            )}
           </footer>
         </main>
 
@@ -144,22 +223,29 @@ export function BattleFinalCeremony({
 function CeremonyWarehouseSlot({
   index,
   revealed,
+  revealOrder,
   slot
 }: {
   index: number;
-  revealed?: { item: RevealedItem; index: number };
+  revealed?: RevealedItemPresentation;
+  revealOrder: number;
   slot: WarehouseSlotView;
 }): JSX.Element {
-  const item = revealed?.item;
+  const item = revealed?.state === 'revealed' ? revealed.item : undefined;
+  const loadingItem = revealed?.state === 'loading' ? revealed.item : undefined;
   const itemIcon = item ? itemIconForKey(item.iconKey) : undefined;
   const shapeKey = `${Math.max(1, slot.w)}x${Math.max(1, slot.h)}`;
   const opened = Boolean(item);
   const rarity = item?.rarity;
-  const delay = item ? Math.min(revealed.index, 16) * 42 : index * 8;
+  const delay = item ? 0 : Math.min(revealOrder, 16) * 8 + index * 2;
+  const stateClass = opened ? 'revealed' : loadingItem ? 'loading' : 'pending';
+  const loadingStyle = loadingItem
+    ? { '--loading-total-duration': `${sourceFinalRevealDelayMs(loadingItem.rarity)}ms` } as CSSProperties
+    : undefined;
 
   return (
     <div
-      className={`ceremony-warehouse-slot shape-${shapeKey} ${opened ? 'revealed' : 'pending'} ${rarity ? `rarity-${rarity}` : ''}`}
+      className={`ceremony-warehouse-slot shape-${shapeKey} ${stateClass} ${rarity ? `rarity-${rarity}` : ''}`}
       style={{
         '--slot-delay': `${delay}ms`,
         gridColumn: `${Math.max(1, slot.x + 1)} / span ${Math.max(1, slot.w)}`,
@@ -167,6 +253,11 @@ function CeremonyWarehouseSlot({
       } as CSSProperties}
     >
       {opened && <span className="ceremony-slot-sheen" />}
+      {loadingItem && (
+        <span className="ceremony-slot-loading" style={loadingStyle}>
+          <span />
+        </span>
+      )}
       <div>
         {item ? (
           <>

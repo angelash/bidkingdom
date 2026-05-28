@@ -6,8 +6,10 @@ import {
   emojiCooldownMs,
   emojiForPayload,
   emojiSoundId,
-  emojiUnlockRequirements
+  emojiUnlockRequirements,
+  revealDelayForItem
 } from '../src/domain/battle/roomActionRuntime';
+import type { Rarity, RevealedItem } from '@bitkingdom/shared';
 
 describe('BidKing battle action runtime', () => {
   it('drives Emoji cooldown and sound metadata from original rows', () => {
@@ -90,4 +92,32 @@ describe('BidKing battle action runtime', () => {
       now: 1000
     })).toThrow('当前身份不可使用该表情');
   });
+
+  it('uses original GridItem quality reveal wait buckets', () => {
+    const cases: Array<[Rarity, number]> = [
+      ['junk', 1000],
+      ['common', 1000],
+      ['fine', 1000],
+      ['rare', 2000],
+      ['legendary', 2000],
+      ['mythic', 3000]
+    ];
+
+    for (const [rarity, delay] of cases) {
+      expect(revealDelayForItem(revealedItem(rarity))).toBe(delay);
+    }
+  });
 });
+
+function revealedItem(rarity: Rarity): RevealedItem {
+  return {
+    id: `item_${rarity}`,
+    name: rarity,
+    category: 'test',
+    rarity,
+    value: 1,
+    displayValue: 1,
+    iconKey: 'test',
+    footprint: { w: 1, h: 1 }
+  };
+}

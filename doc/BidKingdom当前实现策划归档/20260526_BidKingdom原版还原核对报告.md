@@ -27,7 +27,7 @@
 | --- | --- | --- | --- |
 | 配置表规模 | `@bitkingdom/bidking-compat` 已生成 52 表、19687 行，核心表规模与原版归档一致 | 已对齐，来源 A | 保持 generated 表为游戏性源头，包装字段不得反向影响原表字段 |
 | 三国包装名 | `Hero.packaged_name` 等为三国/古代名，`cast_type` 等原字段仍保留 | 可接受包装，来源 D | 表现可替换；`Hero.id/cast_type/Skill` 不得被包装改写 |
-| 首轮阶段机 | `match.ts` 首轮直接进入 `intel`；`roomRoundRuntime.ts` 按该阶段调度；前端在 `intel` 内按源条件播放原版 `BattleRandom_Main` 场景随机和 `IntelligencePanel` 情报暗牌动画 | 对齐，来源 A+C | `BattleRandom_Main` 只在匹配入口 `BidMap.map_group` 非空时播放；动画必须保留为纯表现，不改变用道具、出价、技能触发和计时规则 |
+| 首轮阶段机 | `match.ts` 首轮直接进入 `intel`；`roomRoundRuntime.ts` 按该阶段调度；前端在 `intel` 内按源条件播放原版 `BattleRandom_Main` 场景随机和 `IntelligencePanel` 情报暗牌动画 | 对齐，来源 A+C | `BattleRandom_Main` 只在匹配入口 `BidMap.map_group` 非空时播放；动画必须保留为固定表现流程，首轮 `intel` 覆盖暗牌阅读停顿和技能提示入列，再进入出价窗口 |
 | `GameData` 权威快照 | `buildBidKingGameDataSnapshot` 归档 `StockContainer/UserLog/HeroSkillLog/MapSkillLog/ItemSkillLog` | 协议推断可接受，来源 A+C | 后端不可见逻辑按该形状补齐，报告中标注为协议推断 |
 | 成交线 | 用 `getBidKingCloseThreshold = rate / 1000 - 1` 后按领先差距判断 | 对齐，来源 A+B | 数学上等价于按 `BidMap.auction_rounds_rate` 判断最高价与第二价关系；边界包含无人、平价、最终轮、second=0 |
 | `BidMap.map_group` | `bidMapRuntime` 按 `map_group` 权重解析实际子 `BidMap`，并把 `coreResolvedBidMapId` 用于仓库、GameData 和结算统计；`openingCandidates` 固定来自源父拍场 `map_group` | 对齐，来源 A+C | 父拍场可作为选择入口/表现包装；随机动画候选、掉落、门槛、场景名和随机结果以原表 `map_group`/实际 `BidMap` 为准 |

@@ -49,7 +49,14 @@ import type {
   WarehouseSlot
 } from './types';
 
-const CORE_ROUND_INTEL_DURATION_MS = 3200;
+const MIN_CORE_ROUND_INTEL_DURATION_MS = 3200;
+const OPENING_MAP_INTRO_MS = 1600;
+const OPENING_INTELLIGENCE_PANEL_MS = 4600;
+const MARKET_INTEL_TIP_HOLD_MS = 1450;
+const MARKET_INTEL_TIP_MOVE_MS = 600;
+const MARKET_INTEL_TIP_SETTLE_MS = 300;
+const MARKET_INTEL_STEP_MS = MARKET_INTEL_TIP_HOLD_MS + MARKET_INTEL_TIP_MOVE_MS + MARKET_INTEL_TIP_SETTLE_MS;
+const MARKET_INTEL_ROW_VISIBLE_MS = MARKET_INTEL_TIP_HOLD_MS + MARKET_INTEL_TIP_MOVE_MS;
 
 export function createMatch(params: {
   id: string;
@@ -173,8 +180,8 @@ export function startNextRound(state: MatchRuntimeState, now = Date.now()): Matc
     warehouseSlots: buildHiddenWarehouseSlotViews(container.warehouseSlots),
     revealedItems: [],
     skillFeed: [],
-    phaseEndsAt: now + CORE_ROUND_INTEL_DURATION_MS,
-    auctionEndsAt: now + CORE_ROUND_INTEL_DURATION_MS + auctionDurationForRound(container)
+    phaseEndsAt: now + MIN_CORE_ROUND_INTEL_DURATION_MS,
+    auctionEndsAt: now + MIN_CORE_ROUND_INTEL_DURATION_MS + auctionDurationForRound(container)
   };
 
   for (const player of state.players) {
@@ -183,6 +190,9 @@ export function startNextRound(state: MatchRuntimeState, now = Date.now()): Matc
   }
   round.skillFeed = buildBidKingRoundStartSkillFeed(state, round, now);
   prepareIntelligencePanelCards(state, round);
+  const intelDurationMs = coreRoundIntelDurationMs(state, round);
+  round.phaseEndsAt = now + intelDurationMs;
+  round.auctionEndsAt = round.phaseEndsAt + auctionDurationForRound(container);
 
   state.currentRound = round;
   state.updatedAt = now;
@@ -213,7 +223,27 @@ function auctionDurationForRound(container: ContainerInstance): number {
   return durationMs;
 }
 
+function coreRoundIntelDurationMs(state: MatchRuntimeState, round: RuntimeRound): number {
+  const openingDelayMs = round.index === 0
+    ? (((round.openingCandidates?.length ?? 0) > 1 ? OPENING_MAP_INTRO_MS : 0)
+      + (round.intelligenceClue ? OPENING_INTELLIGENCE_PANEL_MS : 0))
+    : 0;
+  const feedCount = Math.max(0, ...state.players.map((player) => round.skillFeed.filter((entry) => (
+    entry.round === round.index + 1
+    && (entry.visibility === 'public' || entry.playerId === player.id)
+  )).length));
+  const feedSequenceMs = feedCount > 0
+    ? (feedCount - 1) * MARKET_INTEL_STEP_MS + MARKET_INTEL_ROW_VISIBLE_MS
+    : 0;
+  return Math.max(MIN_CORE_ROUND_INTEL_DURATION_MS, openingDelayMs + feedSequenceMs);
+}
+
 function prepareIntelligencePanelCards(state: MatchRuntimeState, round: RuntimeRound): void {
+  if (round.index !== 0) {
+    round.intelligenceClue = undefined;
+    round.intelligenceChoices = undefined;
+    return;
+  }
   const mapEntry = currentRoundMapIntel(round);
   if (!mapEntry) {
     round.intelligenceClue = undefined;

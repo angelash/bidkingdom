@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminDashboard } from '../admin/AdminDashboard';
 import { AccountGate } from './AccountGate';
 import { AppTopBar } from './AppTopBar';
@@ -34,6 +34,11 @@ export function BidKingApp(): JSX.Element {
   useBidKingSoundBridge();
   const { reportException } = exceptions;
   const phaseExceptionKeyRef = useRef('');
+  const [matchmakingState, setMatchmakingState] = useState<{
+    bidMapId: number;
+    estimatedSeconds: number;
+    startedAt: number;
+  }>();
   const {
     account,
     applyProfileSnapshot,
@@ -200,6 +205,7 @@ export function BidKingApp(): JSX.Element {
     setSelectedRoleId,
     setSelfPlayerId,
     setToast,
+    onMatchmakingStarted: setMatchmakingState,
     snapshot,
     socket
   });
@@ -228,6 +234,15 @@ export function BidKingApp(): JSX.Element {
     onReturnHome: navigation.returnHome
   });
 
+  useEffect(() => {
+    if (snapshot && matchmakingState) {
+      setToast('已进入对局');
+    }
+    if (!room || snapshot) {
+      setMatchmakingState(undefined);
+    }
+  }, [matchmakingState, room, setToast, snapshot]);
+
   if (view === 'play' && authStatus !== 'ready') {
     return (
       <main className="app-shell home-screen">
@@ -246,6 +261,16 @@ export function BidKingApp(): JSX.Element {
 
   const isActiveMatchView = view === 'play' && Boolean(snapshot && matchState.currentRound && snapshot.public.status !== 'ended');
   const isHomeView = view === 'play' && !room;
+  const isMatchingView = view === 'play' && Boolean(room && !snapshot && matchmakingState);
+  const matchmakingElapsedSeconds = matchmakingState
+    ? Math.max(0, Math.floor((now - matchmakingState.startedAt) / 1000))
+    : 0;
+  const battlePrevMatchmaking = matchmakingState
+    ? {
+        elapsedSeconds: matchmakingElapsedSeconds,
+        estimatedSeconds: matchmakingState.estimatedSeconds
+      }
+    : undefined;
 
   return (
     <main className={`app-shell ${isActiveMatchView ? 'in-match' : ''} ${isHomeView ? 'home-screen' : ''}`}>
@@ -253,7 +278,7 @@ export function BidKingApp(): JSX.Element {
       <AppTopBar
         connected={connected}
         hasRoom={Boolean(room)}
-        hidden={isHomeView}
+        hidden={isHomeView || isMatchingView}
         view={view}
         onReturnHome={navigation.returnHome}
         onSwitchView={switchView}
@@ -261,7 +286,7 @@ export function BidKingApp(): JSX.Element {
 
       {view === 'admin' && <AdminDashboard serverUrl={SERVER_URL} />}
 
-      {view === 'play' && !room && (
+      {view === 'play' && (!room || isMatchingView) && (
         <MainHallRoute
           defaultBidMapId={defaultBidMapId}
           mapGroups={bidKingBattleMapGroups}
@@ -274,6 +299,12 @@ export function BidKingApp(): JSX.Element {
           selectedRoleId={selectedRoleId}
           serverUrl={SERVER_URL}
           authError={authError}
+          matchmaking={battlePrevMatchmaking}
+          onCancelMatchmaking={() => {
+            roomActions.cancelMatchmaking();
+            setMatchmakingState(undefined);
+            navigation.returnHome();
+          }}
           onChangeAccountPassword={changeAccountPassword}
           onReportException={reportException}
           onSetBotCount={setBotCount}
@@ -284,7 +315,7 @@ export function BidKingApp(): JSX.Element {
         />
       )}
 
-      {view === 'play' && room && !snapshot && (
+      {view === 'play' && room && !snapshot && !matchmakingState && (
         <RoomLobbyRoute
           isHost={matchState.isHost}
           mapGroups={bidKingBattleMapGroups}
@@ -304,7 +335,9 @@ export function BidKingApp(): JSX.Element {
           liveIntel={liveIntel}
           matchState={matchState}
           snapshot={snapshot}
+          onContinueFinalCeremony={navigation.returnHome}
           onPassAuction={() => socket?.emit('passAuction')}
+          onSendEmote={(emote) => socket?.emit('sendEmote', { emote })}
           onSelectSkillTarget={setSkillTargetId}
           onUseBattleItem={navigation.useBattleItemClick}
         />

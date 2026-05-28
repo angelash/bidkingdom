@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { Archive, BadgeDollarSign, BookOpen, Gavel } from 'lucide-react';
+import { Archive, BadgeDollarSign, BookOpen, Gavel, Smile } from 'lucide-react';
 import {
   bidKingBattleItemDisplayName,
   type BidKingBattleItemRow
@@ -7,10 +7,6 @@ import {
 import type { PlayerSnapshot, PublicPlayer, WarehouseSlotView } from '@bitkingdom/shared';
 import { containerArtForKey } from '../../artAssets';
 import { MarketIntelPanel } from '../intel/LiveIntelPanels';
-import {
-  LootRevealSummary,
-  RareRevealBanner
-} from '../settlement/SettlementPanels';
 import {
   BattleRandomOverlay,
   CloseRuleLadder,
@@ -41,8 +37,10 @@ interface MatchShellProps {
   skillTargets: PublicPlayer[];
   snapshot: PlayerSnapshot;
   onInspectWarehouseSlot: (slot: WarehouseSlotView) => void;
+  onOpenHandBook: () => void;
   onOpenLiveIntel: () => void;
   onPassAuction: () => void;
+  onSendEmote: (emote: string) => void;
   onSelectSkillTarget: (playerId: string) => void;
   onSubmitBid: () => void;
   onUseBattleItem: (itemId: number, targetPlayerId?: string) => void;
@@ -61,8 +59,10 @@ export function MatchShell({
   skillTargets,
   snapshot,
   onInspectWarehouseSlot,
+  onOpenHandBook,
   onOpenLiveIntel,
   onPassAuction,
+  onSendEmote,
   onSelectSkillTarget,
   onSubmitBid,
   onUseBattleItem
@@ -98,16 +98,11 @@ export function MatchShell({
       </section>
 
       <aside className="warehouse-side">
-        <div className={`warehouse-header risk-${currentRound.container.risk}`}>
-          <span>{currentRound.container.source}</span>
-          <strong>{currentRound.container.name}</strong>
-          {!currentRound.container.estimateHidden && (
-            <em>{currentRound.container.estimateMin.toLocaleString()} - {currentRound.container.estimateMax.toLocaleString()}</em>
-          )}
-        </div>
-        <LootRevealSummary round={currentRound} />
-        <RareRevealBanner round={currentRound} />
-        <WarehouseGrid round={currentRound} onInspectSlot={onInspectWarehouseSlot} />
+        <WarehouseGrid
+          round={currentRound}
+          onInspectSlot={onInspectWarehouseSlot}
+          onOpenEncyclopedia={onOpenHandBook}
+        />
       </aside>
 
       {currentRound.phase === 'auction' && (
@@ -164,6 +159,10 @@ export function MatchShell({
           )}
         </section>
       )}
+
+      <button className="battle-emote-button" onClick={() => onSendEmote('101')} title="表情" type="button">
+        <Smile size={24} />
+      </button>
     </section>
   );
 }

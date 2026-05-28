@@ -2,7 +2,7 @@ import type { PlayerProfile, PublicPlayerAccount } from '@bitkingdom/shared';
 import { bidKingHeroIdForRoleId } from '@bitkingdom/match-core';
 import { gameConfig } from '@bitkingdom/config';
 import { modeForBidMapId } from '../battlePrev/bidMapRuntime';
-import type { BidKingBattleMapGroup } from '../battlePrev/BattlePrevPanelView';
+import type { BattlePrevMatchmakingState, BidKingBattleMapGroup } from '../battlePrev/BattlePrevPanelView';
 import { codexCatalogItems } from '../catalog/codexRuntime';
 import type { ProfileActions } from '../profile/useProfileActions';
 import type { RoomActions } from '../room/useRoomActions';
@@ -21,6 +21,8 @@ interface MainHallRouteProps {
   selectedRoleId: string;
   serverUrl: string;
   authError?: string;
+  matchmaking?: BattlePrevMatchmakingState;
+  onCancelMatchmaking: () => void;
   onChangeAccountPassword: (currentPassword: string, nextPassword: string) => Promise<void>;
   onReportException: (exception: GameExceptionInput) => void;
   onSetBotCount: (value: number) => void;
@@ -42,6 +44,8 @@ export function MainHallRoute({
   selectedRoleId,
   serverUrl,
   authError,
+  matchmaking,
+  onCancelMatchmaking,
   onChangeAccountPassword,
   onReportException,
   onSetBotCount,
@@ -62,8 +66,10 @@ export function MainHallRoute({
       selectedRoleId={selectedRoleId}
       serverUrl={serverUrl}
       authError={authError}
+      matchmaking={matchmaking}
       resolveModeForBidMapId={modeForBidMapId}
-      onCreateRoom={roomActions.createRoom}
+      onStartMatchmaking={roomActions.matchGame}
+      onCancelMatchmaking={onCancelMatchmaking}
       onSelectBidMap={roomActions.selectBidMap}
       onSelectCoreAuctionMode={roomActions.selectCoreAuctionMode}
       onSelectRole={(roleId) => {

@@ -13,7 +13,7 @@ import {
 } from '@bitkingdom/bidking-compat';
 import { bidKingBattleItemUsesRemainingThisRound } from '@bitkingdom/match-core';
 import type { MatchRuntimeState } from '@bitkingdom/match-core';
-import type { RevealedItem } from '@bitkingdom/shared';
+import { sourceFinalRevealDelayMs, type RevealedItem } from '@bitkingdom/shared';
 
 export {
   emojiAllowedHeroIds,
@@ -96,15 +96,7 @@ export function assertBattleItemPhase(match: MatchRuntimeState, playerId: string
 }
 
 export function revealDelayForItem(item?: RevealedItem): number {
-  const delays: Record<RevealedItem['rarity'], number> = {
-    junk: 520,
-    common: 620,
-    fine: 920,
-    rare: 1350,
-    legendary: 1900,
-    mythic: 2200
-  };
-  return item ? delays[item.rarity] : 700;
+  return item ? sourceFinalRevealDelayMs(item.rarity) : 1000;
 }
 
 function assertEmojiAccess(emoji: BidKingRawTableRow, options: EmojiRuntimeOptions): BidKingEmojiUnlockRequirement[] {

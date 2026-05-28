@@ -28,5 +28,5 @@
 - 本批文件按原版还原规则和工程落点归档；凡源码与原版源码口径不一致的地方，都按原版口径修正，不形成新的策划规则。
 - 核心状态机从回合开始直接进入 `intel`，共享类型、服务端调度和前端派生状态中只保留原版复刻流程。
 - 已按 `BidMap.map_group` 权重解析实际子拍场；父拍场只作为选择入口或包装，仓库、掉落、GameData 和结算统计以实际 `BidMap` 为准。
-- 场景随机动画与情报暗牌动画是必须保留的表现层复刻项：匹配入口 `BidMap.map_group` 非空时由 `openingCandidates` 驱动原版 `BattleRandom_Main`；存在地图公共情报时由 `intelligenceChoices` 驱动 `IntelligencePanel`，二者都在 `intel` 内运行。
+- 场景随机动画与情报暗牌动画是必须保留的表现层复刻项：匹配入口 `BidMap.map_group` 非空时由 `openingCandidates` 驱动原版 `BattleRandom_Main`；普通局首轮存在地图公共情报时由 `intelligenceChoices` 驱动 `IntelligencePanel`，暗牌明牌后保留阅读停顿，二者都在 `intel` 内运行。
 - 字段级比对索引见 `20260527_BidKingdom策划归档_11_源码比对细化补充.md`：覆盖 `GameData/GameUserData/GameSkillData`、`RoomData`、`SendAuctionGameData`、`MailItemData`、`ShopStatusData`、UIWnd 和系统表落点。

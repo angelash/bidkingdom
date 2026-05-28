@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Archive, Eye, History, Info, Lock, Sparkles } from 'lucide-react';
+import { BookOpen, Eye, History, Info, Lock, Sparkles } from 'lucide-react';
 import { gameConfig } from '@bitkingdom/config';
+import { sourceFinalRevealDelayMs } from '@bitkingdom/shared';
 import type {
   Clue,
   PlayerSnapshot,
@@ -142,8 +143,11 @@ export function IntelligencePanelOverlay({
 }: {
   round: NonNullable<PlayerSnapshot['public']['currentRound']>;
 }): JSX.Element {
+  const [mountedAt] = useState(() => Date.now());
+  const now = useNow();
   const selected = round.intelligenceClue ?? round.publicClues.at(-1);
   const choices = intelligenceChoiceReel(round, selected);
+  const revealedReady = now - mountedAt >= 1600;
   return (
     <section className="intelligence-overlay" aria-live="polite">
       <div className="intelligence-panel" style={{ '--intelligence-map-art': `url(${containerArtForKey(round.container.artKey)})` } as React.CSSProperties}>
@@ -154,7 +158,7 @@ export function IntelligencePanelOverlay({
         </div>
         <div className="intelligence-card-row">
           {choices.map((choice, index) => {
-            const revealed = Boolean(selected?.id === choice.id && choice.text);
+            const revealed = Boolean(revealedReady && selected?.id === choice.id && choice.text);
             return (
               <div
                 className={`intelligence-card ${revealed ? 'selected revealed' : 'hidden'}`}
@@ -178,7 +182,7 @@ export function IntelligencePanelOverlay({
         </div>
         <div className="intelligence-clue">
           <small>本轮公开情报</small>
-          <p>{selected?.text || '正在整理拍场情报...'}</p>
+          <p>{revealedReady ? selected?.text || '正在整理拍场情报...' : '暗牌正在轮选...'}</p>
         </div>
       </div>
     </section>
@@ -391,26 +395,45 @@ function SkillFeedRow({
 
 export function WarehouseGrid({
   round,
-  onInspectSlot
+  onInspectSlot,
+  onOpenEncyclopedia
 }: {
   round: NonNullable<PlayerSnapshot['public']['currentRound']>;
   onInspectSlot?: (slot: WarehouseSlotView) => void;
+  onOpenEncyclopedia?: () => void;
 }): JSX.Element {
   const slots = round.warehouseSlots ?? [];
   const revealedById = new Map(round.revealedItems.map((item, index) => [item.id, { item, index }]));
-  const estimate = estimateKnownWarehouseMinimum(round, revealedById);
+  const knownMinimumEstimate = estimateKnownWarehouseMinimum(round, revealedById);
   if (slots.length === 0) {
     return <></>;
   }
   return (
     <section className="warehouse-board">
-      <div className="section-title small">
-        <Archive size={16} />
-        <h3>仓内珍物</h3>
-      </div>
+      <header className="warehouse-title-bar">
+        <h3>战利品</h3>
+        <button onClick={onOpenEncyclopedia} type="button">
+          <BookOpen size={16} />
+          藏品百科
+        </button>
+      </header>
       <div className="warehouse-grid">
         {slots.map((slot) => {
           const revealed = slot.itemId ? revealedById.get(slot.itemId) : undefined;
+          const shouldRenderSlot = Boolean(
+            revealed
+            || slot.visibleShape
+            || slot.visibleRarity
+            || slot.visibleCategory
+            || slot.visibleValueRange
+            || slot.visibleSizeCount
+            || slot.markedBySkill
+            || slot.itemName
+            || slot.iconKey
+          );
+          if (!shouldRenderSlot) {
+            return null;
+          }
           const itemIcon = revealed ? itemIconForKey(revealed.item.iconKey) : slot.iconKey ? itemIconForKey(slot.iconKey) : undefined;
           const layoutW = revealed || slot.visibleShape ? Math.max(1, slot.w) : 1;
           const layoutH = revealed || slot.visibleShape ? Math.max(1, slot.h) : 1;
@@ -440,7 +463,7 @@ export function WarehouseGrid({
             >
               {revealed && <span className="slot-spinner" />}
               <div className="slot-content">
-                {itemIcon ? <img src={itemIcon} alt="" loading="lazy" /> : <span className="slot-shape" />}
+                {itemIcon && <img src={itemIcon} alt="" loading="lazy" />}
                 {slotLabel && <strong>{slotLabel}</strong>}
                 {revealed ? (
                   <em>{revealed.item.value.toLocaleString()}</em>
@@ -449,18 +472,77 @@ export function WarehouseGrid({
                 )}
               </div>
               {slot.markedBySkill && <small>{slot.markReason ?? '掌眼标记'}</small>}
-              <span className="slot-intel-hint">情报</span>
             </button>
           );
         })}
       </div>
       <div className="warehouse-estimate-bar">
-        <span>已知情报最低估算</span>
-        <strong>{estimate.minimum > 0 ? estimate.minimum.toLocaleString() : '-'}</strong>
-        <em>{estimate.pricedSlots}/{estimate.totalSlots} 件纳入 · {estimate.knownSlots} 件有情报</em>
+        <span>当前预估最低价格：</span>
+        <strong>{knownMinimumEstimate > 0 ? knownMinimumEstimate.toLocaleString() : '-'}</strong>
       </div>
     </section>
   );
+}
+
+type BattleRound = NonNullable<PlayerSnapshot['public']['currentRound']>;
+type RevealedRoundItem = BattleRound['revealedItems'][number];
+
+function estimateKnownWarehouseMinimum(
+  round: BattleRound,
+  revealedById: Map<string, { item: RevealedRoundItem; index: number }>
+): number {
+  return (round.warehouseSlots ?? []).reduce((sum, slot) => {
+    return sum + knownSlotLowerBound(slot, revealedById);
+  }, 0);
+}
+
+function knownSlotLowerBound(
+  slot: WarehouseSlotView,
+  revealedById: Map<string, { item: RevealedRoundItem; index: number }>
+): number {
+  if (slot.itemId) {
+    const revealed = revealedById.get(slot.itemId);
+    if (revealed) {
+      return revealed.item.value;
+    }
+  }
+  if (slot.visibleValueRange) {
+    return slot.visibleValueRange.min;
+  }
+
+  const exactName = slot.itemName?.trim();
+  const exactIcon = slot.iconKey?.trim();
+  if (exactName || exactIcon) {
+    const exactCandidates = bidKingLiveIntelItems.filter((item) => {
+      return (!exactName || item.name === exactName) && (!exactIcon || item.iconKey === exactIcon);
+    });
+    if (exactCandidates.length > 0) {
+      return Math.min(...exactCandidates.map((item) => item.displayValue));
+    }
+  }
+
+  const hasSourceEstimateAttributes = slot.visibleShape || Boolean(slot.visibleSizeCount) || Boolean(slot.visibleRarity);
+  if (!hasSourceEstimateAttributes) {
+    return 0;
+  }
+
+  const candidates = bidKingLiveIntelItems.filter((item) => {
+    if (slot.visibleShape && (item.footprint.w !== Math.max(1, slot.w) || item.footprint.h !== Math.max(1, slot.h))) {
+      return false;
+    }
+    if (slot.visibleSizeCount && item.footprint.w * item.footprint.h !== slot.visibleSizeCount) {
+      return false;
+    }
+    if (slot.visibleRarity && item.rarity !== slot.visibleRarity) {
+      return false;
+    }
+    return true;
+  });
+
+  if (candidates.length === 0) {
+    return 0;
+  }
+  return Math.min(...candidates.map((item) => item.displayValue));
 }
 
 export function useNow(): number {
@@ -650,111 +732,6 @@ function trimText(text: string, maxLength: number): string {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
-type BattleRound = NonNullable<PlayerSnapshot['public']['currentRound']>;
-type RevealedRoundItem = BattleRound['revealedItems'][number];
-
-interface WarehouseKnownMinimumEstimate {
-  knownSlots: number;
-  minimum: number;
-  pricedSlots: number;
-  totalSlots: number;
-}
-
-function estimateKnownWarehouseMinimum(
-  round: BattleRound,
-  revealedById: Map<string, { item: RevealedRoundItem; index: number }>
-): WarehouseKnownMinimumEstimate {
-  const slots = round.warehouseSlots ?? [];
-  let knownSlots = 0;
-  let minimum = 0;
-  let pricedSlots = 0;
-
-  for (const slot of slots) {
-    const revealed = slot.itemId ? revealedById.get(slot.itemId) : undefined;
-    const known = Boolean(
-      revealed
-      || slot.visibleValueRange
-      || slot.visibleRarity
-      || slot.visibleCategory
-      || slot.visibleShape
-      || slot.visibleSizeCount
-      || slot.itemName
-    );
-    if (known) {
-      knownSlots += 1;
-    }
-
-    const lowerBound = knownSlotLowerBound(slot, revealed?.item);
-    if (lowerBound !== undefined) {
-      minimum += lowerBound;
-      pricedSlots += 1;
-    }
-  }
-
-  return {
-    knownSlots,
-    minimum,
-    pricedSlots,
-    totalSlots: slots.length
-  };
-}
-
-function knownSlotLowerBound(slot: WarehouseSlotView, revealed?: RevealedRoundItem): number | undefined {
-  if (revealed) {
-    return revealed.value;
-  }
-  if (slot.visibleValueRange) {
-    return slot.visibleValueRange.min;
-  }
-
-  const hasCatalogFilter = Boolean(
-    slot.itemName
-    || slot.iconKey
-    || slot.visibleRarity
-    || slot.visibleCategory
-    || slot.visibleShape
-    || slot.visibleSizeCount
-  );
-  if (!hasCatalogFilter) {
-    return undefined;
-  }
-
-  const possibleItems = bidKingLiveIntelItems.filter((item) => {
-    if (slot.visibleRarity && item.rarity !== slot.visibleRarity) {
-      return false;
-    }
-    if (slot.visibleCategory && item.category !== slot.visibleCategory) {
-      return false;
-    }
-    if (slot.itemName && item.name !== slot.itemName) {
-      return false;
-    }
-    if (slot.iconKey && item.iconKey !== slot.iconKey) {
-      return false;
-    }
-    if (slot.visibleShape && (item.footprint.w !== slot.w || item.footprint.h !== slot.h)) {
-      return false;
-    }
-    if (slot.visibleSizeCount && item.footprint.w * item.footprint.h !== slot.visibleSizeCount) {
-      return false;
-    }
-    return true;
-  });
-
-  if (possibleItems.length === 0) {
-    return undefined;
-  }
-  return Math.min(...possibleItems.map((item) => item.displayValue));
-}
-
 function revealDurationForRarity(rarity: Rarity): number {
-  const durations: Record<Rarity, number> = {
-    junk: 520,
-    common: 620,
-    fine: 920,
-    rare: 1350,
-    legendary: 1900,
-    mythic: 2200
-  };
-  return durations[rarity];
+  return sourceFinalRevealDelayMs(rarity);
 }

@@ -140,6 +140,37 @@ describe('match core', () => {
     }
   });
 
+  it('keeps opening intelligence one-shot and exposes cumulative skill feed on later rounds', () => {
+    const match = makeCoreMatch();
+    const firstRound = buildSnapshot(match, 'p1').public.currentRound!;
+    const firstVisibleFeedIds = (firstRound.skillFeed ?? []).map((entry) => entry.id);
+
+    expect(firstRound.index).toBe(0);
+    expect(firstRound.intelligenceClue).toBeTruthy();
+    expect(firstRound.intelligenceChoices).toHaveLength(4);
+    expect(firstVisibleFeedIds.length).toBeGreaterThan(0);
+
+    setRoundPhase(match, 'auction', 30000, 3000);
+    const minimumBid = match.currentRound!.container.minimumBid ?? 0;
+    submitBid(match, 'p1', minimumBid + 14_000, 3100);
+    submitBid(match, 'p2', minimumBid + 8_000, 3200);
+    submitBid(match, 'b1', minimumBid + 2_000, 3300);
+    submitBid(match, 'b2', minimumBid, 3400);
+    settleCurrentRound(match, 3600);
+    finishRound(match, 3800);
+    startNextRound(match, 4000);
+
+    const secondRound = buildSnapshot(match, 'p1').public.currentRound!;
+    const secondVisibleFeedIds = new Set((secondRound.skillFeed ?? []).map((entry) => entry.id));
+
+    expect(secondRound.index).toBe(1);
+    expect(secondRound.intelligenceClue).toBeUndefined();
+    expect(secondRound.intelligenceChoices).toBeUndefined();
+    for (const id of firstVisibleFeedIds) {
+      expect(secondVisibleFeedIds.has(id)).toBe(true);
+    }
+  });
+
   it('keeps BidKing opening warehouse knowledge sparse until skills reveal it', () => {
     const match = makeCoreMatch();
     const round = match.currentRound!;
@@ -788,7 +819,7 @@ describe('match core', () => {
     expect(buildSnapshot(match, 'p1').public.currentRound?.revealedItems).toHaveLength(1);
   });
 
-  it('starts final settlement with footprints only and reveals lower rarity first', () => {
+  it('starts final settlement with footprints only and reveals by warehouse position', () => {
     const match = makeCoreMatch();
     const round = match.currentRound!;
     const highItem = {
@@ -853,7 +884,7 @@ describe('match core', () => {
 
     revealNextItem(match, 4500);
 
-    expect(match.currentRound!.revealedItems[0]?.id).toBe(lowItem.id);
+    expect(match.currentRound!.revealedItems[0]?.id).toBe(highItem.id);
   });
 
   it('builds a final summary with curve, rewards and revealed codex items', () => {

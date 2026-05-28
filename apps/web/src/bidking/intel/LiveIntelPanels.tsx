@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import {
   bidKingItemDisplayName,
@@ -7,7 +7,7 @@ import {
   itemFootprint,
   type BidKingItemRow
 } from '@bitkingdom/bidking-compat';
-import type { PlayerSnapshot, Rarity, WarehouseSlotView } from '@bitkingdom/shared';
+import type { PlayerSnapshot, Rarity, SkillFeedEntry, WarehouseSlotView } from '@bitkingdom/shared';
 import { itemIconForKey } from '../../artAssets';
 
 export interface LiveIntelItem {
@@ -45,6 +45,14 @@ interface MarketIntelPanelProps {
 const intelCategoryOptions = bidKingItemTypes
   .filter((type) => type.id === 100 || (type.id >= 101 && type.id <= 110))
   .map((type) => bidKingItemTypeDisplayName(type));
+
+const OPENING_MAP_INTRO_MS = 1600;
+const OPENING_INTELLIGENCE_PANEL_MS = 4600;
+const MARKET_INTEL_TIP_HOLD_MS = 1450;
+const MARKET_INTEL_TIP_MOVE_MS = 600;
+const MARKET_INTEL_TIP_SETTLE_MS = 300;
+const MARKET_INTEL_STEP_MS = MARKET_INTEL_TIP_HOLD_MS + MARKET_INTEL_TIP_MOVE_MS + MARKET_INTEL_TIP_SETTLE_MS;
+const MARKET_INTEL_ROW_VISIBLE_MS = MARKET_INTEL_TIP_HOLD_MS + MARKET_INTEL_TIP_MOVE_MS;
 
 export function LiveIntelModal({
   round,
@@ -164,41 +172,68 @@ export function LiveIntelModal({
 
 export function MarketIntelPanel({ snapshot }: MarketIntelPanelProps): JSX.Element {
   const round = snapshot.public.currentRound;
+  const now = useMarketIntelNow();
+  const cumulativeSkillEntries = useMemo(
+    () => round ? marketIntelEntriesForDisplay(round.skillFeed ?? [], round.index + 1) : [],
+    [round]
+  );
+  const currentRoundSkillEntries = useMemo(
+    () => round ? currentRoundMarketIntelEntries(cumulativeSkillEntries, round.index + 1) : [],
+    [cumulativeSkillEntries, round]
+  );
   if (!round) {
     return <></>;
   }
   const showEstimate = !round.container.estimateHidden;
-  const publicClues = round.publicClues.slice(-2);
-  const privateClues = (snapshot.private?.privateClues ?? []).slice(-1);
-  const skillEntries = (round.skillFeed ?? [])
-    .filter((entry) => entry.round === round.index + 1)
-    .slice(-3);
+  const presentationDelayMs = openingPresentationDelayMs(round);
+  const sequenceStartAt = currentRoundSkillEntries.length > 0
+    ? Math.min(...currentRoundSkillEntries.map((entry) => entry.createdAt)) + presentationDelayMs
+    : 0;
+  const sequenceElapsedMs = currentRoundSkillEntries.length > 0
+    ? now - sequenceStartAt
+    : Number.POSITIVE_INFINITY;
+  const sequenceTotalMs = currentRoundSkillEntries.length > 0
+    ? (currentRoundSkillEntries.length - 1) * MARKET_INTEL_STEP_MS + MARKET_INTEL_ROW_VISIBLE_MS
+    : 0;
+  const isSequencing = sequenceElapsedMs < sequenceTotalMs;
+  const visibleCurrentSkillEntries = currentRoundSkillEntries.filter((_, index) => (
+    !isSequencing || sequenceElapsedMs >= marketIntelRowVisibleAt(index)
+  ));
+  const visibleCurrentSkillEntryIds = new Set(visibleCurrentSkillEntries.map((entry) => entry.id));
+  const visibleSkillEntries = cumulativeSkillEntries.filter((entry) => (
+    entry.round < round.index + 1 || visibleCurrentSkillEntryIds.has(entry.id)
+  ));
+  const activeTip = isSequencing ? marketIntelActiveTip(currentRoundSkillEntries, sequenceElapsedMs) : undefined;
   return (
     <section className="market-intel-panel">
       <div className="intel-header">
         <span>{round.container.tags.join(' / ')}</span>
           <strong>{showEstimate ? `当前仓估中值：${Math.round((round.container.estimateMin + round.container.estimateMax) / 2).toLocaleString()}` : round.container.name}</strong>
       </div>
+      {activeTip && (
+        <div
+          className={`market-intel-tip source-${activeTip.entry.source} ${activeTip.moving ? 'moving' : ''}`}
+          key={activeTip.entry.id}
+        >
+          <i>{skillSourceName(activeTip.entry.source)}</i>
+          <strong>{marketIntelTipTitle(activeTip.entry)}</strong>
+          <span>{activeTip.entry.text}</span>
+        </div>
+      )}
       <div className="intel-list">
-        {publicClues.map((clue) => (
-          <p key={clue.id}>
-            <em>{clueSourceName(clue.source)}</em>
-            <span>{clue.text}</span>
-          </p>
-        ))}
-        {privateClues.map((clue) => (
-          <p className="private" key={clue.id}>
-            <em>{clueSourceName(clue.source)}</em>
-            <span>{clue.text}</span>
-          </p>
-        ))}
-        {skillEntries.map((entry) => (
-          <p className="skill" key={entry.id}>
+        {visibleSkillEntries.map((entry) => (
+          <p className={`skill source-${entry.source}`} key={entry.id}>
             <em>{skillSourceName(entry.source)}</em>
             <span><strong>{entry.skillName}</strong>{entry.text}</span>
           </p>
         ))}
-        {publicClues.length + privateClues.length + skillEntries.length === 0 && (
+        {cumulativeSkillEntries.length > 0 && visibleSkillEntries.length === 0 && (
+          <p>
+            <em>情报</em>
+            <span>正在揭示本轮情报。</span>
+          </p>
+        )}
+        {cumulativeSkillEntries.length === 0 && (
           <p>
             <em>情报</em>
             <span>等待本轮情报披露。</span>
@@ -207,6 +242,96 @@ export function MarketIntelPanel({ snapshot }: MarketIntelPanelProps): JSX.Eleme
       </div>
     </section>
   );
+}
+
+function useMarketIntelNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 120);
+    return () => window.clearInterval(timer);
+  }, []);
+  return now;
+}
+
+function marketIntelEntriesForDisplay(
+  skillFeed: readonly SkillFeedEntry[],
+  roundNumber: number
+): SkillFeedEntry[] {
+  const seen = new Set<string>();
+  return skillFeed
+    .filter((entry) => entry.round <= roundNumber)
+    .sort((left, right) => (
+      left.round - right.round
+      || marketIntelSourceOrder(left.source) - marketIntelSourceOrder(right.source)
+      || left.createdAt - right.createdAt
+      || left.id.localeCompare(right.id)
+    ))
+    .filter((entry) => {
+      if (seen.has(entry.id)) {
+        return false;
+      }
+      seen.add(entry.id);
+      return true;
+    });
+}
+
+function currentRoundMarketIntelEntries(
+  skillFeed: readonly SkillFeedEntry[],
+  roundNumber: number
+): SkillFeedEntry[] {
+  return skillFeed.filter((entry) => entry.round === roundNumber);
+}
+
+function openingPresentationDelayMs(round: NonNullable<PlayerSnapshot['public']['currentRound']>): number {
+  if (round.index !== 0) {
+    return 0;
+  }
+  const mapIntroMs = (round.openingCandidates?.length ?? 0) > 1 ? OPENING_MAP_INTRO_MS : 0;
+  const intelligencePanelMs = round.intelligenceClue ? OPENING_INTELLIGENCE_PANEL_MS : 0;
+  return mapIntroMs + intelligencePanelMs;
+}
+
+function marketIntelSourceOrder(source: SkillFeedEntry['source']): number {
+  const orders: Record<SkillFeedEntry['source'], number> = {
+    map: 0,
+    hero: 1,
+    item: 2,
+    manual: 3,
+    auto: 4
+  };
+  return orders[source];
+}
+
+function marketIntelRowVisibleAt(index: number): number {
+  return index * MARKET_INTEL_STEP_MS + MARKET_INTEL_ROW_VISIBLE_MS;
+}
+
+function marketIntelActiveTip(
+  entries: readonly SkillFeedEntry[],
+  sequenceElapsedMs: number
+): { entry: SkillFeedEntry; moving: boolean } | undefined {
+  if (sequenceElapsedMs < 0) {
+    return undefined;
+  }
+  for (let index = 0; index < entries.length; index++) {
+    const start = index * MARKET_INTEL_STEP_MS;
+    const end = start + MARKET_INTEL_ROW_VISIBLE_MS;
+    if (sequenceElapsedMs >= start && sequenceElapsedMs < end) {
+      const entry = entries[index];
+      if (!entry) {
+        return undefined;
+      }
+      return {
+        entry,
+        moving: sequenceElapsedMs >= start + MARKET_INTEL_TIP_HOLD_MS
+      };
+    }
+  }
+  return undefined;
+}
+
+function marketIntelTipTitle(entry: SkillFeedEntry): string {
+  return `${entry.sourceName}：${entry.skillName}`;
 }
 
 export function liveIntelItemFromCompat(item: BidKingItemRow): LiveIntelItem {
@@ -247,15 +372,6 @@ function compareShapeKeys(left: string, right: string): number {
   const [leftW = 1, leftH = 1] = left.split('x').map(Number);
   const [rightW = 1, rightH = 1] = right.split('x').map(Number);
   return leftW * leftH - rightW * rightH || leftW - rightW || leftH - rightH;
-}
-
-function clueSourceName(source: string): string {
-  const names: Record<string, string> = {
-    public: '公共',
-    private: '私有',
-    skill: '掌眼'
-  };
-  return names[source] ?? source;
 }
 
 function skillSourceName(source: string): string {

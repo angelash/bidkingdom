@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import type {
   CoreAuctionMode,
   PlayerProfile,
@@ -40,17 +40,22 @@ interface UseRoomActionsArgs {
   setSelectedRoleId: (roleId: string) => void;
   setSelfPlayerId: (playerId?: string) => void;
   setToast: (message: string) => void;
+  onMatchmakingStarted: (state: { bidMapId: number; estimatedSeconds: number; startedAt: number }) => void;
   snapshot?: PlayerSnapshot;
   socket: BidKingSocket | null;
 }
 
 export interface RoomActions {
+  cancelMatchmaking: () => void;
   createRoom: (nextBidMapId?: number, roleId?: string) => boolean;
+  matchGame: (nextBidMapId?: number, roleId?: string) => boolean;
   selectBidMap: (bidMapId: number) => void;
   selectCoreAuctionMode: (mode: CoreAuctionMode) => void;
   selectRole: (roleId: string) => void;
   startMatch: () => void;
 }
+
+const NORMAL_MATCH_START_DELAY_MS = 5000;
 
 export function useRoomActions({
   activeRoomCodeRef,
@@ -69,10 +74,26 @@ export function useRoomActions({
   setSelectedRoleId,
   setSelfPlayerId,
   setToast,
+  onMatchmakingStarted,
   snapshot,
   socket
 }: UseRoomActionsArgs): RoomActions {
-  const createRoom = useCallback((nextBidMapId?: number, roleId?: string): boolean => {
+  const matchStartTimerRef = useRef<number>();
+
+  const clearMatchStartTimer = useCallback((): void => {
+    if (matchStartTimerRef.current !== undefined) {
+      window.clearTimeout(matchStartTimerRef.current);
+      matchStartTimerRef.current = undefined;
+    }
+  }, []);
+
+  useEffect(() => () => clearMatchStartTimer(), [clearMatchStartTimer]);
+
+  const emitCreateRoom = useCallback((
+    nextBidMapId: number | undefined,
+    roleId: string | undefined,
+    onAck: (ack: RoomAck, bidMapId: number) => void
+  ): boolean => {
     if (!socket) {
       setToast('正在连接拍场，请稍候');
       return false;
@@ -111,9 +132,9 @@ export function useRoomActions({
     }, (ack: RoomAck) => {
       activeRoomCodeRef.current = ack.room.code;
       setSelfPlayerId(ack.selfPlayerId);
-      setRoom(ack.room);
       saveSession(ack.room.code, ack.selfPlayerId);
-      setToast(`房间 ${ack.room.code} 已创建`);
+      onAck(ack, bidMapId);
+      setRoom(ack.room);
     });
     return true;
   }, [
@@ -133,6 +154,29 @@ export function useRoomActions({
     setToast,
     socket
   ]);
+
+  const createRoom = useCallback((nextBidMapId?: number, roleId?: string): boolean => (
+    emitCreateRoom(nextBidMapId, roleId, (ack) => {
+      setToast(`房间 ${ack.room.code} 已创建`);
+    })
+  ), [emitCreateRoom, setToast]);
+
+  const matchGame = useCallback((nextBidMapId?: number, roleId?: string): boolean => {
+    clearMatchStartTimer();
+    return emitCreateRoom(nextBidMapId, roleId, (_ack, bidMapId) => {
+      const mapAccess = bidKingBidMapAccess(profile, bidMapId);
+      onMatchmakingStarted({
+        bidMapId,
+        estimatedSeconds: Math.max(8, (mapAccess.bidMap?.bidder_number ?? 4) * 4 + 1),
+        startedAt: Date.now()
+      });
+      setToast('正在匹配对局');
+      matchStartTimerRef.current = window.setTimeout(() => {
+        matchStartTimerRef.current = undefined;
+        socket?.emit('startMatch');
+      }, NORMAL_MATCH_START_DELAY_MS);
+    });
+  }, [clearMatchStartTimer, emitCreateRoom, onMatchmakingStarted, profile, setToast, socket]);
 
   const selectRole = useCallback((roleId: string): void => {
     setSelectedRoleId(roleId);
@@ -173,10 +217,12 @@ export function useRoomActions({
   }, [socket]);
 
   return useMemo(() => ({
+    cancelMatchmaking: clearMatchStartTimer,
     createRoom,
+    matchGame,
     selectBidMap,
     selectCoreAuctionMode,
     selectRole,
     startMatch
-  }), [createRoom, selectBidMap, selectCoreAuctionMode, selectRole, startMatch]);
+  }), [clearMatchStartTimer, createRoom, matchGame, selectBidMap, selectCoreAuctionMode, selectRole, startMatch]);
 }

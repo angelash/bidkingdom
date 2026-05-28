@@ -64,7 +64,7 @@ function round(overrides: Partial<CurrentRound> = {}): CurrentRound {
     currentBid: 0,
     skillFeed: [],
     revealedItems: [],
-    phaseEndsAt: 4200,
+    phaseEndsAt: 7200,
     minimumBid: 0,
     ...overrides
   };
@@ -74,7 +74,8 @@ describe('roundPresentationOverlay', () => {
   it('plays BattleRandom first and IntelligencePanel next during intel phase', () => {
     expect(roundPresentationOverlay(round(), 1000)).toBe('battle_random');
     expect(roundPresentationOverlay(round(), 2700)).toBe('intelligence_panel');
-    expect(roundPresentationOverlay(round(), 4300)).toBeUndefined();
+    expect(roundPresentationOverlay(round(), 5700)).toBe('intelligence_panel');
+    expect(roundPresentationOverlay(round(), 7300)).toBeUndefined();
   });
 
   it('does not play presentation overlays outside the source round-start intel phase', () => {
@@ -82,7 +83,7 @@ describe('roundPresentationOverlay', () => {
     expect(roundPresentationOverlay(round({ phase: 'reveal' }), 1000)).toBeUndefined();
   });
 
-  it('does not replay map random on later rounds', () => {
-    expect(roundPresentationOverlay(round({ index: 1, openingCandidates: undefined }), 1000)).toBe('intelligence_panel');
+  it('does not replay opening presentation overlays on later rounds', () => {
+    expect(roundPresentationOverlay(round({ index: 1, openingCandidates: undefined }), 1000)).toBeUndefined();
   });
 });

@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import type { PlayerSnapshot } from '@bitkingdom/shared';
+import { codexCatalogItems } from '../catalog/codexRuntime';
+import { HandBookPanel } from '../catalog/HandBookPanel';
 import { BattleFinalCeremony } from '../settlement/BattleFinalCeremony';
 import type { LiveIntelActions } from '../intel/useLiveIntelActions';
 import { BattleOverlayLayer } from './BattleOverlayLayer';
@@ -12,6 +15,8 @@ interface MatchRouteProps {
   matchState: MatchDerivedState;
   snapshot?: PlayerSnapshot;
   onPassAuction: () => void;
+  onContinueFinalCeremony: () => void;
+  onSendEmote: (emote: string) => void;
   onSelectSkillTarget: (playerId: string) => void;
   onUseBattleItem: (itemId: number, targetPlayerId?: string) => void;
 }
@@ -21,10 +26,13 @@ export function MatchRoute({
   liveIntel,
   matchState,
   snapshot,
+  onContinueFinalCeremony,
   onPassAuction,
+  onSendEmote,
   onSelectSkillTarget,
   onUseBattleItem
 }: MatchRouteProps): JSX.Element {
+  const [handBookOpen, setHandBookOpen] = useState(false);
   const currentRound = matchState.currentRound;
   const showFinalCeremony = Boolean(
     snapshot &&
@@ -38,6 +46,7 @@ export function MatchRoute({
       {snapshot && currentRound && (snapshot.public.status !== 'ended' || showFinalCeremony) && (
         showFinalCeremony ? (
           <BattleFinalCeremony
+            onContinue={onContinueFinalCeremony}
             round={currentRound}
             selfPlayerId={matchState.selfPlayer?.id}
             snapshot={snapshot}
@@ -56,8 +65,10 @@ export function MatchRoute({
             skillTargets={matchState.skillTargets}
             snapshot={snapshot}
             onInspectWarehouseSlot={liveIntel.inspectWarehouseSlot}
+            onOpenHandBook={() => setHandBookOpen(true)}
             onOpenLiveIntel={() => liveIntel.openLiveIntel()}
             onPassAuction={onPassAuction}
+            onSendEmote={onSendEmote}
             onSelectSkillTarget={onSelectSkillTarget}
             onSubmitBid={bidComposer.submitBidClick}
             onUseBattleItem={onUseBattleItem}
@@ -92,6 +103,12 @@ export function MatchRoute({
         onUsePreviousBid={bidComposer.usePreviousBidAmount}
       />
 
+      {handBookOpen && (
+        <HandBookPanel
+          items={codexCatalogItems}
+          onClose={() => setHandBookOpen(false)}
+        />
+      )}
     </>
   );
 }
