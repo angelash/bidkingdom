@@ -9,9 +9,11 @@ import {
 } from '@bitkingdom/bidking-compat';
 import type { PlayerSnapshot, Rarity, SkillFeedEntry, WarehouseSlotView } from '@bitkingdom/shared';
 import { itemIconForKey } from '../../artAssets';
+import { marketIntelSequenceState, marketIntelSequenceTimingForRound } from './marketIntelSequence';
 
 export interface LiveIntelItem {
   id: string;
+  sourceItemId?: number;
   name: string;
   category: string;
   rarity: Rarity;
@@ -45,14 +47,6 @@ interface MarketIntelPanelProps {
 const intelCategoryOptions = bidKingItemTypes
   .filter((type) => type.id === 100 || (type.id >= 101 && type.id <= 110))
   .map((type) => bidKingItemTypeDisplayName(type));
-
-const OPENING_MAP_INTRO_MS = 1600;
-const OPENING_INTELLIGENCE_PANEL_MS = 4600;
-const MARKET_INTEL_TIP_HOLD_MS = 1450;
-const MARKET_INTEL_TIP_MOVE_MS = 600;
-const MARKET_INTEL_TIP_SETTLE_MS = 300;
-const MARKET_INTEL_STEP_MS = MARKET_INTEL_TIP_HOLD_MS + MARKET_INTEL_TIP_MOVE_MS + MARKET_INTEL_TIP_SETTLE_MS;
-const MARKET_INTEL_ROW_VISIBLE_MS = MARKET_INTEL_TIP_HOLD_MS + MARKET_INTEL_TIP_MOVE_MS;
 
 export function LiveIntelModal({
   round,
@@ -173,37 +167,17 @@ export function LiveIntelModal({
 export function MarketIntelPanel({ snapshot }: MarketIntelPanelProps): JSX.Element {
   const round = snapshot.public.currentRound;
   const now = useMarketIntelNow();
-  const cumulativeSkillEntries = useMemo(
-    () => round ? marketIntelEntriesForDisplay(round.skillFeed ?? [], round.index + 1) : [],
-    [round]
-  );
-  const currentRoundSkillEntries = useMemo(
-    () => round ? currentRoundMarketIntelEntries(cumulativeSkillEntries, round.index + 1) : [],
-    [cumulativeSkillEntries, round]
+  const sequence = useMemo(
+    () => round ? marketIntelSequenceState(round, now, marketIntelSequenceTimingForRound(round, now)) : undefined,
+    [now, round]
   );
   if (!round) {
     return <></>;
   }
   const showEstimate = !round.container.estimateHidden;
-  const presentationDelayMs = openingPresentationDelayMs(round);
-  const sequenceStartAt = currentRoundSkillEntries.length > 0
-    ? Math.min(...currentRoundSkillEntries.map((entry) => entry.createdAt)) + presentationDelayMs
-    : 0;
-  const sequenceElapsedMs = currentRoundSkillEntries.length > 0
-    ? now - sequenceStartAt
-    : Number.POSITIVE_INFINITY;
-  const sequenceTotalMs = currentRoundSkillEntries.length > 0
-    ? (currentRoundSkillEntries.length - 1) * MARKET_INTEL_STEP_MS + MARKET_INTEL_ROW_VISIBLE_MS
-    : 0;
-  const isSequencing = sequenceElapsedMs < sequenceTotalMs;
-  const visibleCurrentSkillEntries = currentRoundSkillEntries.filter((_, index) => (
-    !isSequencing || sequenceElapsedMs >= marketIntelRowVisibleAt(index)
-  ));
-  const visibleCurrentSkillEntryIds = new Set(visibleCurrentSkillEntries.map((entry) => entry.id));
-  const visibleSkillEntries = cumulativeSkillEntries.filter((entry) => (
-    entry.round < round.index + 1 || visibleCurrentSkillEntryIds.has(entry.id)
-  ));
-  const activeTip = isSequencing ? marketIntelActiveTip(currentRoundSkillEntries, sequenceElapsedMs) : undefined;
+  const cumulativeSkillEntries = sequence?.cumulative ?? [];
+  const visibleSkillEntries = sequence?.visible ?? [];
+  const activeTip = sequence?.activeTip;
   return (
     <section className="market-intel-panel">
       <div className="intel-header">
@@ -253,83 +227,6 @@ function useMarketIntelNow(): number {
   return now;
 }
 
-function marketIntelEntriesForDisplay(
-  skillFeed: readonly SkillFeedEntry[],
-  roundNumber: number
-): SkillFeedEntry[] {
-  const seen = new Set<string>();
-  return skillFeed
-    .filter((entry) => entry.round <= roundNumber)
-    .sort((left, right) => (
-      left.round - right.round
-      || marketIntelSourceOrder(left.source) - marketIntelSourceOrder(right.source)
-      || left.createdAt - right.createdAt
-      || left.id.localeCompare(right.id)
-    ))
-    .filter((entry) => {
-      if (seen.has(entry.id)) {
-        return false;
-      }
-      seen.add(entry.id);
-      return true;
-    });
-}
-
-function currentRoundMarketIntelEntries(
-  skillFeed: readonly SkillFeedEntry[],
-  roundNumber: number
-): SkillFeedEntry[] {
-  return skillFeed.filter((entry) => entry.round === roundNumber);
-}
-
-function openingPresentationDelayMs(round: NonNullable<PlayerSnapshot['public']['currentRound']>): number {
-  if (round.index !== 0) {
-    return 0;
-  }
-  const mapIntroMs = (round.openingCandidates?.length ?? 0) > 1 ? OPENING_MAP_INTRO_MS : 0;
-  const intelligencePanelMs = round.intelligenceClue ? OPENING_INTELLIGENCE_PANEL_MS : 0;
-  return mapIntroMs + intelligencePanelMs;
-}
-
-function marketIntelSourceOrder(source: SkillFeedEntry['source']): number {
-  const orders: Record<SkillFeedEntry['source'], number> = {
-    map: 0,
-    hero: 1,
-    item: 2,
-    manual: 3,
-    auto: 4
-  };
-  return orders[source];
-}
-
-function marketIntelRowVisibleAt(index: number): number {
-  return index * MARKET_INTEL_STEP_MS + MARKET_INTEL_ROW_VISIBLE_MS;
-}
-
-function marketIntelActiveTip(
-  entries: readonly SkillFeedEntry[],
-  sequenceElapsedMs: number
-): { entry: SkillFeedEntry; moving: boolean } | undefined {
-  if (sequenceElapsedMs < 0) {
-    return undefined;
-  }
-  for (let index = 0; index < entries.length; index++) {
-    const start = index * MARKET_INTEL_STEP_MS;
-    const end = start + MARKET_INTEL_ROW_VISIBLE_MS;
-    if (sequenceElapsedMs >= start && sequenceElapsedMs < end) {
-      const entry = entries[index];
-      if (!entry) {
-        return undefined;
-      }
-      return {
-        entry,
-        moving: sequenceElapsedMs >= start + MARKET_INTEL_TIP_HOLD_MS
-      };
-    }
-  }
-  return undefined;
-}
-
 function marketIntelTipTitle(entry: SkillFeedEntry): string {
   return `${entry.sourceName}：${entry.skillName}`;
 }
@@ -337,6 +234,7 @@ function marketIntelTipTitle(entry: SkillFeedEntry): string {
 export function liveIntelItemFromCompat(item: BidKingItemRow): LiveIntelItem {
   return {
     id: `compat_${item.id}`,
+    sourceItemId: item.id,
     name: bidKingItemDisplayName(item),
     category: item.packaged_category,
     rarity: rarityFromCompatItem(item),

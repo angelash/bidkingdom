@@ -747,6 +747,7 @@ function publicRound(
   const exposeIntelligenceChoices = Boolean(round.intelligenceChoices && round.phase === 'intel');
   const cumulativeSkillFeed = cumulativeSkillFeedForRound(state, round);
   const visibleSkillFeed = visibleSkillFeedForRound(round, playerId, cumulativeSkillFeed);
+  const warehouseSkillFeed = warehouseSkillFeedForRound(round, visibleSkillFeed);
   return {
     id: round.id,
     index: round.index,
@@ -760,7 +761,7 @@ function publicRound(
       ? round.intelligenceChoices?.map(cloneClue)
       : undefined,
     publicClues: publicCluesForRound(round),
-    warehouseSlots: publicWarehouseSlots(round, playerId, visibleSkillFeed),
+    warehouseSlots: publicWarehouseSlots(round, playerId, warehouseSkillFeed),
     bids: exposeBidAmounts
       ? round.bids.map((bid) => ({ ...bid, visible: true }))
       : round.bids.map((bid) => ({ ...bid, amount: 0, visible: false })),
@@ -775,6 +776,17 @@ function publicRound(
   };
 }
 
+function warehouseSkillFeedForRound(
+  round: RuntimeRound,
+  skillFeed: readonly SkillFeedEntry[]
+): SkillFeedEntry[] {
+  if (round.phase !== 'intel') {
+    return [...skillFeed];
+  }
+  const currentRoundNumber = round.index + 1;
+  return skillFeed.filter((entry) => entry.round < currentRoundNumber);
+}
+
 function cumulativeSkillFeedForRound(
   state: MatchRuntimeState,
   round: RuntimeRound
@@ -786,12 +798,21 @@ function cumulativeSkillFeedForRound(
       .flatMap((history) => history.skillFeed ?? []),
     ...round.skillFeed
   ];
-  return feeds.filter((entry) => {
+  return oneShotMapSkillFeed(feeds).filter((entry) => {
     if (seenIds.has(entry.id)) {
       return false;
     }
     seenIds.add(entry.id);
     return true;
+  });
+}
+
+function oneShotMapSkillFeed(skillFeed: readonly SkillFeedEntry[]): SkillFeedEntry[] {
+  return skillFeed.filter((entry) => {
+    if (entry.source !== 'map') {
+      return true;
+    }
+    return entry.round === 1;
   });
 }
 

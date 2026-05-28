@@ -13,6 +13,8 @@ import type {
 } from '@bitkingdom/shared';
 import { containerArtForKey, itemIconForKey, roleAvatarForRoleId } from '../../artAssets';
 import { bidKingLiveIntelItems } from '../catalog/codexRuntime';
+import { marketIntelSequenceTimingForRound } from '../intel/marketIntelSequence';
+import { progressiveWarehouseSlotsForIntel } from '../intel/warehouseIntelSequence';
 
 export function CloseRuleLadder({ currentRound }: { currentRound: number }): JSX.Element {
   const rules = [
@@ -402,9 +404,10 @@ export function WarehouseGrid({
   onInspectSlot?: (slot: WarehouseSlotView) => void;
   onOpenEncyclopedia?: () => void;
 }): JSX.Element {
-  const slots = round.warehouseSlots ?? [];
+  const now = useWarehouseIntelNow(round);
+  const slots = progressiveWarehouseSlotsForIntel(round, now, marketIntelSequenceTimingForRound(round, now));
   const revealedById = new Map(round.revealedItems.map((item, index) => [item.id, { item, index }]));
-  const knownMinimumEstimate = estimateKnownWarehouseMinimum(round, revealedById);
+  const knownMinimumEstimate = estimateKnownWarehouseMinimum(slots, revealedById);
   if (slots.length === 0) {
     return <></>;
   }
@@ -488,12 +491,22 @@ type BattleRound = NonNullable<PlayerSnapshot['public']['currentRound']>;
 type RevealedRoundItem = BattleRound['revealedItems'][number];
 
 function estimateKnownWarehouseMinimum(
-  round: BattleRound,
+  slots: readonly WarehouseSlotView[],
   revealedById: Map<string, { item: RevealedRoundItem; index: number }>
 ): number {
-  return (round.warehouseSlots ?? []).reduce((sum, slot) => {
+  return slots.reduce((sum, slot) => {
     return sum + knownSlotLowerBound(slot, revealedById);
   }, 0);
+}
+
+function useWarehouseIntelNow(round: BattleRound): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 120);
+    return () => window.clearInterval(timer);
+  }, [round.id, round.phase]);
+  return now;
 }
 
 function knownSlotLowerBound(

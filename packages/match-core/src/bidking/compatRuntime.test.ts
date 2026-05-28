@@ -472,6 +472,7 @@ describe('BidKing compatible core runtime', () => {
     expect(match.players[0]?.privateClues.some((clue) => clue.id.includes(`_auto_p1_2_${hero.id}_${secondSkill.id}`))).toBe(true);
     expect(secondEvent).toBeDefined();
 
+    setRoundPhase(match, 'auction', 30000, 2000);
     const secondSnapshotRound = buildSnapshot(match, 'p1').public.currentRound!;
     const publicFeed = secondSnapshotRound.skillFeed ?? [];
     expect(publicFeed.some((entry) => entry.id === firstFeed?.id)).toBe(true);

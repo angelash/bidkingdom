@@ -119,7 +119,7 @@ export function buildBidKingRoundStartSkillFeed(
   const bidMap = bidMapFromTemplateId(round.container.templateId);
   const roundNumber = round.index + 1;
   const entries: SkillFeedEntry[] = [];
-  if (bidMap) {
+  if (bidMap && round.index === 0) {
     const mapSkill = skillForMapRound(bidMap, round.index, state);
     if (mapSkill) {
       const bidMapName = bidKingBidMapDisplayName(bidMap);

@@ -108,7 +108,7 @@ describe('match core', () => {
     expect(firstSnapshotRound.intelligenceChoices?.filter((choice) => choice.text).length).toBe(1);
     expect(firstSnapshotRound.skillFeed?.some((entry) => entry.visibility === 'public')).toBe(true);
     expect(firstSnapshotRound.skillFeed?.some((entry) => entry.playerId === 'p1' && entry.visibility === 'private')).toBe(true);
-    expect(firstSnapshotRound.warehouseSlots?.some((slot) => slot.markedBySkill)).toBe(true);
+    expect(firstSnapshotRound.warehouseSlots?.some((slot) => slot.markedBySkill)).toBe(false);
 
     for (let roundIndex = 0; roundIndex < 5; roundIndex += 1) {
       expect(match.currentRound!.container.id).toBe(warehouseId);
@@ -117,6 +117,9 @@ describe('match core', () => {
       expect(match.currentRound!.warehouseSlots.length).toBe(hiddenItemCount);
 
       setRoundPhase(match, 'auction', 30000, 3000 + roundIndex * 1000);
+      if (roundIndex === 0) {
+        expect(buildSnapshot(match, 'p1').public.currentRound?.warehouseSlots?.some((slot) => slot.markedBySkill)).toBe(true);
+      }
       const minimumBid = match.currentRound!.container.minimumBid ?? 0;
       const secondBid = Math.max(minimumBid, 36000 + roundIndex * 3000);
       submitBid(match, 'p1', secondBid + 4000, 3100 + roundIndex * 1000);
@@ -160,12 +163,25 @@ describe('match core', () => {
     finishRound(match, 3800);
     startNextRound(match, 4000);
 
+    expect(match.currentRound!.skillFeed.some((entry) => entry.source === 'map')).toBe(false);
+    match.currentRound!.skillFeed.push({
+      id: 'forced_round2_map_regression_guard',
+      round: 2,
+      source: 'map',
+      sourceName: '江东客舱',
+      skillName: '不该出现的场地情报',
+      text: '第二轮不得新增场地情报。',
+      visibility: 'public',
+      createdAt: 4000
+    });
+
     const secondRound = buildSnapshot(match, 'p1').public.currentRound!;
     const secondVisibleFeedIds = new Set((secondRound.skillFeed ?? []).map((entry) => entry.id));
 
     expect(secondRound.index).toBe(1);
     expect(secondRound.intelligenceClue).toBeUndefined();
     expect(secondRound.intelligenceChoices).toBeUndefined();
+    expect((secondRound.skillFeed ?? []).some((entry) => entry.source === 'map' && entry.round === 2)).toBe(false);
     for (const id of firstVisibleFeedIds) {
       expect(secondVisibleFeedIds.has(id)).toBe(true);
     }
@@ -187,11 +203,15 @@ describe('match core', () => {
       slot.iconKey === undefined
     )).toBe(true);
 
-    const markedSlots = (snapshotRound.warehouseSlots ?? []).filter((slot) => slot.markedBySkill);
+    expect((snapshotRound.warehouseSlots ?? []).some((slot) => slot.markedBySkill)).toBe(false);
+
+    setRoundPhase(match, 'auction', 30000, 3000);
+    const auctionRound = buildSnapshot(match, 'p1').public.currentRound!;
+    const markedSlots = (auctionRound.warehouseSlots ?? []).filter((slot) => slot.markedBySkill);
     expect(markedSlots.length).toBeGreaterThan(0);
     expect(markedSlots.some((slot) => slot.visibleShape && slot.visibleRarity !== undefined)).toBe(true);
 
-    const unmarkedSlots = (snapshotRound.warehouseSlots ?? []).filter((slot) => !slot.markedBySkill);
+    const unmarkedSlots = (auctionRound.warehouseSlots ?? []).filter((slot) => !slot.markedBySkill);
     expect(unmarkedSlots.length).toBeGreaterThan(0);
     expect(unmarkedSlots.every((slot) =>
       slot.visibleShape === false &&
@@ -239,6 +259,17 @@ describe('match core', () => {
     }];
     setRoundPhase(match, 'intel', 5000, 3000);
 
+    const intelQualityRound = buildSnapshot(match, 'p1').public.currentRound!;
+    const intelQualityView = intelQualityRound.warehouseSlots?.find((slot) => slot.slotId === targetSlot.slotId);
+    expect(intelQualityView).toEqual(expect.objectContaining({
+      x: targetSlot.x,
+      y: targetSlot.y,
+      w: 1,
+      h: 1,
+      visibleShape: false
+    }));
+
+    setRoundPhase(match, 'auction', 30000, 3500);
     const qualityRound = buildSnapshot(match, 'p1').public.currentRound!;
     const qualityView = qualityRound.warehouseSlots?.find((slot) => slot.slotId === targetSlot.slotId);
     expect(qualityView).toEqual(expect.objectContaining({
@@ -254,8 +285,9 @@ describe('match core', () => {
     round.skillFeed.push({
       id: `${round.id}_shape_pin_test`,
       round: round.index + 1,
-      source: 'map',
-      sourceName: '测试拍场',
+      source: 'hero',
+      playerId: 'p1',
+      sourceName: '测试名士',
       skillName: '轮廓标记',
       effectCategory: 1,
       text: '测试：显示轮廓。',
@@ -536,6 +568,11 @@ describe('match core', () => {
   it('uses automatic round-start skill clues to mark private warehouse knowledge', () => {
     const match = makeMatch();
 
+    const intelRound = buildSnapshot(match, 'p1').public.currentRound;
+    expect(intelRound?.skillFeed?.some((entry) => entry.playerId === 'p1' && entry.visibility === 'private')).toBe(true);
+    expect(intelRound?.warehouseSlots?.some((slot) => slot.markedBySkill)).toBe(false);
+
+    setRoundPhase(match, 'auction', 30000, 3000);
     expect(buildSnapshot(match, 'p1').public.currentRound?.warehouseSlots?.some((slot) => slot.markedBySkill)).toBe(true);
   });
 

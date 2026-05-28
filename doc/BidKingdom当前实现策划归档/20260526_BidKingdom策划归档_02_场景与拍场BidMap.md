@@ -26,7 +26,7 @@
 | `item_count_min/max` | 候选藏品数量范围，配合 `drop_group_id` 的 min/max 约束抽取数量 |
 | `map_time` | 每回合竞价秒数 |
 | `auction_rounds_rate` | 成交线倍率，标准为 `[2000,1600,1300,1100,0]` |
-| `map_random_skill` | 每回合公共地图技能组，指向 `SkillGroup` |
+| `map_random_skill` | 复刻口径只取首轮公共地图技能组作为开局场地情报，指向 `SkillGroup` |
 | `public_estimate_min/max_rate` | 内部估值上下限系数，客户端默认隐藏 |
 | `required_items` | 入场余额门槛，常见为银币门槛 |
 | `currency_cost` / `item_cost` | 入场消耗，默认未知 BidMap 只看货币消耗 |
