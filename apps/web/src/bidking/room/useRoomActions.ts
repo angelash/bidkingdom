@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from 'react';
+import { useCallback, useMemo, useRef, type MutableRefObject } from 'react';
 import type {
   CoreAuctionMode,
   PlayerProfile,
@@ -40,7 +40,7 @@ interface UseRoomActionsArgs {
   setSelectedRoleId: (roleId: string) => void;
   setSelfPlayerId: (playerId?: string) => void;
   setToast: (message: string) => void;
-  onMatchmakingStarted: (state: { bidMapId: number; estimatedSeconds: number; startedAt: number }) => void;
+  onMatchmakingStarted: (state: { bidMapId: number; estimatedSeconds: number; startedAt: number; ticketId?: string }) => void;
   snapshot?: PlayerSnapshot;
   socket: BidKingSocket | null;
 }
@@ -54,8 +54,6 @@ export interface RoomActions {
   selectRole: (roleId: string) => void;
   startMatch: () => void;
 }
-
-const NORMAL_MATCH_START_DELAY_MS = 5000;
 
 export function useRoomActions({
   activeRoomCodeRef,
@@ -78,16 +76,7 @@ export function useRoomActions({
   snapshot,
   socket
 }: UseRoomActionsArgs): RoomActions {
-  const matchStartTimerRef = useRef<number>();
-
-  const clearMatchStartTimer = useCallback((): void => {
-    if (matchStartTimerRef.current !== undefined) {
-      window.clearTimeout(matchStartTimerRef.current);
-      matchStartTimerRef.current = undefined;
-    }
-  }, []);
-
-  useEffect(() => () => clearMatchStartTimer(), [clearMatchStartTimer]);
+  const matchmakingTicketRef = useRef<string>();
 
   const emitCreateRoom = useCallback((
     nextBidMapId: number | undefined,
@@ -162,21 +151,74 @@ export function useRoomActions({
   ), [emitCreateRoom, setToast]);
 
   const matchGame = useCallback((nextBidMapId?: number, roleId?: string): boolean => {
-    clearMatchStartTimer();
-    return emitCreateRoom(nextBidMapId, roleId, (_ack, bidMapId) => {
-      const mapAccess = bidKingBidMapAccess(profile, bidMapId);
+    if (!socket) {
+      setToast('正在连接拍场，请稍候');
+      return false;
+    }
+    const bidMapId = nextBidMapId ?? selectedBidMapId;
+    if (!bidMapId) {
+      setToast('请选择拍场');
+      return false;
+    }
+    const access = bidKingBidMapAccess(profile, bidMapId);
+    if (!access.canEnter) {
+      setToast(`未满足入场条件：${access.reasons.join('、')}`);
+      return false;
+    }
+    if (bidMapId !== selectedBidMapId) {
+      setSelectedBidMapId(bidMapId);
+    }
+    const requestedRoleId = roleId ?? selectedRoleId;
+    if (requestedRoleId !== selectedRoleId) {
+      setSelectedRoleId(requestedRoleId);
+    }
+    const sceneMode = modeForBidMapId(bidMapId) ?? coreAuctionMode;
+    localStorage.setItem('bk_player_name', playerName);
+    saveCoreAuctionMode(sceneMode);
+    localStorage.setItem(SELECTED_BID_MAP_KEY, String(bidMapId));
+    setCoreAuctionMode(sceneMode);
+    socket.emit('matchGame', {
+      playerName,
+      profileId,
+      roleId: requestedRoleId,
+      sourceHeroId: bidKingHeroIdForRoleId(requestedRoleId, gameConfig.roles),
+      coreAuctionMode: sceneMode,
+      selectedBidMapId: bidMapId
+    }, (ack) => {
+      if (!ack.ok) {
+        setToast(ack.error);
+        return;
+      }
+      matchmakingTicketRef.current = ack.ticketId;
       onMatchmakingStarted({
         bidMapId,
-        estimatedSeconds: Math.max(8, (mapAccess.bidMap?.bidder_number ?? 4) * 4 + 1),
-        startedAt: Date.now()
+        estimatedSeconds: ack.estimatedSeconds,
+        startedAt: Date.now(),
+        ticketId: ack.ticketId
       });
       setToast('正在匹配对局');
-      matchStartTimerRef.current = window.setTimeout(() => {
-        matchStartTimerRef.current = undefined;
-        socket?.emit('startMatch');
-      }, NORMAL_MATCH_START_DELAY_MS);
     });
-  }, [clearMatchStartTimer, emitCreateRoom, onMatchmakingStarted, profile, setToast, socket]);
+    return true;
+  }, [
+    coreAuctionMode,
+    onMatchmakingStarted,
+    playerName,
+    profile,
+    profileId,
+    selectedBidMapId,
+    selectedRoleId,
+    setCoreAuctionMode,
+    setSelectedBidMapId,
+    setSelectedRoleId,
+    setToast,
+    socket
+  ]);
+
+  const cancelMatchmaking = useCallback((): void => {
+    const ticketId = matchmakingTicketRef.current;
+    matchmakingTicketRef.current = undefined;
+    socket?.emit('cancelMatchmaking', { ticketId });
+  }, [socket]);
 
   const selectRole = useCallback((roleId: string): void => {
     setSelectedRoleId(roleId);
@@ -217,12 +259,12 @@ export function useRoomActions({
   }, [socket]);
 
   return useMemo(() => ({
-    cancelMatchmaking: clearMatchStartTimer,
+    cancelMatchmaking,
     createRoom,
     matchGame,
     selectBidMap,
     selectCoreAuctionMode,
     selectRole,
     startMatch
-  }), [clearMatchStartTimer, createRoom, matchGame, selectBidMap, selectCoreAuctionMode, selectRole, startMatch]);
+  }), [cancelMatchmaking, createRoom, matchGame, selectBidMap, selectCoreAuctionMode, selectRole, startMatch]);
 }

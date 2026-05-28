@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { bidKingBidMapPlayerCount } from '@bitkingdom/match-core';
 import { createRoomManager } from '../src/roomManager';
 import { createProfileService } from '../src/services/profileService';
 import type { ServerStore } from '../src/services/store';
@@ -112,5 +113,73 @@ describe('BidKing room manager entry costs', () => {
       entry.event === 'toast'
       && JSON.stringify(entry.payload).includes('竞拍票不足')
     ))).toBe(false);
+  });
+
+  it('groups normal matchmaking players into one room as soon as the bucket is full', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-28T12:00:00+08:00'));
+    const bidMapId = 2401;
+    const capacity = bidKingBidMapPlayerCount(bidMapId);
+    const profiles = createProfileService(createMemoryStore());
+    const io = createFakeIo();
+    const manager = createRoomManager(io as never, { info: vi.fn(), warn: vi.fn() } as never, { profiles });
+    const sockets = Array.from({ length: capacity }, (_, index) => createFakeSocket(`socket_match_${index}`));
+
+    sockets.forEach((socket, index) => {
+      const profile = profiles.getOrCreateProfile(`p_match_${index}`, `玩家${index + 1}`);
+      profile.coins = 2_100_000;
+      profile.tickets.current = 0;
+      profile.auctionStats!.highestWinningItemTotalValue = 2_000_000;
+      manager.bindSocket(socket as never);
+      socket.handlers.matchGame?.({
+        playerName: profile.name,
+        profileId: profile.playerId,
+        selectedBidMapId: bidMapId,
+        coreAuctionMode: 'sealed'
+      }, vi.fn());
+    });
+
+    const room = manager.listRooms()[0];
+    expect(room?.status).toBe('playing');
+    expect(room?.players.filter((player) => player.kind === 'human')).toHaveLength(capacity);
+    expect(new Set(room?.players.filter((player) => player.kind === 'human').map((player) => player.id))).toEqual(
+      new Set(Array.from({ length: capacity }, (_, index) => `p_match_${index}`))
+    );
+    expect(sockets.every((socket) => socket.emitted.some((entry) => entry.event === 'matchFound'))).toBe(true);
+  });
+
+  it('starts a partial normal matchmaking bucket after timeout and fills missing seats with bots', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-28T12:05:00+08:00'));
+    const bidMapId = 2401;
+    const capacity = bidKingBidMapPlayerCount(bidMapId);
+    const humanCount = Math.max(1, capacity - 1);
+    const profiles = createProfileService(createMemoryStore());
+    const io = createFakeIo();
+    const manager = createRoomManager(io as never, { info: vi.fn(), warn: vi.fn() } as never, { profiles });
+    const sockets = Array.from({ length: humanCount }, (_, index) => createFakeSocket(`socket_timeout_${index}`));
+
+    sockets.forEach((socket, index) => {
+      const profile = profiles.getOrCreateProfile(`p_timeout_${index}`, `超时玩家${index + 1}`);
+      profile.coins = 2_100_000;
+      profile.tickets.current = 0;
+      profile.auctionStats!.highestWinningItemTotalValue = 2_000_000;
+      manager.bindSocket(socket as never);
+      socket.handlers.matchGame?.({
+        playerName: profile.name,
+        profileId: profile.playerId,
+        selectedBidMapId: bidMapId,
+        coreAuctionMode: 'sealed'
+      }, vi.fn());
+    });
+
+    expect(manager.listRooms()).toHaveLength(0);
+    vi.advanceTimersByTime(10_000);
+
+    const room = manager.listRooms()[0];
+    expect(room?.status).toBe('playing');
+    expect(room?.players).toHaveLength(capacity);
+    expect(room?.players.filter((player) => player.kind === 'human')).toHaveLength(humanCount);
+    expect(room?.players.filter((player) => player.kind === 'bot')).toHaveLength(capacity - humanCount);
   });
 });

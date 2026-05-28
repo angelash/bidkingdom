@@ -20,6 +20,7 @@ import { useMatchDerivedState } from '../battle/useMatchDerivedState';
 import { MainHallRoute } from '../home/MainHallRoute';
 import { useLiveIntelActions } from '../intel/useLiveIntelActions';
 import { useProfileActions } from '../profile/useProfileActions';
+import { saveSession } from '../profile/profileSession';
 import { RoomLobbyRoute } from '../room/RoomLobbyRoute';
 import { useRoomActions } from '../room/useRoomActions';
 import { useReplayActions } from '../settlement/useReplayActions';
@@ -38,6 +39,7 @@ export function BidKingApp(): JSX.Element {
     bidMapId: number;
     estimatedSeconds: number;
     startedAt: number;
+    ticketId?: string;
   }>();
   const {
     account,
@@ -209,6 +211,50 @@ export function BidKingApp(): JSX.Element {
     snapshot,
     socket
   });
+  useEffect(() => {
+    if (!socket) {
+      return;
+    }
+    const handleMatchmakingUpdated = (payload: {
+      ticketId: string;
+      elapsedMs: number;
+      estimatedSeconds: number;
+      queuedCount: number;
+      capacity: number;
+    }): void => {
+      setMatchmakingState((current) => current
+        ? {
+            ...current,
+            estimatedSeconds: payload.estimatedSeconds,
+            startedAt: Date.now() - payload.elapsedMs,
+            ticketId: payload.ticketId
+          }
+        : current);
+    };
+    const handleMatchmakingCancelled = (): void => {
+      setMatchmakingState(undefined);
+      setToast('已取消匹配');
+    };
+    const handleMatchFound = (payload: {
+      ticketId: string;
+      roomCode: string;
+      matchId?: string;
+      selfPlayerId: string;
+    }): void => {
+      activeRoomCodeRef.current = payload.roomCode;
+      setSelfPlayerId(payload.selfPlayerId);
+      saveSession(payload.roomCode, payload.selfPlayerId);
+      setToast('匹配成功，正在进入对局');
+    };
+    socket.on('matchmakingUpdated', handleMatchmakingUpdated);
+    socket.on('matchmakingCancelled', handleMatchmakingCancelled);
+    socket.on('matchFound', handleMatchFound);
+    return () => {
+      socket.off('matchmakingUpdated', handleMatchmakingUpdated);
+      socket.off('matchmakingCancelled', handleMatchmakingCancelled);
+      socket.off('matchFound', handleMatchFound);
+    };
+  }, [activeRoomCodeRef, setSelfPlayerId, setToast, socket]);
   const navigation = useBidKingAppNavigation({
     activeRoomCodeRef,
     bidComposer,
@@ -238,7 +284,7 @@ export function BidKingApp(): JSX.Element {
     if (snapshot && matchmakingState) {
       setToast('已进入对局');
     }
-    if (!room || snapshot) {
+    if (snapshot) {
       setMatchmakingState(undefined);
     }
   }, [matchmakingState, room, setToast, snapshot]);
@@ -261,7 +307,7 @@ export function BidKingApp(): JSX.Element {
 
   const isActiveMatchView = view === 'play' && Boolean(snapshot && matchState.currentRound && snapshot.public.status !== 'ended');
   const isHomeView = view === 'play' && !room;
-  const isMatchingView = view === 'play' && Boolean(room && !snapshot && matchmakingState);
+  const isMatchingView = view === 'play' && Boolean(!snapshot && matchmakingState);
   const matchmakingElapsedSeconds = matchmakingState
     ? Math.max(0, Math.floor((now - matchmakingState.startedAt) / 1000))
     : 0;

@@ -1603,6 +1603,40 @@ export interface RankSnapshot {
   entries: RankSnapshotEntry[];
 }
 
+export interface MatchGamePayload {
+  playerName: string;
+  profileId?: string;
+  roleId?: string;
+  sourceHeroId?: number;
+  coreAuctionMode: CoreAuctionMode;
+  selectedBidMapId: number;
+}
+
+export type MatchGameAck =
+  | {
+    ok: true;
+    ticketId: string;
+    estimatedSeconds: number;
+    queuedCount: number;
+    capacity: number;
+  }
+  | { ok: false; error: string };
+
+export interface MatchmakingStatusPayload {
+  ticketId: string;
+  elapsedMs: number;
+  estimatedSeconds: number;
+  queuedCount: number;
+  capacity: number;
+}
+
+export interface MatchFoundPayload {
+  ticketId: string;
+  roomCode: string;
+  matchId?: string;
+  selfPlayerId: string;
+}
+
 export interface ClientToServerEvents {
   createRoom: (
     payload: { playerName: string; profileId?: string; roleId?: string; sourceHeroId?: number; botCount: number; coreAuctionMode: CoreAuctionMode; selectedBidMapId: number; initialCash?: number },
@@ -1620,6 +1654,14 @@ export interface ClientToServerEvents {
   selectRole: (payload: { roleId: string; sourceHeroId?: number }) => void;
   setCoreAuctionMode: (payload: { mode: CoreAuctionMode }) => void;
   setSelectedBidMap: (payload: { bidMapId: number }) => void;
+  matchGame: (
+    payload: MatchGamePayload,
+    ack: (result: MatchGameAck) => void
+  ) => void;
+  cancelMatchmaking: (
+    payload: { ticketId?: string },
+    ack?: (result: { ok: true } | { ok: false; error: string }) => void
+  ) => void;
   startMatch: () => void;
   leaveRoom: () => void;
   submitBid: (payload: { amount: number }) => void;
@@ -1633,6 +1675,9 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   roomUpdated: (snapshot: RoomSnapshot) => void;
   matchSnapshot: (snapshot: PlayerSnapshot) => void;
+  matchmakingUpdated: (payload: MatchmakingStatusPayload) => void;
+  matchmakingCancelled: (payload: { ticketId: string }) => void;
+  matchFound: (payload: MatchFoundPayload) => void;
   profileUpdated: (snapshot: ProfileSnapshot) => void;
   toast: (payload: { tone: 'info' | 'success' | 'warning' | 'danger'; message: string }) => void;
   eventLog: (event: MatchEventLog) => void;

@@ -21,6 +21,8 @@ import type {
   AdminMatchListItem,
   ClientToServerEvents,
   CoreAuctionMode,
+  MatchGameAck,
+  MatchGamePayload,
   RoomSnapshot,
   ServerToClientEvents
 } from '@bitkingdom/shared';
@@ -42,6 +44,16 @@ import { createRoomBroadcastRuntime } from './domain/battle/roomBroadcastRuntime
 import { inventoryRecord } from './domain/profile/profileInventory';
 import { bidKingSourceBoxIdForProfileStockBox } from './domain/profile/profileStockRuntime';
 import { createRoomRoundRuntime } from './domain/battle/roomRoundRuntime';
+import {
+  MATCHMAKING_DISCONNECT_GRACE_MS,
+  MATCHMAKING_MAX_WAIT_MS,
+  activeMatchmakingEntries,
+  matchmakingBucketElapsedMs,
+  matchmakingBucketKey,
+  takeMatchmakingBatch,
+  type MatchmakingBucket,
+  type MatchmakingEntry
+} from './domain/battle/matchmakingRuntime';
 import { apiErrorEnvelope } from './domain/system/errorCodeCatalog';
 import {
   snapshotRoom,
@@ -83,6 +95,10 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
   const socketToRoom = new Map<string, string>();
   const socketToPlayer = new Map<string, string>();
   const emojiCooldowns = new Map<string, number>();
+  const matchmakingBuckets = new Map<string, MatchmakingBucket>();
+  const matchmakingTicketSockets = new Map<string, AppSocket>();
+  const matchmakingPlayerTickets = new Map<string, string>();
+  const matchmakingSocketTickets = new Map<string, string>();
   const broadcasts = createRoomBroadcastRuntime(io, services.profiles);
   const roundRuntime = createRoomRoundRuntime({
     broadcastRoom: broadcasts.broadcastRoom,
@@ -111,8 +127,8 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
           payload.playerName,
           payload.roleId,
           payload.sourceHeroId,
-          payload.botCount,
-          payload.coreAuctionMode,
+          payload.botCount ?? maxBotCount,
+          payload.coreAuctionMode ?? 'sealed',
           payload.selectedBidMapId,
           payload.profileId
         );
@@ -143,6 +159,23 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       ack({ ok: true, room: snapshotRoom(room), selfPlayerId: player.id });
       broadcasts.emitProfileSnapshot(socket, player.id);
       broadcasts.broadcastRoom(room);
+    });
+
+    socket.on('matchGame', (payload, ack) => {
+      try {
+        const result = enqueueMatchmaking(socket, payload);
+        ack(result.ack);
+        processMatchmakingBucket(result.bucketKey);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '匹配失败';
+        ack({ ok: false, error: message });
+        emitError(socket, error);
+      }
+    });
+
+    socket.on('cancelMatchmaking', (payload, ack) => {
+      cancelMatchmaking(socket.id, payload.ticketId);
+      ack?.({ ok: true });
     });
 
     socket.on('rejoinRoom', (payload, ack) => {
@@ -259,6 +292,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     });
 
     socket.on('leaveRoom', () => {
+      cancelMatchmaking(socket.id);
       leaveSocketRoom(socket.id);
     });
 
@@ -358,6 +392,7 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
     });
 
     socket.on('disconnect', () => {
+      markMatchmakingSocketDisconnected(socket.id);
       const context = getSocketContext(socket.id);
       if (!context) {
         return;
@@ -430,6 +465,271 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
 
   function findMatch(matchId: string): MatchRuntimeState | undefined {
     return [...rooms.values()].find((room) => room.match?.id === matchId)?.match;
+  }
+
+  function enqueueMatchmaking(
+    socket: AppSocket,
+    payload: MatchGamePayload
+  ): { ack: Extract<MatchGameAck, { ok: true }>; bucketKey: string } {
+    const sessionProfileId = profileIdForSocket(socket);
+    if (sessionProfileId && payload.profileId && payload.profileId !== sessionProfileId) {
+      throw new Error('账号会话与玩家档案不匹配');
+    }
+    const playerId = sessionProfileId ?? (payload.profileId?.trim() || `p_${randomUUID()}`);
+    const existingTicketId = matchmakingPlayerTickets.get(playerId);
+    const existingEntry = existingTicketId ? findMatchmakingEntry(existingTicketId) : undefined;
+    if (existingEntry) {
+      const oldSocketId = existingEntry.socketId;
+      existingEntry.socketId = socket.id;
+      existingEntry.lastSeenAt = Date.now();
+      if (oldSocketId !== socket.id) {
+        matchmakingSocketTickets.delete(oldSocketId);
+      }
+      matchmakingTicketSockets.set(existingEntry.ticketId, socket);
+      matchmakingSocketTickets.set(socket.id, existingEntry.ticketId);
+      const bucket = bucketForEntry(existingEntry)!;
+      const ack = matchmakingAckForEntry(existingEntry, bucket);
+      emitMatchmakingUpdated(bucket);
+      return { ack, bucketKey: bucket.key };
+    }
+
+    const profile = services.profiles.getOrCreateProfile(playerId, payload.playerName);
+    const selectedBidMapId = requireAccessibleBidMap(profile, payload.selectedBidMapId);
+    const coreAuctionMode = validCoreAuctionMode(payload.coreAuctionMode);
+    const resolvedRole = resolveRoleSelection(payload.roleId, payload.sourceHeroId)
+      ?? resolveRoleSelection(bidKingRoleIdForHeroId(profile.selectedHeroId, gameConfig.roles), profile.selectedHeroId);
+    if (!resolvedRole) {
+      throw new Error('竞买人配置不存在');
+    }
+    const capacity = roomPlayerCapacity({ selectedBidMapId, players: [] });
+    const bucketKey = matchmakingBucketKey({ selectedBidMapId, coreAuctionMode, capacity });
+    const bucket = matchmakingBuckets.get(bucketKey) ?? {
+      key: bucketKey,
+      capacity,
+      entries: []
+    };
+    matchmakingBuckets.set(bucketKey, bucket);
+    const now = Date.now();
+    const entry: MatchmakingEntry = {
+      ticketId: `mm_${randomUUID()}`,
+      socketId: socket.id,
+      playerId,
+      playerName: payload.playerName,
+      profileId: playerId,
+      selectedBidMapId,
+      coreAuctionMode,
+      roleId: resolvedRole.roleId,
+      sourceHeroId: resolvedRole.heroCid,
+      enqueuedAt: now,
+      lastSeenAt: now,
+      status: 'queued'
+    };
+    bucket.entries.push(entry);
+    matchmakingTicketSockets.set(entry.ticketId, socket);
+    matchmakingPlayerTickets.set(playerId, entry.ticketId);
+    matchmakingSocketTickets.set(socket.id, entry.ticketId);
+    const ack = matchmakingAckForEntry(entry, bucket);
+    scheduleMatchmakingBucket(bucket);
+    emitMatchmakingUpdated(bucket);
+    return { ack, bucketKey };
+  }
+
+  function processMatchmakingBucket(bucketKey: string): void {
+    const bucket = matchmakingBuckets.get(bucketKey);
+    if (!bucket) {
+      return;
+    }
+    clearMatchmakingBucketTimer(bucket);
+    const batch = takeMatchmakingBatch(bucket, Date.now());
+    if (!batch) {
+      scheduleMatchmakingBucket(bucket);
+      emitMatchmakingUpdated(bucket);
+      return;
+    }
+
+    const validEntries: MatchmakingEntry[] = [];
+    for (const entry of batch) {
+      try {
+        const profile = services.profiles.getSnapshot(entry.playerId).profile;
+        requireAccessibleBidMap(profile, entry.selectedBidMapId);
+        validCoreAuctionMode(entry.coreAuctionMode);
+        validEntries.push(entry);
+      } catch (error) {
+        const entrySocket = matchmakingTicketSockets.get(entry.ticketId);
+        removeMatchmakingEntry(entry);
+        entrySocket?.emit('toast', {
+          tone: 'warning',
+          message: error instanceof Error ? error.message : '匹配失败'
+        });
+      }
+    }
+
+    if (validEntries.length > 0) {
+      createMatchedRoom(validEntries);
+    }
+
+    if (activeMatchmakingEntries(bucket).length === 0) {
+      clearMatchmakingBucketTimer(bucket);
+      matchmakingBuckets.delete(bucket.key);
+      return;
+    }
+    scheduleMatchmakingBucket(bucket);
+    emitMatchmakingUpdated(bucket);
+    processMatchmakingBucket(bucket.key);
+  }
+
+  function createMatchedRoom(entries: readonly MatchmakingEntry[]): void {
+    const first = entries[0];
+    if (!first) {
+      return;
+    }
+    const code = createUniqueRoomCode((candidate) => rooms.has(candidate));
+    const room = createRoomState({
+      id: `room_${randomUUID()}`,
+      code,
+      hostId: first.playerId,
+      botCount: 0,
+      totalRounds: bidKingDefaultBidGameCount(),
+      initialCash: bidKingInitialCashForBidMap(first.selectedBidMapId),
+      coreAuctionMode: first.coreAuctionMode,
+      selectedBidMapId: first.selectedBidMapId
+    });
+    rooms.set(code, room);
+
+    for (const entry of entries) {
+      const socket = matchmakingTicketSockets.get(entry.ticketId);
+      if (!socket) {
+        removeMatchmakingEntry(entry);
+        continue;
+      }
+      addHumanToRoom(room, socket, entry.playerName, entry.roleId, entry.sourceHeroId, entry.playerId);
+      socket.emit('matchFound', {
+        ticketId: entry.ticketId,
+        roomCode: room.code,
+        selfPlayerId: entry.playerId
+      });
+      removeMatchmakingEntry(entry);
+    }
+
+    startMatch(room);
+  }
+
+  function cancelMatchmaking(socketId: string, ticketId?: string): void {
+    const resolvedTicketId = ticketId ?? matchmakingSocketTickets.get(socketId);
+    if (!resolvedTicketId) {
+      return;
+    }
+    const entry = findMatchmakingEntry(resolvedTicketId);
+    if (!entry) {
+      matchmakingSocketTickets.delete(socketId);
+      return;
+    }
+    entry.status = 'cancelled';
+    const entrySocket = matchmakingTicketSockets.get(resolvedTicketId);
+    entrySocket?.emit('matchmakingCancelled', { ticketId: resolvedTicketId });
+    removeMatchmakingEntry(entry);
+    const bucket = bucketForEntry(entry, false);
+    if (bucket) {
+      emitMatchmakingUpdated(bucket);
+      scheduleMatchmakingBucket(bucket);
+    }
+  }
+
+  function markMatchmakingSocketDisconnected(socketId: string): void {
+    const ticketId = matchmakingSocketTickets.get(socketId);
+    const entry = ticketId ? findMatchmakingEntry(ticketId) : undefined;
+    if (!entry) {
+      return;
+    }
+    entry.lastSeenAt = Date.now();
+    setTimeout(() => {
+      const current = findMatchmakingEntry(ticketId!);
+      if (!current || current.socketId !== socketId || Date.now() - current.lastSeenAt < MATCHMAKING_DISCONNECT_GRACE_MS) {
+        return;
+      }
+      cancelMatchmaking(socketId, ticketId);
+    }, MATCHMAKING_DISCONNECT_GRACE_MS);
+  }
+
+  function scheduleMatchmakingBucket(bucket: MatchmakingBucket): void {
+    clearMatchmakingBucketTimer(bucket);
+    const entries = activeMatchmakingEntries(bucket);
+    if (entries.length === 0) {
+      return;
+    }
+    if (entries.length >= bucket.capacity) {
+      bucket.timer = setTimeout(() => processMatchmakingBucket(bucket.key), 0);
+      return;
+    }
+    const waitMs = Math.max(0, MATCHMAKING_MAX_WAIT_MS - (Date.now() - entries[0]!.enqueuedAt));
+    bucket.timer = setTimeout(() => processMatchmakingBucket(bucket.key), waitMs);
+  }
+
+  function clearMatchmakingBucketTimer(bucket: MatchmakingBucket): void {
+    if (bucket.timer) {
+      clearTimeout(bucket.timer);
+      bucket.timer = undefined;
+    }
+  }
+
+  function emitMatchmakingUpdated(bucket: MatchmakingBucket): void {
+    const entries = activeMatchmakingEntries(bucket);
+    const elapsedMs = matchmakingBucketElapsedMs(bucket, Date.now());
+    for (const entry of entries) {
+      matchmakingTicketSockets.get(entry.ticketId)?.emit('matchmakingUpdated', {
+        ticketId: entry.ticketId,
+        elapsedMs,
+        estimatedSeconds: Math.ceil(MATCHMAKING_MAX_WAIT_MS / 1000),
+        queuedCount: entries.length,
+        capacity: bucket.capacity
+      });
+    }
+  }
+
+  function matchmakingAckForEntry(entry: MatchmakingEntry, bucket: MatchmakingBucket): Extract<MatchGameAck, { ok: true }> {
+    return {
+      ok: true,
+      ticketId: entry.ticketId,
+      estimatedSeconds: Math.ceil(MATCHMAKING_MAX_WAIT_MS / 1000),
+      queuedCount: activeMatchmakingEntries(bucket).length,
+      capacity: bucket.capacity
+    };
+  }
+
+  function removeMatchmakingEntry(entry: MatchmakingEntry): void {
+    const bucket = bucketForEntry(entry, false);
+    if (bucket) {
+      bucket.entries = bucket.entries.filter((candidate) => candidate.ticketId !== entry.ticketId);
+    }
+    matchmakingPlayerTickets.delete(entry.playerId);
+    matchmakingSocketTickets.delete(entry.socketId);
+    matchmakingTicketSockets.delete(entry.ticketId);
+  }
+
+  function findMatchmakingEntry(ticketId: string): MatchmakingEntry | undefined {
+    for (const bucket of matchmakingBuckets.values()) {
+      const entry = bucket.entries.find((candidate) => candidate.ticketId === ticketId && candidate.status === 'queued');
+      if (entry) {
+        return entry;
+      }
+    }
+    return undefined;
+  }
+
+  function bucketForEntry(entry: MatchmakingEntry, create = true): MatchmakingBucket | undefined {
+    const capacity = roomPlayerCapacity({ selectedBidMapId: entry.selectedBidMapId, players: [] });
+    const key = matchmakingBucketKey({
+      selectedBidMapId: entry.selectedBidMapId,
+      coreAuctionMode: entry.coreAuctionMode,
+      capacity
+    });
+    const bucket = matchmakingBuckets.get(key);
+    if (bucket || !create) {
+      return bucket as MatchmakingBucket;
+    }
+    const nextBucket = { key, capacity, entries: [] };
+    matchmakingBuckets.set(key, nextBucket);
+    return nextBucket;
   }
 
   function createRoom(

@@ -169,7 +169,7 @@ interface MatchmakingBucket {
 | `apps/web/src/bidking/room/useRoomActions.ts` | `matchGame()` 改为发服务端匹配请求，删除本地 5 秒 `startMatch` timer |
 | `apps/web/src/bidking/app/BidKingApp.tsx` | 根据服务端 `matchmakingUpdated/matchFound/cancelled` 管理匹配悬浮窗 |
 | `apps/web/src/bidking/battlePrev/BattlePrevPanelView.tsx` | 保持当前匹配悬浮窗视觉，只改数据来源 |
-| `apps/server/tests/roomManager.test.ts` | 增加多人同池、人数满立即开局、超时补 Bot、取消、不同 Bucket 隔离测试 |
+| `apps/server/tests/roomManager.test.ts` | 增加多人同池、人数满立即开局、超时补 Bot 测试 |
 
 ## 验收场景
 
@@ -185,8 +185,8 @@ interface MatchmakingBucket {
 | 玩家重复点击开始匹配 | 仍只有一个队列项，返回当前 ticket 状态 |
 | 成局时某玩家资源不足 | 该玩家失败退出队列，其余玩家继续按规则匹配 |
 
-## 与当前实现的差异
+## 已实现口径
 
-当前实现是前端 `matchGame()` 调用 `createRoom`，服务端立即创建房间并补 Bot，前端本地等待 5 秒后发送 `startMatch`。该方式能完成单人带 Bot 开局，但没有服务端匹配池，多个玩家同时点击开始行动不会自动进入同一房间。
+当前实现已改为服务端权威匹配池：玩家先进入 Bucket，人数够则立即成局，最早玩家等待 10 秒仍不足则当前队列成局并补 Bot。前端只负责显示匹配状态和取消请求，不决定开局时间。
 
-目标实现改为服务端权威匹配池：玩家先进入 Bucket，人数够则立即成局，最早玩家等待 10 秒仍不足则当前队列成局并补 Bot。前端只负责显示匹配状态和取消请求，不决定开局时间。
+私人房间仍保留 `createRoom / joinRoom / startMatch`。普通匹配使用 `matchGame / cancelMatchmaking`，匹配成功后服务端创建内部 Room 并直接生成 `MatchRuntimeState`，该 Room 不进入可见房间等待页。
