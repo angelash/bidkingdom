@@ -345,6 +345,7 @@ export function BidKingApp(): JSX.Element {
           selectedBidMapId={selectedBidMapId}
           selectedRoleId={selectedRoleId}
           serverUrl={SERVER_URL}
+          sessionToken={sessionToken}
           authError={authError}
           matchmaking={battlePrevMatchmaking}
           onCancelMatchmaking={() => {

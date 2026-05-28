@@ -32,6 +32,7 @@ import {
 import { BidderPanelView } from '../bidder/BidderPanelView';
 import { CabinetBrowser } from '../cabinet/CabinetBrowser';
 import { HandBookPanel } from '../catalog/HandBookPanel';
+import { formatChineseCompactCurrency } from '../currencyFormat';
 import { FriendPanelView } from '../friend/FriendPanelView';
 import { ClubPanelView } from '../guild/ClubPanelView';
 import { MailPanelView } from '../mail/MailPanelView';
@@ -68,6 +69,7 @@ export function MainHallView({
   selectedBidMapId,
   selectedRoleId,
   serverUrl,
+  sessionToken,
   authError,
   matchmaking,
   resolveModeForBidMapId,
@@ -129,6 +131,7 @@ export function MainHallView({
   selectedBidMapId?: number;
   selectedRoleId: string;
   serverUrl: string;
+  sessionToken?: string;
   authError?: string;
   matchmaking?: BattlePrevMatchmakingState;
   resolveModeForBidMapId: (bidMapId?: number) => CoreAuctionMode | undefined;
@@ -329,7 +332,7 @@ export function MainHallView({
           </span>
           <span className="bk-resource silver">
             <Award size={24} />
-            <strong>{Math.max(1, Math.round(profile.coins / 1000)).toLocaleString()}K</strong>
+            <strong>{formatChineseCompactCurrency(profile.coins)}</strong>
           </span>
           <button type="button" title="同游" onClick={() => openHub('friend')}>
             <Users size={24} />
@@ -444,6 +447,7 @@ export function MainHallView({
           profile={profile}
           roles={gameConfig.roles}
           serverUrl={serverUrl}
+          sessionToken={sessionToken}
           onClose={() => setActiveHub(undefined)}
           onClaimCollectionIncome={onClaimCollectionIncome}
           onClaimReliefFund={onClaimReliefFund}

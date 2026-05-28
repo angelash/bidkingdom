@@ -8,6 +8,7 @@ import { roleAvatarForRoleId, rolePortraitForRoleId } from '../../artAssets';
 import { auctionModeName, PlayerGrid } from '../battle/BattlePanels';
 import type { BidKingBattleMapGroup } from '../battlePrev/BattlePrevPanelView';
 import { roleSkillDetailForRole } from '../bidder/roleSkillDetails';
+import { formatChineseCoinAmount, formatChineseCompactCurrency } from '../currencyFormat';
 import { taskBoardDefinitions } from '../task/taskDefinitions';
 
 type RoleDefinition = (typeof gameConfig.roles)[number];
@@ -78,7 +79,7 @@ export function RoomLobbyView({
           <div className="hall-resource-strip">
             <span>席位 <strong>{room.players.length}/{roomPlayerCount}</strong></span>
             <span>局规 <strong>{auctionModeName(room.coreAuctionMode)}</strong></span>
-            <span>起始 <strong>{formatCompactCurrency(room.initialCash)}</strong></span>
+            <span>起始 <strong>{formatChineseCompactCurrency(room.initialCash)}</strong></span>
             <span>房主 <strong>{isHost ? '你' : '队友'}</strong></span>
             <button disabled={!isHost} onClick={() => onSelectBidMap(nextBidMap.id)} type="button">
               场地 <strong>{displayBidMapName(lobbyBidMap)}</strong>
@@ -150,7 +151,7 @@ function HallRoleCard({
       </div>
       <div className="hall-role-stats">
         <span>Lv.{profile.level}</span>
-        <span>开局 {initialCash.toLocaleString()} 铜钱</span>
+        <span>开局 {formatChineseCoinAmount(initialCash)}</span>
         <span>{profile.rankPoints} 名望</span>
       </div>
       {onInspect && (
@@ -161,13 +162,6 @@ function HallRoleCard({
       )}
     </section>
   );
-}
-
-function formatCompactCurrency(value: number): string {
-  if (value >= 10_000) {
-    return `${Math.round(value / 10_000)}万`;
-  }
-  return value.toLocaleString();
 }
 
 function TaskBoard({ profile }: { profile: PlayerProfile }): JSX.Element {

@@ -63,12 +63,21 @@ interface PackagePanelViewProps {
   profile: PlayerProfile;
   roles: RoleDefinition[];
   serverUrl: string;
+  sessionToken?: string;
   onClose: () => void;
   onClaimCollectionIncome: () => void;
   onClaimReliefFund: () => void;
 }
 
-export function PackagePanelView({ profile, roles, serverUrl, onClose, onClaimCollectionIncome, onClaimReliefFund }: PackagePanelViewProps): JSX.Element {
+export function PackagePanelView({
+  profile,
+  roles,
+  serverUrl,
+  sessionToken,
+  onClose,
+  onClaimCollectionIncome,
+  onClaimReliefFund
+}: PackagePanelViewProps): JSX.Element {
   const ticketRuntime = bidKingTicketRuntimeSummary(bidKingTickets[0]!);
   const wareHouseRuntime = bidKingWareHouseRuntime();
   const packageItems = [
@@ -105,34 +114,64 @@ export function PackagePanelView({ profile, roles, serverUrl, onClose, onClaimCo
   const [incomeMotion, setIncomeMotion] = useState<PackageIncomeMotion>();
 
   useEffect(() => {
+    if (!sessionToken) {
+      setCollectionBonus(undefined);
+      return undefined;
+    }
     let cancelled = false;
-    fetch(`${serverUrl}/api/profile/collection-bonus?playerId=${encodeURIComponent(profile.playerId)}`)
-      .then((response) => response.json() as Promise<CollectionBonusView>)
+    fetch(`${serverUrl}/api/profile/collection-bonus?playerId=${encodeURIComponent(profile.playerId)}`, {
+      headers: profileFetchHeaders(sessionToken)
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('collection bonus unavailable');
+        }
+        return response.json() as Promise<unknown>;
+      })
       .then((payload) => {
-        if (!cancelled) {
+        if (!cancelled && isCollectionBonusView(payload)) {
           setCollectionBonus(payload);
         }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) {
+          setCollectionBonus(undefined);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [profile.playerId, profile.codex.length, profile.cabinetItemIds?.join(','), profile.lastCollectionIncomeAt, serverUrl]);
+  }, [profile.playerId, profile.codex.length, profile.cabinetItemIds?.join(','), profile.lastCollectionIncomeAt, serverUrl, sessionToken]);
 
   useEffect(() => {
+    if (!sessionToken) {
+      setReliefFund(undefined);
+      return undefined;
+    }
     let cancelled = false;
-    fetch(`${serverUrl}/api/profile/relief-fund?playerId=${encodeURIComponent(profile.playerId)}`)
-      .then((response) => response.json() as Promise<ReliefFundView>)
+    fetch(`${serverUrl}/api/profile/relief-fund?playerId=${encodeURIComponent(profile.playerId)}`, {
+      headers: profileFetchHeaders(sessionToken)
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('relief fund unavailable');
+        }
+        return response.json() as Promise<unknown>;
+      })
       .then((payload) => {
-        if (!cancelled) {
+        if (!cancelled && isReliefFundView(payload)) {
           setReliefFund(payload);
         }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) {
+          setReliefFund(undefined);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [profile.playerId, profile.coins, profile.inventory.length, profile.settings.bidkingReliefFundClaims, serverUrl]);
+  }, [profile.playerId, profile.coins, profile.inventory.length, profile.settings.bidkingReliefFundClaims, serverUrl, sessionToken]);
 
   useEffect(() => {
     if (!incomeMotion) {
@@ -278,7 +317,7 @@ export function PackagePanelView({ profile, roles, serverUrl, onClose, onClaimCo
           <section className="package-ticket-strip">
             <span>救济 {reliefFund?.remainingClaims ?? 0}/{reliefFund?.times ?? 0}</span>
             <span>资产 {(reliefFund?.totalAssets ?? profile.coins).toLocaleString()}</span>
-            <span>线 {reliefFund?.limit.toLocaleString() ?? '-'}</span>
+            <span>线 {reliefFund ? reliefFund.limit.toLocaleString() : '-'}</span>
             <span>{reliefFund?.reason ?? '同步中'}</span>
           </section>
           <WarehouseDetailCard entry={selectedWarehouseEntry} runtime={wareHouseRuntime} />
@@ -306,6 +345,40 @@ export function PackagePanelView({ profile, roles, serverUrl, onClose, onClaimCo
         </aside>
       </section>
     </FullScreenPanel>
+  );
+}
+
+function profileFetchHeaders(sessionToken: string): Record<string, string> {
+  return { authorization: `Bearer ${sessionToken}` };
+}
+
+function isCollectionBonusView(payload: unknown): payload is CollectionBonusView {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const data = payload as Partial<CollectionBonusView>;
+  return (
+    typeof data.codexCount === 'number' &&
+    typeof data.activeBonus === 'number' &&
+    typeof data.cabinetHourlyCoins === 'number' &&
+    typeof data.claimableCoins === 'number' &&
+    Array.isArray(data.tiers)
+  );
+}
+
+function isReliefFundView(payload: unknown): payload is ReliefFundView {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const data = payload as Partial<ReliefFundView>;
+  return (
+    typeof data.totalAssets === 'number' &&
+    typeof data.limit === 'number' &&
+    typeof data.times === 'number' &&
+    typeof data.remainingClaims === 'number' &&
+    typeof data.eligible === 'boolean' &&
+    typeof data.reason === 'string' &&
+    typeof data.rewardCoins === 'number'
   );
 }
 

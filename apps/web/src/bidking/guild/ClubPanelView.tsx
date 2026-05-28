@@ -11,6 +11,7 @@ import {
   type BidKingRawTableRow
 } from '@bitkingdom/bidking-compat';
 import type { PlayerProfile } from '@bitkingdom/shared';
+import { formatChineseCompactCurrency } from '../currencyFormat';
 import { safeBidKingDisplayText } from '../system/bidKingSystemRuntime';
 
 interface ClubPanelViewProps {
@@ -331,8 +332,5 @@ function guildPointDonationAmount(row: BidKingRawTableRow): number {
 }
 
 function compactAmount(value: number): string {
-  if (value >= 10_000) {
-    return `${Math.round(value / 10_000)}万`;
-  }
-  return String(value);
+  return formatChineseCompactCurrency(value);
 }

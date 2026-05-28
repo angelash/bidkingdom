@@ -20,6 +20,7 @@ interface MainHallRouteProps {
   selectedBidMapId?: number;
   selectedRoleId: string;
   serverUrl: string;
+  sessionToken?: string;
   authError?: string;
   matchmaking?: BattlePrevMatchmakingState;
   onCancelMatchmaking: () => void;
@@ -43,6 +44,7 @@ export function MainHallRoute({
   selectedBidMapId,
   selectedRoleId,
   serverUrl,
+  sessionToken,
   authError,
   matchmaking,
   onCancelMatchmaking,
@@ -65,6 +67,7 @@ export function MainHallRoute({
       selectedBidMapId={selectedBidMapId}
       selectedRoleId={selectedRoleId}
       serverUrl={serverUrl}
+      sessionToken={sessionToken}
       authError={authError}
       matchmaking={matchmaking}
       resolveModeForBidMapId={modeForBidMapId}

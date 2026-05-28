@@ -37,6 +37,7 @@ import { gameConfig } from '@bitkingdom/config';
 import type { PlayerProfile } from '@bitkingdom/shared';
 import { containerArtForKey, roleAvatarForRoleId, rolePortraitForRoleId } from '../../artAssets';
 import { roleSkillDetailForRole } from '../bidder/roleSkillDetails';
+import { formatChineseCompactCurrency } from '../currencyFormat';
 import type { GameExceptionInput } from '../system/gameExceptionRuntime';
 
 export type BattlePrevTab = 'map' | 'hero' | 'items' | 'settings';
@@ -254,7 +255,7 @@ export function BattlePrevPanelView({
             </span>
             <span className="silver">
               <Coins size={28} />
-              <strong>{formatWalletCoins(profile.coins)}</strong>
+              <strong>{formatChineseCompactCurrency(profile.coins)}</strong>
             </span>
             <button className="battle-scene-close" type="button" onClick={closeScene} title={matchmaking ? '取消匹配' : '关闭'}>
               <X size={42} />
@@ -289,7 +290,7 @@ export function BattlePrevPanelView({
                 <div className="battle-scene-stat-list">
                   <DetailStat label="拍卖价值" value={riskName(selectedBidMap.risk)} />
                   <EntryCostStat bidMap={selectedBidMap} profile={profile} />
-                  <DetailStat label="资产要求" value={formatFullCurrency(selectedAccess.requiredCoins)} icon={<Coins size={25} />} />
+                  <DetailStat label="资产要求" value={formatChineseCompactCurrency(selectedAccess.requiredCoins)} icon={<Coins size={25} />} />
                   <DetailStat label="拍卖轮数" value={String(selectedBidMap.auction_rounds_rate.length)} />
                   <DetailStat label="竞拍人数" value={`${selectedBidMap.bidder_number}人`} />
                 </div>
@@ -381,7 +382,7 @@ export function BattlePrevPanelView({
               </div>
 
               <div className="battle-scene-start-wrap">
-                <small>{selectedAccess.canEnter ? `${formatFullCurrency(selectedInitialCash)} 起始资金` : selectedAccess.reasons[0]}</small>
+                <small>{selectedAccess.canEnter ? `${formatChineseCompactCurrency(selectedInitialCash)} 起始资金` : selectedAccess.reasons[0]}</small>
                 <button
                   className={`battle-scene-start ${selectedAccess.canEnter ? '' : 'locked'}`}
                   type="button"
@@ -563,7 +564,7 @@ function EntryCostStat({
         {coinCost > 0 && (
           <em className="coin-cost">
             <Coins size={25} />
-            {formatFullCurrency(coinCost)}
+            {formatChineseCompactCurrency(coinCost)}
           </em>
         )}
         {itemCosts.map((cost) => {
@@ -715,18 +716,4 @@ function battleItemKindSymbol(type: number): string {
 
 function battleItemShortName(item: BidKingBattleItemRow): string {
   return bidKingBattleItemDisplayName(item).split('·').at(-1)?.slice(0, 2) ?? String(item.id).slice(-2);
-}
-
-function formatWalletCoins(value: number): string {
-  if (value >= 1_000_000) {
-    return `${(value / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })}K`;
-  }
-  if (value >= 10_000) {
-    return `${Math.round(value / 1000).toLocaleString()}K`;
-  }
-  return value.toLocaleString();
-}
-
-function formatFullCurrency(value: number): string {
-  return value.toLocaleString();
 }

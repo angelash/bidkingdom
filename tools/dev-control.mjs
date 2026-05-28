@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const WEB_PORT = numberEnv('BITKINGDOM_WEB_PORT', 5188);
 const SERVER_PORT = numberEnv('BITKINGDOM_PORT', 8787);
-const SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
+const SERVER_URL = process.env.VITE_SERVER_URL ?? process.env.BITKINGDOM_SERVER_URL ?? `http://127.0.0.1:${SERVER_PORT}`;
 const LEGACY_PORTS = [...new Set([5177, 5188, 8798, 8787].filter((port) => port !== WEB_PORT && port !== SERVER_PORT))];
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_DIR = resolve(ROOT, '.server');

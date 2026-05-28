@@ -13,6 +13,7 @@ import type {
 } from '@bitkingdom/shared';
 import { containerArtForKey, itemIconForKey, roleAvatarForRoleId } from '../../artAssets';
 import { bidKingLiveIntelItems } from '../catalog/codexRuntime';
+import { formatChineseCompactCurrency } from '../currencyFormat';
 import { marketIntelSequenceTimingForRound } from '../intel/marketIntelSequence';
 import { progressiveWarehouseSlotsForIntel } from '../intel/warehouseIntelSequence';
 
@@ -50,7 +51,7 @@ export function PlayerGrid({
         const role = gameConfig.roles.find((candidate) => candidate.id === player.roleId);
         const roleAvatar = roleAvatarForRoleId(role?.id);
         const currentRank = roundIndex !== undefined ? player.bidRanks?.find((entry) => entry.round === roundIndex + 1) : undefined;
-        const currentAmount = currentRank?.visibleAmount && currentRank.amount !== undefined ? ` · ${formatCompactCurrency(currentRank.amount)}` : '';
+        const currentAmount = currentRank?.visibleAmount && currentRank.amount !== undefined ? ` · ${formatChineseCompactCurrency(currentRank.amount)}` : '';
         const rankLabel = currentRank?.rank ? `第 ${currentRank.rank}${currentAmount}` : player.hasSubmittedBid ? `已出价${currentAmount}` : player.passed ? '停手' : '未出价';
         return (
           <div className={`player-seat ${player.id === selfPlayerId ? 'self' : ''}`} key={player.id}>
@@ -74,7 +75,7 @@ export function PlayerGrid({
                 {Array.from({ length: 5 }, (_, index) => {
                   const roundNumber = index + 1;
                   const entry = player.bidRanks?.find((candidate) => candidate.round === roundNumber);
-                  const amountText = entry?.visibleAmount && entry.amount !== undefined ? formatCompactCurrency(entry.amount) : undefined;
+                  const amountText = entry?.visibleAmount && entry.amount !== undefined ? formatChineseCompactCurrency(entry.amount) : undefined;
                   return (
                     <span
                       className={`${entry?.rank ? 'ranked' : entry?.submitted ? 'submitted' : ''} ${entry?.usedSkillName ? 'skilled' : ''} ${roundIndex === index ? 'current' : ''}`}
@@ -272,7 +273,7 @@ export function BidComposerModal({
           <p>{bidRuleNotice(round)}</p>
           <strong className={amount ? '' : 'empty'}>{amount ? (amountHidden ? '••••••' : Number(amount).toLocaleString()) : ''}</strong>
           <small>
-            现金 {formatCompactCurrency(availableCash)}
+            现金 {formatChineseCompactCurrency(availableCash)}
           </small>
           {error && <em className="bid-draft-error">{error}</em>}
           <button className="primary" disabled={!canConfirm} onClick={onConfirm}>确认出价</button>
@@ -684,17 +685,6 @@ function closeRuleMarginPercent(roundIndex: number): number {
 
 export function playerNameById(players: PublicPlayer[], playerId: string): string {
   return players.find((player) => player.id === playerId)?.name ?? '未知玩家';
-}
-
-function formatCompactCurrency(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 100_000_000) {
-    return `${(value / 100_000_000).toFixed(abs >= 1_000_000_000 ? 1 : 2).replace(/\.0+$/, '')}亿`;
-  }
-  if (abs >= 10_000) {
-    return `${(value / 10_000).toFixed(abs >= 100_000 ? 0 : 1).replace(/\.0$/, '')}万`;
-  }
-  return value.toLocaleString();
 }
 
 function skillBadgeText(skillName: string): string {

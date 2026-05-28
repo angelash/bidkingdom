@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 
 const WEB_PORT = process.env.BITKINGDOM_WEB_PORT ?? '5188';
 const SERVER_PORT = process.env.BITKINGDOM_PORT ?? '8787';
-const SERVER_URL = `http://127.0.0.1:${SERVER_PORT}`;
+const SERVER_URL = process.env.VITE_SERVER_URL ?? process.env.BITKINGDOM_SERVER_URL ?? `http://127.0.0.1:${SERVER_PORT}`;
 
 const children = [
   ['server', ['run', 'dev:server']],

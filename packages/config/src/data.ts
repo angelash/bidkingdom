@@ -10,7 +10,7 @@ const roles: GameConfig['roles'] = [
     passive: '矿玉珠宝线索准确度提高',
     cooldownRounds: 2,
     usesPerMatch: 2,
-    color: '#38bdf8'
+    color: '#d8ad5f'
   },
   {
     id: 'restorer',
@@ -32,7 +32,7 @@ const roles: GameConfig['roles'] = [
     passive: '低到中高阶藏品的判断更稳健',
     cooldownRounds: 2,
     usesPerMatch: 1,
-    color: '#22c55e'
+    color: '#b98536'
   },
   {
     id: 'mentor_teacher',
@@ -43,7 +43,7 @@ const roles: GameConfig['roles'] = [
     passive: '每轮更容易获得未知藏品轮廓线索',
     cooldownRounds: 1,
     usesPerMatch: 3,
-    color: '#84cc16'
+    color: '#c98e3e'
   },
   {
     id: 'trend_hunter',
@@ -120,7 +120,7 @@ const roles: GameConfig['roles'] = [
     passive: '更容易从逐轮信息中归纳整场数目',
     cooldownRounds: 1,
     usesPerMatch: 3,
-    color: '#14b8a6'
+    color: '#c66a3a'
   },
   {
     id: 'field_medic',
@@ -131,7 +131,7 @@ const roles: GameConfig['roles'] = [
     passive: '医药、器物、盔甲类尺寸提示更准确',
     cooldownRounds: 1,
     usesPerMatch: 3,
-    color: '#22c55e'
+    color: '#b98536'
   },
   {
     id: 'old_noble',
@@ -164,7 +164,7 @@ const roles: GameConfig['roles'] = [
     passive: '酒食香料与文玩古器线索更稳定',
     cooldownRounds: 2,
     usesPerMatch: 2,
-    color: '#38bdf8'
+    color: '#d8ad5f'
   },
   {
     id: 'caravan_master',
@@ -175,7 +175,7 @@ const roles: GameConfig['roles'] = [
     passive: '锦衣冠服与机巧器具的轮廓线索更准',
     cooldownRounds: 2,
     usesPerMatch: 2,
-    color: '#06b6d4'
+    color: '#a66a35'
   },
   {
     id: 'arms_dealer',
@@ -219,7 +219,7 @@ const roles: GameConfig['roles'] = [
     passive: '第 4、5 轮读取对手心理价更稳定',
     cooldownRounds: 1,
     usesPerMatch: 2,
-    color: '#0f172a'
+    color: '#3a1f12'
   }
 ];
 
