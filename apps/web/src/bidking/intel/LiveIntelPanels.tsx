@@ -9,6 +9,7 @@ import {
 } from '@bitkingdom/bidking-compat';
 import type { PlayerSnapshot, Rarity, SkillFeedEntry, WarehouseSlotView } from '@bitkingdom/shared';
 import { itemIconForKey } from '../../artAssets';
+import { rarityFromSourceQuality } from '../catalog/qualityVisuals';
 import { marketIntelSequenceState, marketIntelSequenceTimingForRound } from './marketIntelSequence';
 
 export interface LiveIntelItem {
@@ -147,7 +148,7 @@ export function LiveIntelModal({
         </div>
         <div className="live-intel-list">
           {candidates.map((item) => (
-            <div className="live-intel-item" key={item.id}>
+            <div className={`live-intel-item rarity-${item.rarity}`} key={item.id}>
               <img src={itemIconForKey(item.iconKey)} alt="" loading="lazy" />
               <div>
                 <strong>{item.name}</strong>
@@ -237,7 +238,7 @@ export function liveIntelItemFromCompat(item: BidKingItemRow): LiveIntelItem {
     sourceItemId: item.id,
     name: bidKingItemDisplayName(item),
     category: item.packaged_category,
-    rarity: rarityFromCompatItem(item),
+    rarity: rarityFromSourceQuality(item.item_quality) ?? 'junk',
     displayValue: item.base_value,
     iconKey: item.packaged_icon_key,
     footprint: itemFootprint(item.slot_type)
@@ -281,25 +282,6 @@ function skillSourceName(source: string): string {
     auto: '自动'
   };
   return names[source] ?? '掌眼';
-}
-
-function rarityFromCompatItem(item: BidKingItemRow): Rarity {
-  if (item.item_quality <= 1) {
-    return 'junk';
-  }
-  if (item.item_quality === 2) {
-    return 'common';
-  }
-  if (item.item_quality === 3) {
-    return 'fine';
-  }
-  if (item.item_quality === 4) {
-    return 'rare';
-  }
-  if (item.item_quality === 5) {
-    return 'legendary';
-  }
-  return 'mythic';
 }
 
 function rarityName(rarity: Rarity): string {

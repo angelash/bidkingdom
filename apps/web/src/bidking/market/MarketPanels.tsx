@@ -24,6 +24,7 @@ import {
   itemTypeFilterSummary,
   type BidKingItemTypeFilterId
 } from '../catalog/itemTypeFilterRuntime';
+import { qualityClassFromSourceQuality } from '../catalog/qualityVisuals';
 import { inventoryQuantity } from '../profile/profileInventory';
 
 interface MarketPanelProps {
@@ -119,7 +120,7 @@ export function TradePanelView({
         const price = marketSuggestedPrice(entry.refId, 'trade');
         const listingCost = bidKingMarketListingCost(price, bidKingMarketOrderDurationHours('trade'));
         return (
-          <article key={`trade_inventory_${entry.key}`}>
+          <article className={`market-item-card ${marketQualityClass(entry.refId)}`} key={`trade_inventory_${entry.key}`}>
             <strong>{marketItemName(entry.refId)}</strong>
             <p>库存 {entry.quantity} · {inventoryTypeLabel(entry.type)} · 单契上限 {marketListingLimit(entry.refId)}</p>
             <p>{itemTypeFilterSummary(entry.refId)}</p>
@@ -129,7 +130,7 @@ export function TradePanelView({
         );
       })}
       {orders.map((order) => (
-        <article className="claimed" key={order.id}>
+        <article className={`market-item-card claimed ${marketQualityClass(order.refId)}`} key={order.id}>
           <strong>{marketItemName(order.refId)}</strong>
           <p>数量 {order.quantity} · 状态 {marketOrderStatusLabel(order.status)} · {marketOrderExpiryText(order)}</p>
           {order.note && <p>{order.note}</p>}
@@ -143,7 +144,7 @@ export function TradePanelView({
         </article>
       ))}
       {globalOrders.map((order) => (
-        <article key={`global_trade_${order.id}`}>
+        <article className={`market-item-card ${marketQualityClass(order.refId)}`} key={`global_trade_${order.id}`}>
           <strong>{marketItemName(order.refId)}</strong>
           <p>{order.playerName} · {marketOrderStatusLabel(order.status)} · 数量 {order.quantity} · {marketOrderExpiryText(order)}</p>
           {order.note && <p>{order.note}</p>}
@@ -214,7 +215,7 @@ export function AuctionHousePanelView({
         const price = marketSuggestedPrice(entry.refId, 'auction');
         const listingCost = bidKingMarketListingCost(price, bidKingMarketOrderDurationHours('auction'));
         return (
-          <article key={`auction_inventory_${entry.key}`}>
+          <article className={`market-item-card ${marketQualityClass(entry.refId)}`} key={`auction_inventory_${entry.key}`}>
             <strong>{marketItemName(entry.refId)}</strong>
             <p>库存 {entry.quantity} · 单契上限 {marketListingLimit(entry.refId)}</p>
             <p>{itemTypeFilterSummary(entry.refId)}</p>
@@ -224,7 +225,7 @@ export function AuctionHousePanelView({
         );
       })}
       {orders.map((order) => (
-        <article className="claimed" key={order.id}>
+        <article className={`market-item-card claimed ${marketQualityClass(order.refId)}`} key={order.id}>
           <strong>{marketItemName(order.refId)}</strong>
           <p>数量 {order.quantity} · 状态 {marketOrderStatusLabel(order.status)} · {marketOrderExpiryText(order)}</p>
           {order.note && <p>{order.note}</p>}
@@ -238,7 +239,7 @@ export function AuctionHousePanelView({
         </article>
       ))}
       {globalOrders.map((order) => (
-        <article key={`global_auction_${order.id}`}>
+        <article className={`market-item-card ${marketQualityClass(order.refId)}`} key={`global_auction_${order.id}`}>
           <strong>{marketItemName(order.refId)}</strong>
           <p>{order.playerName} · {marketOrderStatusLabel(order.status)} · 数量 {order.quantity} · {marketOrderExpiryText(order)}</p>
           {order.note && <p>{order.note}</p>}
@@ -262,10 +263,14 @@ export function AuctionHousePanelView({
 }
 
 function marketItemName(refId: string | number): string {
-  const numericId = Number(refId);
+  const numericId = sourceItemIdFromRef(refId);
   const item = bidKingCompatItems.find((candidate) => candidate.id === numericId);
   const battleItem = bidKingBattleItems.find((candidate) => candidate.id === numericId);
   return item ? bidKingItemDisplayName(item) : battleItem ? bidKingBattleItemDisplayName(battleItem) : `珍物${refId}`;
+}
+
+function marketQualityClass(refId: string | number): string {
+  return qualityClassFromSourceQuality(bidKingItemByRef(refId)?.item_quality);
 }
 
 function inventoryTypeLabel(type: string): string {
@@ -279,8 +284,7 @@ function inventoryTypeLabel(type: string): string {
 }
 
 function marketSuggestedPrice(refId: string | number, orderType: 'trade' | 'auction'): number {
-  const numericId = Number(refId);
-  const item = bidKingCompatItems.find((candidate) => candidate.id === numericId);
+  const item = bidKingItemByRef(refId);
   const base = item?.base_value && item.base_value > 0 ? item.base_value : item?.auction_baseprice?.[0] ?? 800;
   const rawPrice = Math.max(100, Math.round(base * (orderType === 'auction' ? 1.6 : 1.1)));
   const step = bidKingMarketBidIncrement(rawPrice);
@@ -288,12 +292,24 @@ function marketSuggestedPrice(refId: string | number, orderType: 'trade' | 'auct
 }
 
 function marketListingLimit(refId: string | number): number {
-  const numericId = Number(refId);
-  const item = bidKingCompatItems.find((candidate) => candidate.id === numericId);
+  const item = bidKingItemByRef(refId);
   const limits = [item?.max_stack_size, item?.max_per_listing]
     .map((value) => Math.floor(Number(value) || 0))
     .filter((value) => value > 0);
   return limits.length > 0 ? Math.min(...limits) : 999;
+}
+
+function bidKingItemByRef(refId: string | number) {
+  const numericId = sourceItemIdFromRef(refId);
+  return Number.isFinite(numericId) ? bidKingCompatItems.find((candidate) => candidate.id === numericId) : undefined;
+}
+
+function sourceItemIdFromRef(refId: string | number): number {
+  if (typeof refId === 'number') {
+    return refId;
+  }
+  const compatMatch = /^compat_(\d+)/.exec(refId);
+  return Number(compatMatch?.[1] ?? refId);
 }
 
 function marketOrderStatusLabel(status: MarketOrderState['status']): string {

@@ -17,6 +17,7 @@ import {
 import { gameConfig } from '@bitkingdom/config';
 import type { PlayerProfile } from '@bitkingdom/shared';
 import { roleAvatarForRoleId } from '../../artAssets';
+import { qualityClassFromSourceQuality } from '../catalog/qualityVisuals';
 import { FullScreenPanel } from '../ui/FullScreenPanel';
 import { createPackageIncomeMotion, type PackageIncomeMotion } from './packageIncomeMotion';
 
@@ -254,7 +255,7 @@ export function PackagePanelView({
                 </div>
               ) : filteredWarehouseEntries.map((entry) => (
                 <button
-                  className={selectedWarehouseEntry?.key === entry.key ? 'selected' : ''}
+                  className={`${qualityClassFromSourceQuality(entry.item.item_quality)} ${selectedWarehouseEntry?.key === entry.key ? 'selected' : ''}`}
                   key={entry.key}
                   onClick={() => setSelectedWarehouseKey(entry.key)}
                   title={warehouseItemName(entry)}
@@ -399,7 +400,7 @@ function WarehouseDetailCard({
   }
   const actionStates = warehouseActionStates(entry);
   return (
-    <section className="warehouse-detail-card">
+    <section className={`warehouse-detail-card ${qualityClassFromSourceQuality(entry.item.item_quality)}`}>
       <header>
         <strong>{warehouseItemName(entry)}</strong>
         <span>x{entry.quantity}</span>

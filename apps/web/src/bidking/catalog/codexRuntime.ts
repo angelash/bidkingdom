@@ -11,11 +11,11 @@ import {
   type BidKingItemRuntimeFlags,
   type BidKingItemRow
 } from '@bitkingdom/bidking-compat';
-import type { Rarity } from '@bitkingdom/shared';
 import {
   liveIntelItemFromCompat,
   type LiveIntelItem
 } from '../intel/LiveIntelPanels';
+import { rarityFromSourceQuality } from './qualityVisuals';
 
 export type CodexCatalogItem = (typeof gameConfig.items)[number] & {
   bidKingQuality?: number;
@@ -37,7 +37,7 @@ function isBidKingCollectionItem(item: BidKingItemRow): boolean {
 
 function codexItemFromCompat(item: BidKingItemRow): CodexCatalogItem {
   const footprint = itemFootprint(item.slot_type);
-  const rarity = rarityFromCompatItem(item);
+  const rarity = rarityFromSourceQuality(item.item_quality) ?? 'junk';
   return {
     id: `compat_${item.id}`,
     name: bidKingItemDisplayName(item),
@@ -56,23 +56,4 @@ function codexItemFromCompat(item: BidKingItemRow): CodexCatalogItem {
     sourceItemId: item.id,
     typeNames: bidKingItemTypeRule(item).names
   };
-}
-
-function rarityFromCompatItem(item: BidKingItemRow): Rarity {
-  if (item.item_quality <= 1) {
-    return 'junk';
-  }
-  if (item.item_quality === 2) {
-    return 'common';
-  }
-  if (item.item_quality === 3) {
-    return 'fine';
-  }
-  if (item.item_quality === 4) {
-    return 'rare';
-  }
-  if (item.item_quality === 5) {
-    return 'legendary';
-  }
-  return 'mythic';
 }

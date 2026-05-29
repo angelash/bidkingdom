@@ -14,6 +14,7 @@ import {
   shopItemsForShop
 } from '@bitkingdom/bidking-compat';
 import type { PlayerProfile } from '@bitkingdom/shared';
+import { qualityClassFromSourceQuality } from '../catalog/qualityVisuals';
 import { inventoryQuantity } from '../profile/profileInventory';
 
 interface ShopPanelViewProps {
@@ -79,8 +80,9 @@ export function ShopPanelView({ profile, onBuyItem, onRefreshShop, onSetShopItem
             const itemId = entry.itemid[0]?.[0] ?? 0;
             const collected = shopItemCollected(profile, entry);
             const runtime = bidKingShopItemRuntimeSummary(entry, selectedShop);
+            const qualityClass = shopItemQualityClass(entry);
             return (
-              <article className="shop-item-card" key={entry.id}>
+              <article className={`shop-item-card ${qualityClass}`} key={entry.id}>
                 <div className="shop-item-card-header">
                   <span>{shopItemTypeLabel(entry.type)}</span>
                   {itemId > 0 && (
@@ -215,6 +217,12 @@ function shopItemDisplayName(entry: ReturnType<typeof shopItemsForShop>[number])
     return entry.packaged_name;
   }
   return bidKingItemDisplayName(item);
+}
+
+function shopItemQualityClass(entry: ReturnType<typeof shopItemsForShop>[number]): string {
+  const itemId = entry.itemid[0]?.[0] ?? 0;
+  const item = bidKingCompatItems.find((candidate) => candidate.id === itemId);
+  return qualityClassFromSourceQuality(item?.item_quality);
 }
 
 function shopPriceAffordable(profile: PlayerProfile, priceRows: readonly (readonly number[])[]): boolean {

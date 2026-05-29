@@ -1,6 +1,7 @@
 import { itemFootprint } from '@bitkingdom/bidking-compat';
-import type { PlayerSnapshot, Rarity, SkillFeedEntry, WarehouseSlotView } from '@bitkingdom/shared';
+import type { PlayerSnapshot, SkillFeedEntry, WarehouseSlotView } from '@bitkingdom/shared';
 import { bidKingLiveIntelItems } from '../catalog/codexRuntime';
+import { rarityFromSourceQuality } from '../catalog/qualityVisuals';
 import { marketIntelSequenceState, type MarketIntelSequenceTiming } from './marketIntelSequence';
 
 type PublicRound = NonNullable<PlayerSnapshot['public']['currentRound']>;
@@ -84,7 +85,7 @@ function applyVisibleSkillEntry(
   if (hitBox?.itemQuility || targetMatched) {
     next = {
       ...next,
-      visibleRarity: item?.rarity ?? (hitBox?.itemQuility ? rarityFromQuality(hitBox.itemQuility) : next.visibleRarity)
+      visibleRarity: item?.rarity ?? (hitBox?.itemQuility ? rarityFromSourceQuality(hitBox.itemQuility) : next.visibleRarity)
     };
     revealed = true;
   }
@@ -123,25 +124,6 @@ function applyVisibleSkillEntry(
     markedBySkill: true,
     markReason: skillMarkReason(entry)
   };
-}
-
-function rarityFromQuality(quality: number): Rarity {
-  if (quality <= 1) {
-    return 'junk';
-  }
-  if (quality === 2) {
-    return 'common';
-  }
-  if (quality === 3) {
-    return 'fine';
-  }
-  if (quality === 4) {
-    return 'rare';
-  }
-  if (quality === 5) {
-    return 'legendary';
-  }
-  return 'mythic';
 }
 
 function skillMarkReason(entry: SkillFeedEntry): string {
