@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, Eye, History, Info, Lock, Sparkles } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { BookOpen, Eye, History, Info, Lock, Sparkles, X } from 'lucide-react';
 import { gameConfig } from '@bitkingdom/config';
 import { sourceFinalRevealDelayMs } from '@bitkingdom/shared';
 import type {
@@ -12,10 +13,17 @@ import type {
   WarehouseSlotView
 } from '@bitkingdom/shared';
 import { containerArtForKey, itemIconForKey, roleAvatarForRoleId } from '../../artAssets';
+import { bidderBio, roleSkillDetailForRole } from '../bidder/roleSkillDetails';
 import { bidKingLiveIntelItems } from '../catalog/codexRuntime';
 import { formatChineseCompactCurrency } from '../currencyFormat';
 import { marketIntelSequenceTimingForRound } from '../intel/marketIntelSequence';
 import { progressiveWarehouseSlotsForIntel } from '../intel/warehouseIntelSequence';
+
+type PlayerTipPosition = {
+  left: number;
+  side: 'left' | 'right';
+  top: number;
+};
 
 export function CloseRuleLadder({ currentRound }: { currentRound: number }): JSX.Element {
   const rules = [
@@ -45,55 +53,183 @@ export function PlayerGrid({
   compact?: boolean;
   roundIndex?: number;
 }): JSX.Element {
+  const [inspectedPlayerId, setInspectedPlayerId] = useState<string>();
+  const [tipPosition, setTipPosition] = useState<PlayerTipPosition>();
+  const inspectedPlayer = inspectedPlayerId ? players.find((player) => player.id === inspectedPlayerId) : undefined;
+  const inspectedRole = inspectedPlayer ? gameConfig.roles.find((role) => role.id === inspectedPlayer.roleId) : undefined;
+
+  useEffect(() => {
+    if (!inspectedPlayerId) {
+      return undefined;
+    }
+    function closeTip(): void {
+      setInspectedPlayerId(undefined);
+      setTipPosition(undefined);
+    }
+    function closeOnOutsidePress(event: MouseEvent): void {
+      const target = event.target instanceof Element ? event.target : undefined;
+      if (target?.closest('.bidder-profile-tip') || target?.closest('.player-avatar-button')) {
+        return;
+      }
+      closeTip();
+    }
+    function closeOnEscape(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        closeTip();
+      }
+    }
+    document.addEventListener('mousedown', closeOnOutsidePress);
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeTip);
+    window.addEventListener('scroll', closeTip, true);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsidePress);
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeTip);
+      window.removeEventListener('scroll', closeTip, true);
+    };
+  }, [inspectedPlayerId]);
+
+  function inspectPlayer(playerId: string, event: React.MouseEvent<HTMLButtonElement>): void {
+    if (inspectedPlayerId === playerId) {
+      setInspectedPlayerId(undefined);
+      setTipPosition(undefined);
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const tipWidth = 292;
+    const tipHeight = 220;
+    const gap = 10;
+    const rightSideFits = rect.right + gap + tipWidth + 10 <= window.innerWidth;
+    const left = rightSideFits ? rect.right + gap : rect.left - tipWidth - gap;
+    setTipPosition({
+      left: Math.max(10, Math.min(window.innerWidth - tipWidth - 10, left)),
+      side: rightSideFits ? 'right' : 'left',
+      top: Math.max(10, Math.min(window.innerHeight - tipHeight - 10, rect.top - 4))
+    });
+    setInspectedPlayerId(playerId);
+  }
+
   return (
-    <div className={`player-grid ${compact ? 'compact' : ''}`}>
-      {players.map((player) => {
-        const role = gameConfig.roles.find((candidate) => candidate.id === player.roleId);
-        const roleAvatar = roleAvatarForRoleId(role?.id);
-        const currentRank = roundIndex !== undefined ? player.bidRanks?.find((entry) => entry.round === roundIndex + 1) : undefined;
-        const currentAmount = currentRank?.visibleAmount && currentRank.amount !== undefined ? ` · ${formatChineseCompactCurrency(currentRank.amount)}` : '';
-        const rankLabel = currentRank?.rank ? `第 ${currentRank.rank}${currentAmount}` : player.hasSubmittedBid ? `已出价${currentAmount}` : player.passed ? '停手' : '未出价';
-        return (
-          <div className={`player-seat ${player.id === selfPlayerId ? 'self' : ''}`} key={player.id}>
-            <div className="avatar" style={{ '--role-color': role?.color ?? '#d8b76f' } as React.CSSProperties}>
-              {roleAvatar ? <img src={roleAvatar} alt="" loading="lazy" /> : role?.animal.slice(0, 1) ?? '掌'}
-            </div>
-            <div className="player-info">
-              <strong>{player.name}</strong>
-              <span>{role?.name ?? player.roleId} · {player.kind === 'bot' ? '随从' : player.status}</span>
-            </div>
-            <em>{player.netWorth.toLocaleString()}</em>
-            {player.emote && (
-              <small className={`player-emote emote-${player.emoteVisualClass ?? 'chat'}`} title={emoteTitle(player)}>
-                <span>{player.emote}</span>
-                {(player.emoteEffectKey || player.emoteAnimationKey) && <i aria-hidden="true" />}
-              </small>
-            )}
-            {roundIndex !== undefined && <b className={`bid-status ${player.hasSubmittedBid || currentRank?.rank ? 'done' : ''}`}>{rankLabel}</b>}
-            {roundIndex !== undefined && (
-              <div className="round-rank-strip">
-                {Array.from({ length: 5 }, (_, index) => {
-                  const roundNumber = index + 1;
-                  const entry = player.bidRanks?.find((candidate) => candidate.round === roundNumber);
-                  const amountText = entry?.visibleAmount && entry.amount !== undefined ? formatChineseCompactCurrency(entry.amount) : undefined;
-                  return (
-                    <span
-                      className={`${entry?.rank ? 'ranked' : entry?.submitted ? 'submitted' : ''} ${entry?.usedSkillName ? 'skilled' : ''} ${roundIndex === index ? 'current' : ''}`}
-                      key={`${player.id}_rank_${roundNumber}`}
-                      title={roundActionTitle(entry)}
-                    >
-                      <i>{entry?.rank ? `#${entry.rank}` : roundNumber}</i>
-                      {amountText && <small>{amountText}</small>}
-                      {entry?.usedSkillName && <b>{skillBadgeText(entry.usedSkillName)}</b>}
-                    </span>
-                  );
-                })}
+    <>
+      <div className={`player-grid ${compact ? 'compact' : ''}`}>
+        {players.map((player) => {
+          const role = gameConfig.roles.find((candidate) => candidate.id === player.roleId);
+          const roleAvatar = roleAvatarForRoleId(role?.id);
+          const currentRank = roundIndex !== undefined ? player.bidRanks?.find((entry) => entry.round === roundIndex + 1) : undefined;
+          const currentAmount = currentRank?.visibleAmount && currentRank.amount !== undefined ? ` · ${formatChineseCompactCurrency(currentRank.amount)}` : '';
+          const rankLabel = currentRank?.rank ? `第 ${currentRank.rank}${currentAmount}` : player.hasSubmittedBid ? `已出价${currentAmount}` : player.passed ? '停手' : '未出价';
+          return (
+            <div className={`player-seat ${player.id === selfPlayerId ? 'self' : ''}`} key={player.id}>
+              <button
+                aria-label={`查看${player.name}的竞买人详情`}
+                className="avatar player-avatar-button"
+                onClick={(event) => inspectPlayer(player.id, event)}
+                style={{ '--role-color': role?.color ?? '#d8b76f' } as React.CSSProperties}
+                title={`${player.name} · ${role?.name ?? player.roleId}`}
+                type="button"
+              >
+                {roleAvatar ? <img src={roleAvatar} alt="" loading="lazy" /> : role?.animal.slice(0, 1) ?? '掌'}
+              </button>
+              <div className="player-info">
+                <strong>{player.name}</strong>
+                <span>{role?.name ?? player.roleId} · {player.kind === 'bot' ? '随从' : player.status}</span>
               </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+              <em>{player.netWorth.toLocaleString()}</em>
+              {player.emote && (
+                <small className={`player-emote emote-${player.emoteVisualClass ?? 'chat'}`} title={emoteTitle(player)}>
+                  <span>{player.emote}</span>
+                  {(player.emoteEffectKey || player.emoteAnimationKey) && <i aria-hidden="true" />}
+                </small>
+              )}
+              {roundIndex !== undefined && <b className={`bid-status ${player.hasSubmittedBid || currentRank?.rank ? 'done' : ''}`}>{rankLabel}</b>}
+              {roundIndex !== undefined && (
+                <div className="round-rank-strip">
+                  {Array.from({ length: 5 }, (_, index) => {
+                    const roundNumber = index + 1;
+                    const entry = player.bidRanks?.find((candidate) => candidate.round === roundNumber);
+                    const amountText = entry?.visibleAmount && entry.amount !== undefined ? formatChineseCompactCurrency(entry.amount) : undefined;
+                    return (
+                      <span
+                        className={`${entry?.rank ? 'ranked' : entry?.submitted ? 'submitted' : ''} ${entry?.usedSkillName ? 'skilled' : ''} ${roundIndex === index ? 'current' : ''}`}
+                        key={`${player.id}_rank_${roundNumber}`}
+                        title={roundActionTitle(entry)}
+                      >
+                        <i>{entry?.rank ? `#${entry.rank}` : roundNumber}</i>
+                        {amountText && <small>{amountText}</small>}
+                        {entry?.usedSkillName && <b>{skillBadgeText(entry.usedSkillName)}</b>}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {inspectedPlayer && inspectedRole && tipPosition && typeof document !== 'undefined'
+        ? createPortal(
+            <PlayerRoleTip
+              player={inspectedPlayer}
+              position={tipPosition}
+              role={inspectedRole}
+              onClose={() => {
+                setInspectedPlayerId(undefined);
+                setTipPosition(undefined);
+              }}
+            />,
+            document.body
+          )
+        : null}
+    </>
+  );
+}
+
+function PlayerRoleTip({
+  player,
+  position,
+  role,
+  onClose
+}: {
+  player: PublicPlayer;
+  position: PlayerTipPosition;
+  role: (typeof gameConfig.roles)[number];
+  onClose: () => void;
+}): JSX.Element {
+  const skill = roleSkillDetailForRole(role);
+  const avatar = roleAvatarForRoleId(role.id);
+  return (
+    <aside
+      aria-labelledby={`bidder_profile_${player.id}`}
+      className={`bidder-profile-tip tip-${position.side}`}
+      role="dialog"
+      style={{
+        '--role-color': role.color,
+        '--tip-left': `${position.left}px`,
+        '--tip-top': `${position.top}px`
+      } as React.CSSProperties}
+    >
+      <button className="bidder-profile-close" onClick={onClose} title="关闭" type="button">
+        <X size={14} />
+      </button>
+      <header>
+        <span className="bidder-profile-avatar">
+          {avatar ? <img src={avatar} alt="" loading="lazy" /> : role.animal.slice(0, 1)}
+        </span>
+        <div>
+          <small>{role.animal} · {role.archetype}</small>
+          <strong id={`bidder_profile_${player.id}`}>{role.name}</strong>
+          <em>{player.name} · {player.kind === 'bot' ? '随从' : player.status} · {formatChineseCompactCurrency(player.netWorth)}</em>
+        </div>
+      </header>
+      <p className="bidder-profile-bio">{bidderBio(role)}</p>
+      <section className="bidder-profile-skill">
+        <span>掌眼</span>
+        <strong>{skill.skillName}</strong>
+        <p>{skill.active}</p>
+      </section>
+      {skill.tips[0] && <em className="bidder-profile-note">{skill.tips[0]}</em>}
+    </aside>
   );
 }
 
