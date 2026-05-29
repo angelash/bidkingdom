@@ -258,7 +258,7 @@ export function FinalSummaryPanel({
           <div className="reward-strip">
             <Award size={18} />
             <span>收藏经验 +{selfReward.xp}</span>
-            <span>铜钱 +{selfReward.coins}</span>
+            <span>铜钱 {formatSignedAmount(selfReward.coins)}</span>
             {(selfReward.lossRecovery ?? 0) > 0 && <span>本场返利 +{selfReward.lossRecovery}</span>}
             <span>名望 {selfReward.rankPoints >= 0 ? '+' : ''}{selfReward.rankPoints}</span>
             <span>新珍宝谱 {selfReward.newCodex.length}</span>
@@ -301,6 +301,10 @@ export function FinalSummaryPanel({
       </section>
     </section>
   );
+}
+
+function formatSignedAmount(amount: number): string {
+  return `${amount >= 0 ? '+' : ''}${amount.toLocaleString()}`;
 }
 
 function SettlementRoundMatrix({

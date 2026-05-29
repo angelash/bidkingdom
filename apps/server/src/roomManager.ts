@@ -880,7 +880,20 @@ export function createRoomManager(io: AppServer, log: FastifyBaseLogger, service
       return;
     }
     for (const player of room.players.filter((candidate) => candidate.kind === 'human')) {
-      services.profiles.applyMatchSummary(player.id, summary);
+      const beforeSnapshot = services.profiles.getSnapshot(player.id);
+      const beforeCoins = beforeSnapshot.profile.coins;
+      const alreadyCompleted = beforeSnapshot.profile.completedMatches.includes(summary.matchId);
+      const afterSnapshot = services.profiles.applyMatchSummary(player.id, summary);
+      const afterProfile = afterSnapshot.profile;
+      appendServerLog(alreadyCompleted ? 'warn' : 'info', alreadyCompleted ? 'profile_match_settle_skipped' : 'profile_match_settled', {
+        roomCode: room.code,
+        matchId: summary.matchId,
+        playerId: player.id,
+        coinsBefore: beforeCoins,
+        coinsAfter: afterProfile.coins,
+        coinsDelta: afterProfile.coins - beforeCoins,
+        lastRewards: afterProfile.lastRewards
+      });
       broadcasts.emitRoomPlayerProfile(room, player.id);
     }
   }

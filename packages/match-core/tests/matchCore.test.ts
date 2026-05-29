@@ -940,6 +940,8 @@ describe('match core', () => {
     expect(summary?.revealedItems.length).toBeGreaterThan(0);
     expect(summary?.awardedItemsByPlayerId?.p1?.length).toBe(summary?.revealedItems.length);
     expect(summary?.rewards.find((reward) => reward.playerId === 'p1')?.xp).toBeGreaterThan(0);
-    expect(summary?.rewards.find((reward) => reward.playerId === 'p1')?.coins).toBe(0);
+    expect(summary?.rewards.find((reward) => reward.playerId === 'p1')?.coins).toBe(
+      summary?.auctionStats?.find((stats) => stats.playerId === 'p1')?.netProfit
+    );
   });
 });

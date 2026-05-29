@@ -1195,7 +1195,7 @@ function buildFinalSummary(state: MatchRuntimeState): FinalMatchSummary {
     rewards: rankings.map((player) => ({
       playerId: player.playerId,
       xp: collectionXpByPlayerId[player.playerId] ?? 0,
-      coins: 0,
+      coins: Math.floor(auctionStats.find((entry) => entry.playerId === player.playerId)?.netProfit ?? 0),
       rankPoints: [35, 15, -5, -15][player.rank - 1] ?? 0
     })),
     eventCount: state.events.length + 1,

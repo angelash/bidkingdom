@@ -168,7 +168,7 @@ export function applyMatchSummaryForProfile(
   for (const itemId of newCodex) {
     existingCodex.add(itemId);
   }
-  const totalCoins = reward.coins;
+  const totalCoins = Math.floor(reward.coins);
   const matchTaskIds = new Set(profile.completedTasks);
   matchTaskIds.add('daily_complete_match');
   if (newCodex.length > 0) {
@@ -190,8 +190,9 @@ export function applyMatchSummaryForProfile(
   awardMatchItemsToInventory(profile, summary.matchId, awardedItems, recordTransaction);
 
   applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:xp`, 'match_reward_xp', 'xp', collectionExpGain);
-  if (totalCoins > 0) {
-    applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:coins`, 'match_reward_coins', 'coins', totalCoins);
+  const appliedCoins = totalCoins < 0 ? Math.max(-profile.coins, totalCoins) : totalCoins;
+  if (appliedCoins !== 0) {
+    applyNumberChange(profile, `match:${summary.matchId}:${profile.playerId}:coins`, 'match_reward_coins', 'coins', appliedCoins);
   }
   if (lossRecovery > 0) {
     applyNumberChange(
@@ -212,7 +213,7 @@ export function applyMatchSummaryForProfile(
   profile.lastRewards = {
     matchId: summary.matchId,
     xp: collectionExpGain,
-    coins: totalCoins,
+    coins: appliedCoins,
     rankPoints: reward.rankPoints,
     newCodex,
     lossRecovery,
