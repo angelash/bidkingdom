@@ -3,10 +3,31 @@ import { spawn, spawnSync } from 'node:child_process';
 const WEB_PORT = process.env.BITKINGDOM_WEB_PORT ?? '5188';
 const SERVER_PORT = process.env.BITKINGDOM_PORT ?? '8787';
 const SERVER_URL = process.env.VITE_SERVER_URL ?? process.env.BITKINGDOM_SERVER_URL ?? `http://127.0.0.1:${SERVER_PORT}`;
+const WEB_SERVE = process.env.BITKINGDOM_WEB_SERVE ?? 'dev';
+const ROOT = new URL('..', import.meta.url);
+
+const childEnv = {
+  ...process.env,
+  BITKINGDOM_PORT: SERVER_PORT,
+  VITE_SERVER_URL: SERVER_URL
+};
+
+if (WEB_SERVE === 'preview') {
+  console.log('Building BitKingdom web for public preview...');
+  const build = spawnSync('npm', ['run', 'build', '-w', '@bitkingdom/web'], {
+    cwd: ROOT,
+    shell: true,
+    stdio: 'inherit',
+    env: childEnv
+  });
+  if (build.status && build.status !== 0) {
+    process.exit(build.status);
+  }
+}
 
 const children = [
   ['server', ['run', 'dev:server']],
-  ['web', ['exec', '-w', '@bitkingdom/web', '--', 'vite', '--host', '0.0.0.0', '--port', WEB_PORT, '--strictPort']]
+  ['web', webArgs()]
 ];
 const childProcesses = [];
 let shuttingDown = false;
@@ -15,14 +36,10 @@ console.log(`BitKingdom dev ports: web http://127.0.0.1:${WEB_PORT}, server ${SE
 
 for (const [name, args] of children) {
   const child = spawn('npm', args, {
-    cwd: new URL('..', import.meta.url),
+    cwd: ROOT,
     shell: true,
     stdio: 'pipe',
-    env: {
-      ...process.env,
-      BITKINGDOM_PORT: SERVER_PORT,
-      VITE_SERVER_URL: SERVER_URL
-    }
+    env: childEnv
   });
   childProcesses.push(child);
 
@@ -61,6 +78,13 @@ function shutdown(signal) {
     killProcessTree(child.pid, signal);
   }
   process.exit();
+}
+
+function webArgs() {
+  if (WEB_SERVE === 'preview') {
+    return ['exec', '-w', '@bitkingdom/web', '--', 'vite', 'preview', '--host', '0.0.0.0', '--port', WEB_PORT, '--strictPort'];
+  }
+  return ['exec', '-w', '@bitkingdom/web', '--', 'vite', '--host', '0.0.0.0', '--port', WEB_PORT, '--strictPort'];
 }
 
 function killProcessTree(pid, signal = 'SIGTERM') {

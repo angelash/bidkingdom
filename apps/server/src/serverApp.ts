@@ -15,6 +15,7 @@ import { createProfileService, type ProfileService } from './services/profileSer
 import { createServerStore, type ServerStore } from './services/store';
 
 export interface BitKingdomServerOptions {
+  corsOrigin?: boolean | string | string[];
   logger?: boolean;
 }
 
@@ -29,9 +30,10 @@ export interface BitKingdomServerRuntime {
 
 export async function createBitKingdomServer(options: BitKingdomServerOptions = {}): Promise<BitKingdomServerRuntime> {
   const app = Fastify({ logger: options.logger ?? true });
+  const corsOrigin = options.corsOrigin ?? corsOriginFromEnv() ?? true;
 
   await app.register(cors, {
-    origin: true
+    origin: corsOrigin
   });
 
   registerErrorEnvelope(app);
@@ -39,7 +41,7 @@ export async function createBitKingdomServer(options: BitKingdomServerOptions = 
 
   const io = new Server(app.server, {
     cors: {
-      origin: true
+      origin: corsOrigin
     }
   });
 
@@ -63,6 +65,21 @@ export async function createBitKingdomServer(options: BitKingdomServerOptions = 
   });
 
   return { app, io, store, accounts, profiles, rooms };
+}
+
+function corsOriginFromEnv(): string | string[] | undefined {
+  const rawValue = process.env.BITKINGDOM_CORS_ORIGIN;
+  if (!rawValue) {
+    return undefined;
+  }
+  const origins = rawValue
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (origins.length === 0) {
+    return undefined;
+  }
+  return origins.length === 1 ? origins[0] : origins;
 }
 
 function registerAccountSessionGuard(app: FastifyInstance, accounts: AccountService): void {

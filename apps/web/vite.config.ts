@@ -10,6 +10,7 @@ const sourceAudioRoot = path.resolve(
   fileURLToPath(new URL('../../reverse/bidking/exported_assets_full/AudioClip/sound', import.meta.url))
 );
 const webPort = numberEnv('BITKINGDOM_WEB_PORT', 5188);
+const disableHmr = process.env.BITKINGDOM_WEB_DISABLE_HMR === '1';
 const publicHmrHost = process.env.BITKINGDOM_WEB_PUBLIC_HOST;
 const publicHmrProtocol = process.env.BITKINGDOM_WEB_PUBLIC_PROTOCOL === 'ws' ? 'ws' : 'wss';
 const publicHmrClientPort = optionalNumberEnv('BITKINGDOM_WEB_PUBLIC_CLIENT_PORT');
@@ -20,7 +21,9 @@ export default defineConfig({
     port: webPort,
     host: '0.0.0.0',
     strictPort: true,
-    hmr: publicHmrHost
+    hmr: disableHmr
+      ? false
+      : publicHmrHost
       ? {
           host: publicHmrHost,
           protocol: publicHmrProtocol,

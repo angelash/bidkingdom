@@ -1,0 +1,43 @@
+---
+description: BidKingdom public runtime and restart policy
+globs:
+  - "AGENTS.md"
+  - "package.json"
+  - "tools/**/*.mjs"
+  - "apps/web/**/*"
+  - "apps/server/**/*"
+  - "doc/20260517_本地固定端口与服务脚本.md"
+alwaysApply: true
+---
+
+# BidKingdom 公网运行维护规则
+
+BidKingdom 后续运行、调试、验收和重启默认以公网地址为准。
+
+## 公网口径
+
+- Web 公网地址：`https://kingdom-web.iepose.cn`
+- API / Socket 公网地址：`https://kingdom-server.iepose.cn`
+- Web 内网端口：`5188`
+- API / Socket 内网端口：`5187`
+- 公网默认配置集中维护在 `tools/public-env.mjs`。
+
+## 脚本规则
+
+- 默认启动、停止和重启使用公网脚本：`npm run dev`、`npm run dev:start`、`npm run dev:stop`、`npm run dev:restart`。
+- `dev:public*` 作为公网脚本别名保留，可以继续使用。
+- 纯本地调试必须显式使用 `dev:local`、`dev:local:start`、`dev:local:stop`、`dev:local:restart`。
+- 公网 Web 必须先构建再通过 `vite preview` 监听 `5188`，避免 Vite dev HMR 在公网转发下尝试连接 `localhost:5188`。
+- 公网前端必须通过 `VITE_SERVER_URL=https://kingdom-server.iepose.cn` 请求注册、登录、Profile 和 Socket.IO。
+
+## 重启验收
+
+任何会停止、启动或重启服务的操作完成后，都必须确认公网仍可访问。
+
+- 确认本机 `5188` 和 `5187` 均处于监听状态。
+- 确认 `https://kingdom-web.iepose.cn` 返回 `珍宝局 Demo` 页面。
+- 确认 `https://kingdom-server.iepose.cn/health` 返回 200。
+- 确认注册链路走 `https://kingdom-server.iepose.cn/api/account/register` 并返回 200。
+- 确认公网响应不再注入 `@vite/client`，浏览器控制台不应出现 `127.0.0.1:8787`、`localhost:5188` 或 Vite HMR WebSocket 报错。
+
+如果上述任一项失败，本轮任务不能宣告完成；必须继续修复或明确说明阻塞点。

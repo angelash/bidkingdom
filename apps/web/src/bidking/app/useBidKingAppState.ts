@@ -29,7 +29,23 @@ import {
   saveProfile
 } from '../profile/profileSession';
 
-export const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'http://127.0.0.1:8787';
+const publicServerUrlByHost: Record<string, string> = {
+  'kingdom-web.iepose.cn': 'https://kingdom-server.iepose.cn'
+};
+
+export const SERVER_URL = resolveServerUrl(import.meta.env.VITE_SERVER_URL);
+
+function resolveServerUrl(configuredUrl?: string): string {
+  const trimmedUrl = configuredUrl?.trim();
+  if (trimmedUrl) {
+    return trimmedUrl;
+  }
+  const publicServerUrl = publicServerUrlByHost[window.location.hostname];
+  if (publicServerUrl) {
+    return publicServerUrl;
+  }
+  return 'http://127.0.0.1:8787';
+}
 
 export type AppView = 'play' | 'admin';
 export type AccountAuthStatus = 'checking' | 'signedOut' | 'submitting' | 'ready';
