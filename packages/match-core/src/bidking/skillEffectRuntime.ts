@@ -58,7 +58,7 @@ export function bidKingSkillEffectRuntimeProfile(category: number): BidKingSkill
   }
   if (normalizedCategory === 6) {
     return profile(normalizedCategory, 'warehouse', {
-      publicFields: { itemCid: true, itemQuility: true },
+      publicFields: { itemCid: true, itemSlotType: true, itemQuility: true },
       knowledge: { all: true, shape: true, rank: true, value: true }
     });
   }

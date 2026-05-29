@@ -61,11 +61,8 @@ function applyVisibleSkillEntry(
   let next = { ...view };
   let revealed = false;
   const item = hitBox?.itemCid ? bidKingLiveIntelItems.find((candidate) => candidate.sourceItemId === hitBox.itemCid) : undefined;
-  const footprint = item
-    ? item.footprint
-    : hitBox?.itemSlotType
-      ? itemFootprint(hitBox.itemSlotType)
-      : undefined;
+  const placedFootprint = hitBox?.itemSlotType ? itemFootprint(hitBox.itemSlotType) : undefined;
+  const footprint = placedFootprint ?? item?.footprint;
   if (footprint || targetMatched) {
     next = {
       ...next,

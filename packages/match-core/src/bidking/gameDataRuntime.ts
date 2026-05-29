@@ -402,15 +402,16 @@ function boxInfoForSlot(slot: WarehouseSlot, round: RuntimeRound, _index: number
   if (!item) {
     throw new Error(`Slot item ${slot.item.id} references missing Item ${itemCid}`);
   }
+  const placedItemSlotType = itemSlotTypeForPlacedSlot(slot);
   return {
     boxId: bidKingSourceBoxIdForSlot(slot),
     itemUid: stableNumericId(`${round.id}:${slot.item.id}`),
     itemCid,
-    itemSlotType: item.slot_type,
+    itemSlotType: placedItemSlotType,
     itemType: itemTypeIdsFromItem(slot.item),
     itemQuility: qualityFromItem(slot.item),
     itemPrice: slot.item.value,
-    itemBoxIndex: Math.max(1, Math.floor(item.slot_type / 10) * (item.slot_type % 10))
+    itemBoxIndex: itemBoxIndexForPlacedSlot(slot)
   };
 }
 
@@ -424,8 +425,8 @@ export function bidKingSourceBoxInfoForSlot(
   if (!item) {
     throw new Error(`Slot item ${slot.item.id} references missing Item ${itemCid}`);
   }
-  const itemSlotType = item.slot_type;
-  const itemBoxIndex = Math.max(1, Math.floor(item.slot_type / 10) * (item.slot_type % 10));
+  const itemSlotType = itemSlotTypeForPlacedSlot(slot);
+  const itemBoxIndex = itemBoxIndexForPlacedSlot(slot);
   const base: BidKingBoxInfoDataSnapshot = {
     boxId: bidKingSourceBoxIdForSlot(slot),
     itemUid: stableNumericId(`${roundId}:${slot.item.id}`),
@@ -444,7 +445,7 @@ export function bidKingSourceBoxInfoForSlot(
     return { ...base, itemPrice: slot.item.value };
   }
   if (effectCategory === 6) {
-    return { ...base, itemCid, itemQuility: qualityFromItem(slot.item) };
+    return { ...base, itemCid, itemSlotType, itemQuility: qualityFromItem(slot.item) };
   }
   if (effectCategory === 7 || effectCategory === 12) {
     return { ...base, itemQuility: qualityFromItem(slot.item) };
@@ -459,6 +460,14 @@ export function bidKingSourceBoxInfoForSlot(
     return { ...base, itemPrice: slot.item.value };
   }
   return base;
+}
+
+function itemSlotTypeForPlacedSlot(slot: WarehouseSlot): number {
+  return Math.max(1, Math.floor(slot.w)) * 10 + Math.max(1, Math.floor(slot.h));
+}
+
+function itemBoxIndexForPlacedSlot(slot: WarehouseSlot): number {
+  return Math.max(1, Math.floor(slot.w)) * Math.max(1, Math.floor(slot.h));
 }
 
 function cloneBoxInfo(box: BidKingBoxInfoDataSnapshot): BidKingBoxInfoDataSnapshot {

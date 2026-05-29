@@ -73,6 +73,45 @@ describe('market intel sequence', () => {
     });
   });
 
+  it('uses the placed footprint from hit boxes when a revealed item was rotated', () => {
+    const targetItem = bidKingLiveIntelItems.find((item) => item.sourceItemId && item.footprint.w !== item.footprint.h);
+    expect(targetItem).toBeTruthy();
+    const placedW = targetItem!.footprint.h;
+    const placedH = targetItem!.footprint.w;
+    const entries = [
+      skillEntry({
+        id: 'hero_r2_rotated',
+        round: 2,
+        source: 'hero',
+        createdAt: 5000,
+        hitBoxList: [{
+          boxId: 0,
+          itemUid: 11,
+          itemCid: targetItem!.sourceItemId!,
+          itemSlotType: placedW * 10 + placedH,
+          itemType: [101],
+          itemQuility: 0,
+          itemPrice: 0,
+          itemBoxIndex: placedW * placedH
+        }]
+      })
+    ];
+
+    const visibleAfter = progressiveWarehouseSlotsForIntel(
+      round(entries, 1, 5000, [hiddenSlot()]),
+      5000 + MARKET_INTEL_ROW_VISIBLE_MS
+    );
+
+    expect(visibleAfter[0]).toMatchObject({
+      visibleShape: true,
+      w: placedW,
+      h: placedH,
+      visibleRarity: targetItem!.rarity,
+      itemName: targetItem!.name,
+      markedBySkill: true
+    });
+  });
+
   it('keeps current-round warehouse knowledge hidden in auction until each local tip lands', () => {
     const targetItem = bidKingLiveIntelItems.find((item) => item.sourceItemId && item.footprint.w > 1)
       ?? bidKingLiveIntelItems.find((item) => item.sourceItemId);

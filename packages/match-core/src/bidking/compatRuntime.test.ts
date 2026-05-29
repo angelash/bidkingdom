@@ -58,6 +58,7 @@ import {
   bidKingItemRowForSlot,
   bidKingSkillRequiresTargetBox,
   bidKingSourceHitBoxList,
+  bidKingSourceHitBoxListForCategories,
   bidKingSourceTargetCountForCandidateCount,
   selectBidKingSlotsBySkill,
   type BidKingKnownInfoState
@@ -315,6 +316,30 @@ describe('BidKing compatible core runtime', () => {
     }
     expect(slots.length).toBeGreaterThan(bidMap.item_count_max);
     expect(slots.some((slot) => slot.rotate)).toBe(true);
+  });
+
+  it('reports placed footprint orientation in source shape hit boxes', () => {
+    const match = createMatch({
+      id: 'compat-placed-footprint-hitbox',
+      players,
+      seed: 1,
+      coreMode: true,
+      coreAuctionMode: 'sealed'
+    });
+    startNextRound(match, 1000);
+
+    const slots = match.currentRound?.container.warehouseSlots ?? [];
+    const rotated = slots.find((slot) => slot.rotate && (slot.w !== slot.item.footprint.w || slot.h !== slot.item.footprint.h));
+    expect(rotated).toBeTruthy();
+    const placedSlotType = rotated!.w * 10 + rotated!.h;
+    const placedBoxIndex = rotated!.w * rotated!.h;
+    const shapeBox = bidKingSourceHitBoxListForCategories(match.currentRound!, [rotated!], [1])[0]!;
+    const fullBox = bidKingSourceHitBoxListForCategories(match.currentRound!, [rotated!], [6])[0]!;
+    const sizeBox = bidKingSourceHitBoxListForCategories(match.currentRound!, [rotated!], [11])[0]!;
+
+    expect(shapeBox.itemSlotType).toBe(placedSlotType);
+    expect(fullBox.itemSlotType).toBe(placedSlotType);
+    expect(sizeBox.itemBoxIndex).toBe(placedBoxIndex);
   });
 
   it('uses the original strict BidMap auction round rates for the core close decision', () => {
