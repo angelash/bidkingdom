@@ -1,6 +1,20 @@
 :root {
   color: #f8f1df;
   background: #100b08;
+  --quality-color-1: #a1a1aa;
+  --quality-color-2: #4ade80;
+  --quality-color-3: #38bdf8;
+  --quality-color-4: #a855f7;
+  --quality-color-5: #d8b44a;
+  --quality-color-5-bright: #ffd653;
+  --quality-color-6: #d45b5b;
+  --quality-rgb-1: 161, 161, 170;
+  --quality-rgb-2: 74, 222, 128;
+  --quality-rgb-3: 56, 189, 248;
+  --quality-rgb-4: 168, 85, 247;
+  --quality-rgb-5: 216, 180, 74;
+  --quality-rgb-5-bright: 255, 214, 83;
+  --quality-rgb-6: 212, 91, 91;
   font-family:
     Inter, "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-synthesis: none;
@@ -1133,12 +1147,12 @@ h1 {
   box-shadow: 0 0 0 2px rgba(226, 184, 93, 0.25);
 }
 
-.quality-filter-row .quality-1::before { border-color: #a1a1aa; }
-.quality-filter-row .quality-2::before { border-color: #b98536; }
-.quality-filter-row .quality-3::before { border-color: #d8ad5f; }
-.quality-filter-row .quality-4::before { border-color: #a855f7; }
-.quality-filter-row .quality-5::before { border-color: #d8b44a; }
-.quality-filter-row .quality-6::before { border-color: #d45b5b; }
+.quality-filter-row .quality-1::before { border-color: var(--quality-color-1); }
+.quality-filter-row .quality-2::before { border-color: var(--quality-color-2); }
+.quality-filter-row .quality-3::before { border-color: var(--quality-color-3); }
+.quality-filter-row .quality-4::before { border-color: var(--quality-color-4); }
+.quality-filter-row .quality-5::before { border-color: var(--quality-color-5); }
+.quality-filter-row .quality-6::before { border-color: var(--quality-color-6); }
 
 .category-filter-grid,
 .shape-filter-grid,
@@ -1286,13 +1300,13 @@ h1 {
 }
 
 .handbook-card.rarity-common {
-  --rarity-accent: #b98536;
-  --rarity-band: rgba(116, 52, 20, 0.64);
+  --rarity-accent: var(--quality-color-2);
+  --rarity-band: rgba(34, 117, 72, 0.64);
 }
 
 .handbook-card.rarity-fine {
-  --rarity-accent: #d8ad5f;
-  --rarity-band: rgba(143, 98, 21, 0.64);
+  --rarity-accent: var(--quality-color-3);
+  --rarity-band: rgba(25, 98, 138, 0.64);
 }
 
 .handbook-card.rarity-rare {
@@ -3326,12 +3340,12 @@ h1 {
   font-weight: 900;
 }
 
-.battle-item-token.quality-1 { color: #a1a1aa; }
-.battle-item-token.quality-2 { color: #b98536; }
-.battle-item-token.quality-3 { color: #d8ad5f; }
-.battle-item-token.quality-4 { color: #a855f7; }
-.battle-item-token.quality-5 { color: #d8b44a; }
-.battle-item-token.quality-6 { color: #d45b5b; }
+.battle-item-token.quality-1 { color: var(--quality-color-1); }
+.battle-item-token.quality-2 { color: var(--quality-color-2); }
+.battle-item-token.quality-3 { color: var(--quality-color-3); }
+.battle-item-token.quality-4 { color: var(--quality-color-4); }
+.battle-item-token.quality-5 { color: var(--quality-color-5); }
+.battle-item-token.quality-6 { color: var(--quality-color-6); }
 
 .battle-scene-item-list span {
   min-width: 0;
@@ -3870,12 +3884,12 @@ h1 {
   background: linear-gradient(180deg, rgba(66, 48, 27, 0.78), rgba(15, 12, 9, 0.72));
 }
 
-.battle-item-token.quality-1 { color: #a1a1aa; }
-.battle-item-token.quality-2 { color: #b98536; }
-.battle-item-token.quality-3 { color: #d8ad5f; }
-.battle-item-token.quality-4 { color: #a855f7; }
-.battle-item-token.quality-5 { color: #d8b44a; }
-.battle-item-token.quality-6 { color: #d45b5b; }
+.battle-item-token.quality-1 { color: var(--quality-color-1); }
+.battle-item-token.quality-2 { color: var(--quality-color-2); }
+.battle-item-token.quality-3 { color: var(--quality-color-3); }
+.battle-item-token.quality-4 { color: var(--quality-color-4); }
+.battle-item-token.quality-5 { color: var(--quality-color-5); }
+.battle-item-token.quality-6 { color: var(--quality-color-6); }
 
 .item-popover > footer {
   color: rgba(238, 219, 178, 0.82);
@@ -6988,33 +7002,33 @@ button.cabinet-slot {
 }
 
 .warehouse-slot.rarity-junk {
-  border-color: rgba(155, 164, 171, 0.72);
-  box-shadow: 0 0 12px rgba(155, 164, 171, 0.12);
+  border-color: rgba(var(--quality-rgb-1), 0.72);
+  box-shadow: 0 0 12px rgba(var(--quality-rgb-1), 0.12);
 }
 
 .warehouse-slot.rarity-common {
-  border-color: rgba(185, 133, 54, 0.84);
-  box-shadow: 0 0 16px rgba(185, 133, 54, 0.18);
+  border-color: rgba(var(--quality-rgb-2), 0.84);
+  box-shadow: 0 0 16px rgba(var(--quality-rgb-2), 0.18);
 }
 
 .warehouse-slot.rarity-fine {
-  border-color: rgba(216, 173, 95, 0.86);
-  box-shadow: 0 0 16px rgba(216, 173, 95, 0.18);
+  border-color: rgba(var(--quality-rgb-3), 0.86);
+  box-shadow: 0 0 16px rgba(var(--quality-rgb-3), 0.18);
 }
 
 .warehouse-slot.rarity-rare {
-  border-color: rgba(168, 85, 247, 0.9);
-  box-shadow: 0 0 18px rgba(168, 85, 247, 0.22);
+  border-color: rgba(var(--quality-rgb-4), 0.9);
+  box-shadow: 0 0 18px rgba(var(--quality-rgb-4), 0.22);
 }
 
 .warehouse-slot.rarity-legendary {
-  border-color: rgba(255, 214, 83, 0.96);
-  box-shadow: 0 0 24px rgba(255, 214, 83, 0.26);
+  border-color: rgba(var(--quality-rgb-5-bright), 0.96);
+  box-shadow: 0 0 24px rgba(var(--quality-rgb-5-bright), 0.26);
 }
 
 .warehouse-slot.rarity-mythic {
-  border-color: rgba(212, 91, 91, 0.96);
-  box-shadow: 0 0 26px rgba(212, 91, 91, 0.26);
+  border-color: rgba(var(--quality-rgb-6), 0.96);
+  box-shadow: 0 0 26px rgba(var(--quality-rgb-6), 0.26);
 }
 
 .warehouse-slot.revealed {
@@ -7078,35 +7092,35 @@ button.cabinet-slot {
 
 .warehouse-slot.revealed.rarity-junk,
 .warehouse-side .warehouse-slot.revealed.rarity-junk {
-  border-color: rgba(155, 164, 171, 0.72);
+  border-color: rgba(var(--quality-rgb-1), 0.72);
 }
 
 .warehouse-slot.revealed.rarity-common,
 .warehouse-side .warehouse-slot.revealed.rarity-common {
-  border-color: rgba(185, 133, 54, 0.8);
+  border-color: rgba(var(--quality-rgb-2), 0.8);
 }
 
 .warehouse-slot.revealed.rarity-fine,
 .warehouse-side .warehouse-slot.revealed.rarity-fine {
-  border-color: rgba(216, 173, 95, 0.86);
+  border-color: rgba(var(--quality-rgb-3), 0.86);
 }
 
 .warehouse-slot.revealed.rarity-rare,
 .warehouse-side .warehouse-slot.revealed.rarity-rare {
-  border-color: rgba(168, 85, 247, 0.92);
-  box-shadow: 0 0 18px rgba(168, 85, 247, 0.18);
+  border-color: rgba(var(--quality-rgb-4), 0.92);
+  box-shadow: 0 0 18px rgba(var(--quality-rgb-4), 0.18);
 }
 
 .warehouse-slot.revealed.rarity-legendary,
 .warehouse-side .warehouse-slot.revealed.rarity-legendary {
-  border-color: rgba(255, 214, 83, 0.96);
-  box-shadow: 0 0 28px rgba(255, 214, 83, 0.25);
+  border-color: rgba(var(--quality-rgb-5-bright), 0.96);
+  box-shadow: 0 0 28px rgba(var(--quality-rgb-5-bright), 0.25);
 }
 
 .warehouse-slot.revealed.rarity-mythic,
 .warehouse-side .warehouse-slot.revealed.rarity-mythic {
-  border-color: rgba(212, 91, 91, 0.96);
-  box-shadow: 0 0 30px rgba(212, 91, 91, 0.24);
+  border-color: rgba(var(--quality-rgb-6), 0.96);
+  box-shadow: 0 0 30px rgba(var(--quality-rgb-6), 0.24);
 }
 
 @keyframes lootSpinner {
@@ -8703,62 +8717,65 @@ button.cabinet-slot {
 }
 
 .warehouse-side .warehouse-slot.rarity-junk {
-  --warehouse-slot-frame: rgba(155, 164, 171, 0.78);
+  --warehouse-slot-frame: rgba(var(--quality-rgb-1), 0.78);
   background:
     url("/art/approved/ui/rank1.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-common {
-  --warehouse-slot-frame: rgba(185, 133, 54, 0.86);
+  --warehouse-slot-frame: rgba(var(--quality-rgb-2), 0.86);
   background:
     url("/art/approved/ui/rank2.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-fine {
-  --warehouse-slot-frame: rgba(216, 173, 95, 0.88);
+  --warehouse-slot-frame: rgba(var(--quality-rgb-3), 0.88);
   background:
     url("/art/approved/ui/rank3.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-rare {
-  --warehouse-slot-frame: rgba(168, 85, 247, 0.94);
+  --warehouse-slot-frame: rgba(var(--quality-rgb-4), 0.94);
   background:
     url("/art/approved/ui/rank4.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-legendary {
-  --warehouse-slot-frame: rgba(255, 214, 83, 0.96);
+  --warehouse-slot-frame: rgba(var(--quality-rgb-5-bright), 0.96);
   background:
     url("/art/approved/ui/rank5.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-mythic {
-  --warehouse-slot-frame: rgba(212, 91, 91, 0.96);
+  --warehouse-slot-frame: rgba(var(--quality-rgb-6), 0.96);
   background:
     url("/art/approved/ui/rank6.webp") center / 100% 100% no-repeat,
     rgba(32, 18, 11, 0.18);
 }
 
-.warehouse-side .warehouse-slot.rarity-common,
+.warehouse-side .warehouse-slot.rarity-common {
+  box-shadow: inset 0 0 0 1px rgba(var(--quality-rgb-2), 0.2), 0 0 16px rgba(var(--quality-rgb-2), 0.18);
+}
+
 .warehouse-side .warehouse-slot.rarity-fine {
-  box-shadow: inset 0 0 0 1px rgba(245, 216, 139, 0.2), 0 0 16px rgba(245, 216, 139, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(var(--quality-rgb-3), 0.2), 0 0 16px rgba(var(--quality-rgb-3), 0.18);
 }
 
 .warehouse-side .warehouse-slot.rarity-rare {
-  box-shadow: inset 0 0 0 1px rgba(210, 123, 255, 0.24), 0 0 18px rgba(210, 123, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(var(--quality-rgb-4), 0.24), 0 0 18px rgba(var(--quality-rgb-4), 0.2);
 }
 
 .warehouse-side .warehouse-slot.rarity-legendary {
-  box-shadow: inset 0 0 0 1px rgba(255, 214, 83, 0.28), 0 0 24px rgba(255, 214, 83, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(var(--quality-rgb-5-bright), 0.28), 0 0 24px rgba(var(--quality-rgb-5-bright), 0.26);
 }
 
 .warehouse-side .warehouse-slot.rarity-mythic {
-  box-shadow: inset 0 0 0 1px rgba(212, 91, 91, 0.28), 0 0 26px rgba(212, 91, 91, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(var(--quality-rgb-6), 0.28), 0 0 26px rgba(var(--quality-rgb-6), 0.26);
 }
 
 .warehouse-side .warehouse-slot img {
@@ -9780,35 +9797,35 @@ button.danger {
   height: 10px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.42);
-  background: #9ba4ab;
+  background: var(--quality-color-1);
 }
 
 .rarity-dot.rarity-all {
-  background: linear-gradient(90deg, #9ba4ab, #b98536, #d8ad5f, #a855f7, #ffd653, #d45b5b);
+  background: linear-gradient(90deg, var(--quality-color-1), var(--quality-color-2), var(--quality-color-3), var(--quality-color-4), var(--quality-color-5-bright), var(--quality-color-6));
 }
 
 .rarity-dot.rarity-junk {
-  background: #9ba4ab;
+  background: var(--quality-color-1);
 }
 
 .rarity-dot.rarity-common {
-  background: #b98536;
+  background: var(--quality-color-2);
 }
 
 .rarity-dot.rarity-fine {
-  background: #d8ad5f;
+  background: var(--quality-color-3);
 }
 
 .rarity-dot.rarity-rare {
-  background: #a855f7;
+  background: var(--quality-color-4);
 }
 
 .rarity-dot.rarity-legendary {
-  background: #ffd653;
+  background: var(--quality-color-5-bright);
 }
 
 .rarity-dot.rarity-mythic {
-  background: #d45b5b;
+  background: var(--quality-color-6);
 }
 
 .live-intel-list {
@@ -10287,17 +10304,17 @@ button.danger {
 }
 
 .ceremony-warehouse-slot.rarity-rare {
-  border-color: rgba(168, 85, 247, 0.86);
+  border-color: rgba(var(--quality-rgb-4), 0.86);
 }
 
 .ceremony-warehouse-slot.rarity-legendary {
-  border-color: rgba(255, 214, 83, 0.94);
-  box-shadow: 0 0 24px rgba(255, 214, 83, 0.22);
+  border-color: rgba(var(--quality-rgb-5-bright), 0.94);
+  box-shadow: 0 0 24px rgba(var(--quality-rgb-5-bright), 0.22);
 }
 
 .ceremony-warehouse-slot.rarity-mythic {
-  border-color: rgba(212, 91, 91, 0.94);
-  box-shadow: 0 0 26px rgba(212, 91, 91, 0.22);
+  border-color: rgba(var(--quality-rgb-6), 0.94);
+  box-shadow: 0 0 26px rgba(var(--quality-rgb-6), 0.22);
 }
 
 .ceremony-warehouse-slot > div {
