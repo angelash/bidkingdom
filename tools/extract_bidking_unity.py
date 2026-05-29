@@ -21,7 +21,7 @@ import shutil
 from typing import Any
 
 
-SOURCE_ROOT = Path(r"F:\SteamLibrary\steamapps\common\BidKing")
+SOURCE_ROOT = Path(os.environ.get("BIDKING_UNITY_ROOT", "reverse/local/BidKing"))
 STREAMING = SOURCE_ROOT / "BidKing_Data" / "StreamingAssets"
 OUT_ROOT = Path(__file__).resolve().parents[1] / "reverse" / "bidking"
 XOR_KEY = bytes.fromhex("72797273")

@@ -29,9 +29,9 @@ Codex 记录到的 AI 协作任务耗时累计约 128 小时。
 
 | 来源 | 路径/范围 | 用途 |
 | --- | --- | --- |
-| Codex 会话 JSONL | `C:\Users\Lenovo\.codex\sessions\2026\05\**\*.jsonl` | 统计用户任务、开始时间、完成时间、工具调用和 `task_complete.duration_ms` |
-| Codex 归档会话 | `C:\Users\Lenovo\.codex\archived_sessions` | 补充已归档会话 |
-| Codex 会话索引 | `C:\Users\Lenovo\.codex\session_index.jsonl` | 读取 thread name，辅助判断任务类型 |
+| Codex 会话 JSONL | `$CODEX_HOME/sessions/2026/05/**/*.jsonl` | 统计用户任务、开始时间、完成时间、工具调用和 `task_complete.duration_ms` |
+| Codex 归档会话 | `$CODEX_HOME/archived_sessions` | 补充已归档会话 |
+| Codex 会话索引 | `$CODEX_HOME/session_index.jsonl` | 读取 thread name，辅助判断任务类型 |
 | 项目文档 | `doc/`、`doc/过时/` | 校验阶段划分、文档归档时间和任务主题 |
 
 ## 统计字段说明

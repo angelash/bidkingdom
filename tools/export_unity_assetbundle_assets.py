@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import csv
 import fnmatch
+import os
 import re
 from pathlib import Path
 from typing import Iterable
@@ -25,7 +26,7 @@ import UnityPy
 from UnityPy.tools import extractor
 
 
-DEFAULT_SOURCE = Path(r"F:\SteamLibrary\steamapps\common\BidKing\BidKing_Data\StreamingAssets")
+DEFAULT_SOURCE = Path(os.environ.get("BIDKING_UNITY_STREAMING_ASSETS", "reverse/local/BidKing/BidKing_Data/StreamingAssets"))
 DEFAULT_OUT = Path(__file__).resolve().parents[1] / "reverse" / "bidking" / "exported_assets"
 EXPORTABLE_TYPES = {
     "Texture2D",

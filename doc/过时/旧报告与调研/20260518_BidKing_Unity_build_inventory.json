@@ -1,6 +1,6 @@
 {
   "target_type": "directory",
-  "root": "F:\\SteamLibrary\\steamapps\\common\\BidKing",
+  "root": "Steam local install directory (path redacted)",
   "backend_guess": "il2cpp",
   "data_dirs": [
     "BidKing_Data"

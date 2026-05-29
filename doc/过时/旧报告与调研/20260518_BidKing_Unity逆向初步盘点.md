@@ -4,10 +4,10 @@
 
 ## 范围
 
-- 目标路径：`F:\SteamLibrary\steamapps\common\BidKing`
+- 目标路径：Steam 本地安装目录（路径已脱敏）
 - 平台形态：Windows x64 / Steam 本地安装目录
 - 盘点时间：2026-05-18
-- 输出文件：`bitkingdom/doc/20260518_BidKing_Unity_build_inventory.json`
+- 输出文件：`doc/20260518_BidKing_Unity_build_inventory.json`
 
 ## 构建判断
 
