@@ -8224,8 +8224,11 @@ button.cabinet-slot {
   z-index: 58;
   width: 292px;
   max-width: calc(100vw - 20px);
+  max-height: calc(100dvh - 20px);
   display: grid;
   gap: 7px;
+  align-content: start;
+  overflow-y: auto;
   border: 1px solid color-mix(in srgb, var(--role-color) 50%, rgba(227, 189, 103, 0.3));
   border-radius: 6px;
   padding: 10px;
@@ -8299,39 +8302,28 @@ button.cabinet-slot {
 .bidder-profile-tip small,
 .bidder-profile-tip em {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: #cbb98d;
   font-style: normal;
   font-size: 11px;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .bidder-profile-tip header strong {
   min-width: 0;
-  overflow: hidden;
   color: #fff2cc;
   font-size: 15px;
   line-height: 1.18;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .bidder-profile-bio,
 .bidder-profile-skill p {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
   margin: 0;
   color: #dccb9d;
   font-size: 12px;
   line-height: 1.38;
   overflow-wrap: anywhere;
-}
-
-.bidder-profile-bio {
-  -webkit-line-clamp: 2;
 }
 
 .bidder-profile-skill {
@@ -8352,29 +8344,31 @@ button.cabinet-slot {
 
 .bidder-profile-skill strong {
   min-width: 0;
-  overflow: hidden;
   color: #fff2cc;
   font-size: 14px;
   line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
-.bidder-profile-skill p {
-  -webkit-line-clamp: 2;
-}
-
-.bidder-profile-note {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 1;
+.bidder-profile-notes {
+  display: grid;
+  gap: 3px;
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bidder-profile-notes li {
   color: #d0bd8d;
-  font-style: normal;
   font-size: 12px;
   line-height: 1.32;
   overflow-wrap: anywhere;
+}
+
+.bidder-profile-notes li::before {
+  content: "· ";
+  color: var(--role-color);
+  font-weight: 900;
 }
 
 .bidder-profile-close {

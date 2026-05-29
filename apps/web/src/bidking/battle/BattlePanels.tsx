@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BookOpen, Eye, History, Info, Lock, Sparkles, X } from 'lucide-react';
 import { gameConfig } from '@bitkingdom/config';
@@ -198,15 +198,30 @@ function PlayerRoleTip({
 }): JSX.Element {
   const skill = roleSkillDetailForRole(role);
   const avatar = roleAvatarForRoleId(role.id);
+  const tipRef = useRef<HTMLElement>(null);
+  const [resolvedTop, setResolvedTop] = useState(position.top);
+
+  useLayoutEffect(() => {
+    const element = tipRef.current;
+    if (!element) {
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    const maxTop = Math.max(10, window.innerHeight - rect.height - 10);
+    const nextTop = Math.max(10, Math.min(position.top, maxTop));
+    setResolvedTop(nextTop);
+  }, [player.id, position.top, role.id, skill.active, skill.tips]);
+
   return (
     <aside
       aria-labelledby={`bidder_profile_${player.id}`}
       className={`bidder-profile-tip tip-${position.side}`}
+      ref={tipRef}
       role="dialog"
       style={{
         '--role-color': role.color,
         '--tip-left': `${position.left}px`,
-        '--tip-top': `${position.top}px`
+        '--tip-top': `${resolvedTop}px`
       } as React.CSSProperties}
     >
       <button className="bidder-profile-close" onClick={onClose} title="关闭" type="button">
@@ -228,7 +243,11 @@ function PlayerRoleTip({
         <strong>{skill.skillName}</strong>
         <p>{skill.active}</p>
       </section>
-      {skill.tips[0] && <em className="bidder-profile-note">{skill.tips[0]}</em>}
+      {skill.tips.length > 0 && (
+        <ul className="bidder-profile-notes">
+          {skill.tips.map((tip) => <li key={tip}>{tip}</li>)}
+        </ul>
+      )}
     </aside>
   );
 }

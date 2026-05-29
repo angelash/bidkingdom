@@ -14,16 +14,24 @@ describe('battle player role profile', () => {
     expect(battlePanels).toContain('className={`bidder-profile-tip tip-${position.side}`}');
     expect(battlePanels).toContain('roleSkillDetailForRole(role)');
     expect(battlePanels).toContain('bidderBio(role)');
-    expect(battlePanels).toContain('className="bidder-profile-note"');
+    expect(battlePanels).toContain('className="bidder-profile-notes"');
+    expect(battlePanels).toContain('skill.tips.map');
     expect(battlePanels).not.toContain('modal-layer bidder-profile-layer');
   });
 
   it('styles the in-match bidder profile as a small fixed tip', () => {
+    const bidderProfileStyles = styles.slice(
+      styles.indexOf('.bidder-profile-tip'),
+      styles.indexOf('.player-rail .player-seat > .player-info')
+    );
     expect(styles).toContain('.bidder-profile-tip');
     expect(styles).toContain('width: 292px;');
+    expect(styles).toContain('max-height: calc(100dvh - 20px);');
     expect(styles).toContain('.bidder-profile-avatar');
     expect(styles).toContain('.bidder-profile-skill');
-    expect(styles).toContain('.bidder-profile-note');
+    expect(styles).toContain('.bidder-profile-notes');
+    expect(bidderProfileStyles).not.toContain('-webkit-line-clamp');
+    expect(bidderProfileStyles).not.toContain('text-overflow: ellipsis');
     expect(styles).not.toContain('.bidder-profile-layer');
     expect(styles).not.toContain('.bidder-profile-dialog');
     expect(styles).toContain('.player-avatar-button:hover');
