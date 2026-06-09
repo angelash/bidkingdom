@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,6 +12,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_DIR = resolve(ROOT, '.server');
 const LOG_DIR = resolve(SERVER_DIR, 'logs');
 const PID_FILE = resolve(SERVER_DIR, 'dev-pids.json');
+const NPM_LAUNCHER = npmLauncher();
 
 const command = process.argv[2] ?? 'start';
 
@@ -61,9 +62,9 @@ function buildWebIfNeeded(env) {
     return;
   }
   console.log('Building BitKingdom web for public preview...');
-  const result = spawnSync('npm', ['run', 'build', '-w', '@bitkingdom/web'], {
+  const result = spawnSync(NPM_LAUNCHER.command, npmArgs(['run', 'build', '-w', '@bitkingdom/web']), {
     cwd: ROOT,
-    shell: true,
+    shell: NPM_LAUNCHER.shell,
     stdio: 'inherit',
     env
   });
@@ -98,10 +99,10 @@ function stop() {
 function spawnDetached(name, args, env) {
   const logPath = resolve(LOG_DIR, `${name}.log`);
   const logFd = openSync(logPath, 'a');
-  const child = spawn('npm', args, {
+  const child = spawn(NPM_LAUNCHER.command, npmArgs(args), {
     cwd: ROOT,
     detached: true,
-    shell: true,
+    shell: NPM_LAUNCHER.shell,
     stdio: ['ignore', logFd, logFd],
     env: {
       ...env,
@@ -182,6 +183,26 @@ function parsePidLines(value) {
     .split(/\r?\n/)
     .map((line) => Number(line.trim()))
     .filter((pid) => Number.isInteger(pid) && pid > 0);
+}
+
+function npmArgs(args) {
+  return [...NPM_LAUNCHER.args, ...args];
+}
+
+function npmLauncher() {
+  const npmExecPath = process.env.npm_execpath;
+  if (npmExecPath && /[\\/]npm-cli\.js$/i.test(npmExecPath) && existsSync(npmExecPath)) {
+    return { command: process.execPath, args: [npmExecPath], shell: false };
+  }
+
+  const bundledNpmCli = resolve(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  if (existsSync(bundledNpmCli)) {
+    return { command: process.execPath, args: [bundledNpmCli], shell: false };
+  }
+
+  return process.platform === 'win32'
+    ? { command: 'npm.cmd', args: [], shell: true }
+    : { command: 'npm', args: [], shell: false };
 }
 
 function killProcessTree(pid) {
